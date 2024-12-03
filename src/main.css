@@ -1,0 +1,33 @@
+/* Import custom styles */
+@import "@milkdown/crepe/theme/common/style.css";
+@import "@milkdown/crepe/theme/nord.css";
+@import "@milkdown/crepe/theme/nord-dark.css";
+@import "firebaseui/dist/firebaseui.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.gen-btn {
+    background: linear-gradient(132deg, rgb(139,70,198), rgb(var(--v-theme-primary))); 
+    color: white;
+}
+
+.gen-icon {
+    background: linear-gradient(132deg, rgb(139,70,198), rgb(var(--v-theme-primary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+
+.gen-outline::before {
+    content: '';
+    border-radius: 4px;
+    position: absolute;
+    top: -2px; /* Adjust as needed */
+    left: -2px; /* Adjust as needed */
+    right: -2px; /* Adjust as needed */
+    bottom: -2px; /* Adjust as needed */
+    background: linear-gradient(132deg, rgb(139,70,198), rgb(var(--v-theme-primary)));
+    z-index: -1;
+}

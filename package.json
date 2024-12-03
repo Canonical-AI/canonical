@@ -1,0 +1,90 @@
+{
+	"name": "canonical",
+	"version": "0.2.0",
+	"private": true,
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@mdi/font": "5.9.55",
+		"@milkdown/crepe": "^7.5.7",
+		"@milkdown/kit": "^7.5.5",
+		"@milkdown/plugin-diagram": "^7.5.0",
+		"@milkdown/plugin-emoji": "^7.5.0",
+		"@milkdown/plugin-slash": "^7.5.0",
+		"@milkdown/theme-nord": "^7.5.0",
+		"@milkdown/vue": "^7.5.0",
+		"@prosemirror-adapter/vue": "^0.2.6",
+		"@tailwindcss/typography": "^0.5.15",
+		"dayjs": "^1.11.0",
+		"dotenv": "^16.4.5",
+		"firebase": "^10.13.1",
+		"firebase-functions": "^6.0.0",
+		"firebaseui": "^6.0.1",
+		"lodash": "^4.17.21",
+		"marked": "^14.1.2",
+		"remark-directive": "^3.0.0",
+		"turndown": "^7.2.0",
+		"vite-plugin-vuetify": "^2.0.4",
+		"vue": "^3.2.13",
+		"vue-draggable-plus": "^0.5.3",
+		"vue-gtag": "^2.0.1",
+		"vue-markdown-render": "^2.2.1",
+		"vue-multiselect": "^3.0.0-alpha.2",
+		"vue-router": "^4.0.13",
+		"vuetify": "^3.7.0-beta.1",
+		"vuex": "^4.0.2",
+		"webfontloader": "^1.0.0"
+	},
+	"devDependencies": {
+		"@babel/core": "^7.25.8",
+		"@babel/eslint-parser": "^7.12.16",
+		"@babel/plugin-proposal-decorators": "^7.25.7",
+		"@babel/plugin-transform-private-methods": "^7.25.4",
+		"@babel/plugin-transform-runtime": "^7.25.7",
+		"@babel/preset-env": "^7.25.8",
+		"@babel/preset-typescript": "^7.25.7",
+		"@eslint/js": "^9.12.0",
+		"@vitejs/plugin-vue": "^5.1.4",
+		"@vue/cli-plugin-babel": "~5.0.0",
+		"@vue/cli-plugin-eslint": "~5.0.0",
+		"@vue/cli-service": "^5.0.1",
+		"autoprefixer": "^10.4.20",
+		"eslint": "^9.12.0",
+		"eslint-config-prettier": "^9.1.0",
+		"eslint-plugin-vue": "^9.29.0",
+		"globals": "^15.11.0",
+		"postcss": "^8.4.47",
+		"prettier": "3.3.3",
+		"sass-embedded": "^1.79.5",
+		"tailwindcss": "^3.4.13",
+		"vite": "^5.4.8",
+		"vite-plugin-eslint": "^1.8.1",
+		"vue-cli-plugin-vuetify": "~2.4.6",
+		"vuetify-loader": "^2.0.0-alpha.0"
+	},
+	"eslintConfig": {
+		"root": true,
+		"env": {
+			"node": true
+		},
+		"extends": [
+			"plugin:vue/vue3-essential",
+			"eslint:recommended"
+		],
+		"parserOptions": {
+			"parser": "@babel/eslint-parser"
+		},
+		"rules": {
+			"vue/multi-word-component-names": "off"
+		}
+	},
+	"browserslist": [
+		"> 1%",
+		"last 2 versions",
+		"not dead",
+		"not ie 11"
+	]
+}
