@@ -19,7 +19,7 @@ if(location.hostname === 'localhost') {
 }
 
 const appCheck = initializeAppCheck(firebaseApp, {
-   provider: new ReCaptchaV3Provider("6LfcrDoqAAAAAArrM5cUdFwWeMufCHSBFZqQXTHs"),
+   provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
    isTokenAutoRefreshEnabled: true
 });
 

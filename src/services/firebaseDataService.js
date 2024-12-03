@@ -105,6 +105,7 @@ export class User{
   
   static async getUserAuth() {
     const auth = getAuth(firebaseApp);
+
     return new Promise((resolve, reject) => {
       onAuthStateChanged(auth, async (user) => {
         if (!user) {
