@@ -22,6 +22,8 @@ env:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'gamma' && 'gamma' || 'dev' }}
+
     steps:
       - uses: actions/checkout@v4
       - run: npm install
