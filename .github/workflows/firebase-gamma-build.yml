@@ -6,6 +6,7 @@ on:
     pull_request:
         branches:
           - main
+    workflow_dispatch: 
 
 env:
   VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
