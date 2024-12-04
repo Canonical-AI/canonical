@@ -1,0 +1,10 @@
+name: Test Secret
+
+on: [push]
+
+jobs:
+  test_secret:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Secret
+        run: echo "FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
