@@ -113,7 +113,8 @@
        </v-list>
 
        <template v-slot:append>
-        <v-list-item @click.stop="toggleDrawer('settings')" prepend-icon="mdi-cog"</v-list-item>
+        <v-list-item @click.stop="helpDialog = true" prepend-icon="mdi-help-circle"></v-list-item>
+        <v-list-item @click.stop="toggleDrawer('settings')" prepend-icon="mdi-cog"></v-list-item>
        </template>
 
       </v-navigation-drawer>
@@ -181,6 +182,18 @@
         <GetStarted @close="isNewUser = false"/>
       </v-dialog>
 
+      <v-dialog v-model="helpDialog" max-width="400">
+        <v-card>
+          <v-card-title>Help</v-card-title>
+          <v-card-text>
+            Contact at <a class="text-blue-500 underline hover:text-blue-700" href="https://github.com/Canonical-AI/.github" target="_blank">GitHub <v-icon>mdi-arrow-right</v-icon> </a>
+          </v-card-text>
+          <v-card-actions>
+            <v-btn @click="helpDialog = false">Close</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
     </v-layout>
   </v-app>
 </template>
@@ -212,7 +225,8 @@ export default {
     drawer: null,
     loginMenuOpen: false,
     isRegisterDialogOpen: false,
-    isNewUser: false
+    isNewUser: false,
+    helpDialog: false
   }),
   setup(){
     const theme = useTheme()
