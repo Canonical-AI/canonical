@@ -3,10 +3,9 @@
 
 name: Deploy to Firebase Hosting on merge
 on:
-    pull_request:
-        branches:
-          - main
-    workflow_dispatch: 
+  push:
+    branches:
+      - develop
 
 env:
   VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -21,9 +20,9 @@ env:
 
 
 jobs:
-  build_and_deploy:
+  build_and_deploy_dev:
     runs-on: ubuntu-latest
-    environment: ${{ 'gamma' }}
+    environment: ${{ github.ref_name == 'gamma' && 'gamma' || 'dev' }}
 
     steps:
       - uses: actions/checkout@v4

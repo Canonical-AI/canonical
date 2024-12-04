@@ -3,9 +3,10 @@
 
 name: Deploy to Firebase Hosting on merge
 on:
-  push:
-    branches:
-      - develop
+    pull_request:
+        branches:
+          - main
+    workflow_dispatch: 
 
 env:
   VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -20,9 +21,9 @@ env:
 
 
 jobs:
-  build_and_deploy:
+  build_and_deploy_gamma:
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'gamma' && 'gamma' || 'dev' }}
+    environment: ${{ 'gamma' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +32,6 @@ jobs:
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CANONICAL_DEV_B6AFD }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CANONICAL_GAMMA }}
           channelId: live
-          projectId: canonical-dev-b6afd
+          projectId: canonical-gamma
