@@ -109,7 +109,6 @@ export class User{
     return new Promise((resolve, reject) => {
       onAuthStateChanged(auth, async (user) => {
         if (!user) {
-          store.commit('alert', { type: 'error', message: 'not logged in', autoClear: true });
           console.log('user not logged in');
           router.push('/register')
           return resolve(null);
@@ -117,8 +116,6 @@ export class User{
 
         const userRef = doc(db, "users", user.uid);
         const userDetails = await this.getUserData(userRef.id);
-
-        console.log('userDetails', userDetails)
 
         if (!userDetails || !userDetails.email) {
           await this.createUser(user);
@@ -220,7 +217,10 @@ export class Project {
   static async getById(id, userDetails = false) {
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
-    const users = await this.getUsersForProject(id, userDetails);
+    let users = []
+    if (store.state.user.uid) {
+      users = await this.getUsersForProject(id, userDetails);
+    } 
     return {
       id: snapshot.id,
       ...snapshot.data(),
