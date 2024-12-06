@@ -34,7 +34,7 @@ const store = createStore({
         uid:null,
         email: null,
         tier: null,
-        defaultProject: import.meta.env.VITE_DEFAULT_PROJECT_ID,
+        defaultProject: null,
         projects: []
       },
       project: {
@@ -116,9 +116,7 @@ const store = createStore({
       if (user) {
         await commit('setUserData', user);
         await commit('setProject', user.defaultProject)
-      } else {
-        await commit('setProject', ...state.project.id)
-      }
+      } 
     },
 
     async createDocument({ commit, state }, { data , select = true}) {
@@ -225,8 +223,7 @@ const store = createStore({
       state.user.displayName = null;
       state.user.uid = null;
       state.user.email = null;
-      state.user.defaultProject= import.meta.env.VITE_DEFAULT_PROJECT_ID;
-      state.user.projects = [import.meta.env.VITE_DEFAULT_PROJECT_ID]
+      state.user.projects = []
 
       store.commit('setProject', state.user.defaultProject)
       return
@@ -247,7 +244,6 @@ const store = createStore({
 
       state.project = await Project.getById(projectId, { userDetails: true })
 
-
       const folderStatusCookie = getCookie('folderStatus');
       if (folderStatusCookie) {
         const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
@@ -262,7 +258,6 @@ const store = createStore({
         }
 
       }
-    
 
       await store.commit('getAllData')
       return
@@ -283,9 +278,9 @@ const store = createStore({
         state.user.projects.map(projectId => Project.getById(projectId))
       );
       state.documents = await Document.getAll()
-      state.tasks = await Task.getAll()
 
       if (store.getters.isUserLoggedIn) {
+        state.tasks = await Task.getAll()
         state.chats = await ChatHistory.getAll();
         state.favorites = await Favorites.getAll();
       }
@@ -422,18 +417,15 @@ const store = createStore({
     /// Folders
 
     updateFolder(state, {docId, target, action}){ // this updates the project.folder and adds removes
-      console.log(docId, target, action)
       if (action === 'add') {
         // Add docId to the 'to' folder
         const toFolder = state.project.folders.find(folder => folder.name === target);
-        console.log(toFolder)
         if (toFolder) {
           toFolder.children.push(docId);
         }
       } else if (action === 'remove') {
         // Remove docId from the 'from' folder
         const fromFolder = state.project.folders.find(folder => folder.name === target);
-        console.log(fromFolder)
         if (fromFolder) {
           fromFolder.children = fromFolder.children.filter(id => id !== docId);
         }
