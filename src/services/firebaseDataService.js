@@ -150,6 +150,7 @@ export class User{
       email: payload.email,
       defaultProject: null,
       tier: 'pro',
+      createdDate: serverTimestamp(),
     };
 
     await setDoc(doc(db, "users", payload.uid), newUser);

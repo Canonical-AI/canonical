@@ -124,8 +124,8 @@ const store = createStore({
     async createDocument({ commit, state }, { data , select = true}) {
       const createdDoc = await Document.create(data);
       if (select) {commit('setSelectedDocument', { ...state.selected, ...createdDoc })}
-      commit('addDocument', { id: createdDoc.id, data: data })
-      return { id: createdDoc.id, data: data };
+      commit('addDocument', { id: createdDoc.id, data: createdDoc.data })
+      return { id: createdDoc.id, data: createdDoc.data };
     },
 
     async getDocuments ({ commit }) {
