@@ -313,7 +313,7 @@ export default {
     },
     tryDemo(){
       this.isRegisterDialogOpen = false;
-      this.$store.state.project.id = "bDL1xfB2EgxZMc7eM5dk"
+      this.$store.state.project.id = import.meta.env.VITE_DEFAULT_PROJECT_ID
       this.$store.dispatch('getDocuments')
     }
   },

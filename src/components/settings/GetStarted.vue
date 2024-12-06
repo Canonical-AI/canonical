@@ -38,6 +38,12 @@
                 ></v-stepper-item>
             </v-stepper-header>
 
+            <v-stepper-actions class="mt-4"
+                @click:next="currentStep++"
+                @click:prev="currentStep--"
+            >
+            </v-stepper-actions>
+
             <v-stepper-window style="max-height: 370px;" :class="{ 'overflow-y-auto': currentStep === 1 }">
                 <v-stepper-window-item value="1" key="1">
                     <v-card-title>Setting up your account</v-card-title>
@@ -76,7 +82,7 @@
                 <v-stepper-window-item value="5" key="5">
                     <v-card-subtitle>Tour Canonical [optional]</v-card-subtitle>
                     <div class="flex justify-center my-6">
-                        <v-btn color="primary">Start Tour</v-btn>
+                        <v-btn disabled color="primary">Start Tour [Coming Soon]</v-btn>
                     </div>
                 </v-stepper-window-item>
 
@@ -88,13 +94,6 @@
                 </v-stepper-window-item>
             </v-stepper-window>
 
-            <v-stepper-actions
-                :disabled="disabled"
-                @click:next="currentStep++"
-                @click:prev="currentStep--"
-            >
-
-            </v-stepper-actions>
           </v-stepper>
 
           

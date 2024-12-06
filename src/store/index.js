@@ -34,7 +34,7 @@ const store = createStore({
         uid:null,
         email: null,
         tier: null,
-        defaultProject: null,
+        defaultProject: import.meta.env.VITE_DEFAULT_PROJECT_ID,
         projects: []
       },
       project: {
@@ -111,7 +111,7 @@ const store = createStore({
     
   },
   actions: {
-    async enter({ commit }) {
+    async enter({ commit , state}) {
       const user = await User.getUserAuth();
       if (user) {
         await commit('setUserData', user);
@@ -215,9 +215,9 @@ const store = createStore({
       state.user.displayName = payload?.displayName || null;
       state.user.uid = payload?.id || null;
       state.user.email = payload?.email || null;
-      state.user.defaultProject = payload?.project || defaultProject;
+      state.user.defaultProject = payload?.project || null;
       state.user.tier = payload?.tier || 'free';
-      state.user.projects = payload?.projects || [defaultProject]
+      state.user.projects = payload?.projects || []
       return
     },
 
@@ -225,8 +225,8 @@ const store = createStore({
       state.user.displayName = null;
       state.user.uid = null;
       state.user.email = null;
-      state.user.defaultProject= 'bDL1xfB2EgxZMc7eM5dk';
-      state.user.projects = ['bDL1xfB2EgxZMc7eM5dk']
+      state.user.defaultProject= import.meta.env.VITE_DEFAULT_PROJECT_ID;
+      state.user.projects = [import.meta.env.VITE_DEFAULT_PROJECT_ID]
 
       store.commit('setProject', state.user.defaultProject)
       return
@@ -239,22 +239,29 @@ const store = createStore({
     },
 
     async setProject(state, projectId){
+
+      if (!projectId || (Array.isArray(projectId) && projectId.length === 0)) {
+        console.warn("Project ID is null or empty, aborting setProject.");
+        return;
+      }
+
       state.project = await Project.getById(projectId, { userDetails: true })
 
-        const folderStatusCookie = getCookie('folderStatus');
-        if (folderStatusCookie) {
-          const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
 
-          if (folderStatus.projectId === projectId) {
-            folderStatus.folders.forEach(statusFolder => {
-              const projectFolder = state.project.folders.find(folder => folder.name === statusFolder.name);
-              if (projectFolder) {
-                projectFolder.isOpen = statusFolder.isOpen;
-              }
-            });
-          }
+      const folderStatusCookie = getCookie('folderStatus');
+      if (folderStatusCookie) {
+        const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
 
+        if (folderStatus.projectId === projectId) {
+          folderStatus.folders.forEach(statusFolder => {
+            const projectFolder = state.project.folders.find(folder => folder.name === statusFolder.name);
+            if (projectFolder) {
+              projectFolder.isOpen = statusFolder.isOpen;
+            }
+          });
         }
+
+      }
     
 
       await store.commit('getAllData')

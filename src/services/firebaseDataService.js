@@ -118,6 +118,8 @@ export class User{
         const userRef = doc(db, "users", user.uid);
         const userDetails = await this.getUserData(userRef.id);
 
+        console.log('userDetails', userDetails)
+
         if (!userDetails || !userDetails.email) {
           await this.createUser(user);
           return resolve(null);
@@ -152,8 +154,7 @@ export class User{
 
     await setDoc(doc(db, "users", payload.uid), newUser);
 
-    const userDataForStore = { ...newUser, id: payload.uid , projects: []};
-    console.log('userDataForStore', userDataForStore)
+    const userDataForStore = { ...newUser, id: payload.uid};
     await store.commit('setUserData', userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
 
     store.commit('alert', { type: 'info', message: 'New User Account Created!' });
