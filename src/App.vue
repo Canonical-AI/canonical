@@ -151,20 +151,31 @@
         {{alert.message }}
       </v-snackbar>
 
-      <div class="alert-bar">
-        <v-alert
-          class="alert"
-          v-for="alert in alerts.filter(a => a.show === true && a.type != 'info')"
+      <div
+        v-for="alert in alerts.filter(a => a.show === true && a.type != 'info').sort((a, b) => a.time - b.time)"
+        >
+        <v-snackbar
+          class="text-center transition-opacity duration-300 ease-in-out snackbar-solid"
           :key="alert"
-          :type="alert.type"
-          :icon="alert.type"
-          :title="alert.message"
+          v-model="alert.show"
           density="compact"
-          closable
-          > 
-          {{ new Date(alert.time).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) }}
+          :color="alert.type || 'error'"
+            > 
+          <div class="text-subtitle-1 pb-2">{{ alert.message }}</div>
+          <p class="text-xs">
+            {{ new Date(alert.time).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) }}
+          </p>
 
-        </v-alert> 
+          <template v-slot:actions>
+            <v-btn
+              variant="text"
+              @click="alert.show = false"
+              icon="mdi-close"
+            >
+            </v-btn>
+          </template>
+
+        </v-snackbar> 
       </div>
 
       <v-dialog v-model="isRegisterDialogOpen" max-width="500">
@@ -362,13 +373,6 @@ export default {
   left:-10px;
 }
 
-.alert-bar{
-  width: 100%;
-  bottom: 0px;
-  right: 0px;
-  position: fixed;
-  z-index:1000;
-}
 
 .full-width-container {
   width: 100%;
