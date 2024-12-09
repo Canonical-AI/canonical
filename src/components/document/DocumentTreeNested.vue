@@ -6,23 +6,25 @@
         group="g1" 
         @end="change()" 
         @add="added" 
-        @remove="removed">
+        @remove="removed"
+        @event="console.log($event)"
+        >
       <li 
-        v-for="el in list" 
+        v-for="el in filteredList" 
         :class="{'selected-item': isSelected(el)}"
         class="px-1 list-item"
         :key="el.id"
         :style="{ paddingLeft: `${depth * 20}px` }">
             <div class="text-body-2 d-flex justify-space-between"> 
+
+                <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data.draft" color="warning"></v-icon>
+
                 <v-icon small @click="toggle(el)" class="text-medium-emphasis">
                     {{ el.children && el.children.length ? (el.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right') : '' }}
                 </v-icon>
                 <v-icon small class="text-medium-emphasis pr-1">
                     {{ el.isOpen ? 'mdi-folder-open' : (el.data.folder ? 'mdi-folder' : 'mdi-text-box') }}
                 </v-icon>
-
-                <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data.draft" color="warning"></v-icon>
-
                 <span v-if="el.renaming">
                     <input 
                         :ref="'renameInput_' + el.id" 
@@ -66,6 +68,8 @@
   <script>
   import { VueDraggable } from 'vue-draggable-plus'
   import { defineComponent } from 'vue'
+
+  //TODO fix the folders and only allow drags too
   
   export default defineComponent({
     name: 'DocumentTreeNested',
@@ -101,6 +105,16 @@
       return {
         list: this.modelValue, // Initialize isOpen for each node
       }
+    },
+    computed: {
+        filteredList() {
+            if (this.$store.getters.isUserLoggedIn) return this.list;
+            // Hide empty folders for non-authenticated users
+            return this.list.filter(item => {
+                if (!item.data.folder) return true;
+                    return item.children && item.children.length > 0;
+                });
+        }
     },
     watch: {
         modelValue: {
@@ -188,7 +202,6 @@
     padding-top: 2px !important;
     padding-bottom: 2px !important;
 }
-
 
 .drag-area {
   min-height: 10px;

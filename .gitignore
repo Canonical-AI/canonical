@@ -29,3 +29,7 @@ firebase.json
 firestore.indexes.json
 firestore.rules
 .firebaserc
+firebase-debug*
+firestore-debug.log
+functions-debug*
+*debug

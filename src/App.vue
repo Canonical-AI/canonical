@@ -113,7 +113,8 @@
        </v-list>
 
        <template v-slot:append>
-        <v-list-item @click.stop="toggleDrawer('settings')" prepend-icon="mdi-cog"</v-list-item>
+        <v-list-item @click.stop="helpDialog = true" prepend-icon="mdi-help-circle"></v-list-item>
+        <v-list-item @click.stop="toggleDrawer('settings')" prepend-icon="mdi-cog"></v-list-item>
        </template>
 
       </v-navigation-drawer>
@@ -150,20 +151,31 @@
         {{alert.message }}
       </v-snackbar>
 
-      <div class="alert-bar">
-        <v-alert
-          class="alert"
-          v-for="alert in alerts.filter(a => a.show === true && a.type != 'info')"
+      <div
+        v-for="alert in alerts.filter(a => a.show === true && a.type != 'info').sort((a, b) => a.time - b.time)"
+        >
+        <v-snackbar
+          class="text-center transition-opacity duration-300 ease-in-out snackbar-solid"
           :key="alert"
-          :type="alert.type"
-          :icon="alert.type"
-          :title="alert.message"
+          v-model="alert.show"
           density="compact"
-          closable
-          > 
-          {{ new Date(alert.time).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) }}
+          :color="alert.type || 'error'"
+            > 
+          <div class="text-subtitle-1 pb-2">{{ alert.message }}</div>
+          <p class="text-xs">
+            {{ new Date(alert.time).toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) }}
+          </p>
 
-        </v-alert> 
+          <template v-slot:actions>
+            <v-btn
+              variant="text"
+              @click="alert.show = false"
+              icon="mdi-close"
+            >
+            </v-btn>
+          </template>
+
+        </v-snackbar> 
       </div>
 
       <v-dialog v-model="isRegisterDialogOpen" max-width="500">
@@ -179,6 +191,18 @@
 
       <v-dialog v-model="isNewUser" max-width="75%">
         <GetStarted @close="isNewUser = false"/>
+      </v-dialog>
+
+      <v-dialog v-model="helpDialog" max-width="400">
+        <v-card>
+          <v-card-title>Help</v-card-title>
+          <v-card-text>
+            Contact at <a class="text-blue-500 underline hover:text-blue-700" href="https://github.com/Canonical-AI/.github" target="_blank">GitHub <v-icon>mdi-arrow-right</v-icon> </a>
+          </v-card-text>
+          <v-card-actions>
+            <v-btn @click="helpDialog = false">Close</v-btn>
+          </v-card-actions>
+        </v-card>
       </v-dialog>
 
     </v-layout>
@@ -212,7 +236,8 @@ export default {
     drawer: null,
     loginMenuOpen: false,
     isRegisterDialogOpen: false,
-    isNewUser: false
+    isNewUser: false,
+    helpDialog: false
   }),
   setup(){
     const theme = useTheme()
@@ -299,8 +324,9 @@ export default {
     },
     tryDemo(){
       this.isRegisterDialogOpen = false;
-      this.$store.state.project.id = "bDL1xfB2EgxZMc7eM5dk"
+      this.$store.commit('setProject', import.meta.env.VITE_DEFAULT_PROJECT_ID)
       this.$store.dispatch('getDocuments')
+
     }
   },
   created() {
@@ -347,13 +373,6 @@ export default {
   left:-10px;
 }
 
-.alert-bar{
-  width: 100%;
-  bottom: 0px;
-  right: 0px;
-  position: fixed;
-  z-index:1000;
-}
 
 .full-width-container {
   width: 100%;

@@ -111,21 +111,19 @@ const store = createStore({
     
   },
   actions: {
-    async enter({ commit }) {
+    async enter({ commit , state}) {
       const user = await User.getUserAuth();
       if (user) {
         await commit('setUserData', user);
         await commit('setProject', user.defaultProject)
-      } else {
-        await commit('setProject', ...state.project.id)
-      }
+      } 
     },
 
     async createDocument({ commit, state }, { data , select = true}) {
       const createdDoc = await Document.create(data);
       if (select) {commit('setSelectedDocument', { ...state.selected, ...createdDoc })}
-      commit('addDocument', { id: createdDoc.id, data: data })
-      return { id: createdDoc.id, data: data };
+      commit('addDocument', { id: createdDoc.id, data: createdDoc.data })
+      return { id: createdDoc.id, data: createdDoc.data };
     },
 
     async getDocuments ({ commit }) {
@@ -215,9 +213,9 @@ const store = createStore({
       state.user.displayName = payload?.displayName || null;
       state.user.uid = payload?.id || null;
       state.user.email = payload?.email || null;
-      state.user.defaultProject = payload?.project || defaultProject;
+      state.user.defaultProject = payload?.project || null;
       state.user.tier = payload?.tier || 'free';
-      state.user.projects = payload?.projects || [defaultProject]
+      state.user.projects = payload?.projects || []
       return
     },
 
@@ -225,8 +223,7 @@ const store = createStore({
       state.user.displayName = null;
       state.user.uid = null;
       state.user.email = null;
-      state.user.defaultProject= 'bDL1xfB2EgxZMc7eM5dk';
-      state.user.projects = ['bDL1xfB2EgxZMc7eM5dk']
+      state.user.projects = []
 
       store.commit('setProject', state.user.defaultProject)
       return
@@ -239,23 +236,28 @@ const store = createStore({
     },
 
     async setProject(state, projectId){
+
+      if (!projectId || (Array.isArray(projectId) && projectId.length === 0)) {
+        console.warn("Project ID is null or empty, aborting setProject.");
+        return;
+      }
+
       state.project = await Project.getById(projectId, { userDetails: true })
 
-        const folderStatusCookie = getCookie('folderStatus');
-        if (folderStatusCookie) {
-          const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
+      const folderStatusCookie = getCookie('folderStatus');
+      if (folderStatusCookie) {
+        const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
 
-          if (folderStatus.projectId === projectId) {
-            folderStatus.folders.forEach(statusFolder => {
-              const projectFolder = state.project.folders.find(folder => folder.name === statusFolder.name);
-              if (projectFolder) {
-                projectFolder.isOpen = statusFolder.isOpen;
-              }
-            });
-          }
-
+        if (folderStatus.projectId === projectId) {
+          folderStatus.folders.forEach(statusFolder => {
+            const projectFolder = state.project.folders.find(folder => folder.name === statusFolder.name);
+            if (projectFolder) {
+              projectFolder.isOpen = statusFolder.isOpen;
+            }
+          });
         }
-    
+
+      }
 
       await store.commit('getAllData')
       return
@@ -276,9 +278,9 @@ const store = createStore({
         state.user.projects.map(projectId => Project.getById(projectId))
       );
       state.documents = await Document.getAll()
-      state.tasks = await Task.getAll()
 
       if (store.getters.isUserLoggedIn) {
+        state.tasks = await Task.getAll()
         state.chats = await ChatHistory.getAll();
         state.favorites = await Favorites.getAll();
       }
@@ -415,18 +417,15 @@ const store = createStore({
     /// Folders
 
     updateFolder(state, {docId, target, action}){ // this updates the project.folder and adds removes
-      console.log(docId, target, action)
       if (action === 'add') {
         // Add docId to the 'to' folder
         const toFolder = state.project.folders.find(folder => folder.name === target);
-        console.log(toFolder)
         if (toFolder) {
           toFolder.children.push(docId);
         }
       } else if (action === 'remove') {
         // Remove docId from the 'from' folder
         const fromFolder = state.project.folders.find(folder => folder.name === target);
-        console.log(fromFolder)
         if (fromFolder) {
           fromFolder.children = fromFolder.children.filter(id => id !== docId);
         }

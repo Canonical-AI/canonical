@@ -1,10 +1,4 @@
 <template>
-            <v-alert
-            lines="one"
-            color="warning"
-        >
-        UNDER CONSTRUCTION
-    </v-alert>
     <v-container :class="{'px-20': !newUserSetup}" class="overflow-none w-100 pb-0">
         <div v-if="!newUserSetup">
             <v-select
