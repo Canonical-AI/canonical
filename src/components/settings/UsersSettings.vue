@@ -1,11 +1,4 @@
 <template>
-    <v-alert
-        lines="one"
-        color="warning"
-        >
-        UNDER CONSTRUCTION
-    </v-alert>
-
 
     <v-row class="w-100">
             <v-col cols="12" md="10" lg="10" class="px-20 w-100 overflow-none">
@@ -24,6 +17,7 @@
                         label="Defaul Project"
                         variant="solo"
                         hide-details
+                        @update:modelValue="setDefaultProject"
                         >
                     </v-select>
 
@@ -46,9 +40,10 @@
                         </v-list-item>
                     </v-list>
 
-                    <v-btn class="m-2 text-none" color="warning">Unsubscribe</v-btn> 
+                    <v-btn class="m-2 text-none" color="primary">Update</v-btn>
+                    <v-btn disabled class="m-2 text-none" color="warning">Unsubscribe</v-btn> 
                     <!-- todo: add confirmation dialog -->
-                    <v-btn class="m-2 text-none" color="error">Delete User Data</v-btn>
+                    <v-btn disabled class="m-2 text-none" color="error">Delete User Data</v-btn>
                     <!-- todo: add confirmation dialog -->
 
                     </v-container>
@@ -61,7 +56,7 @@
 </template>
 
 <script>
-
+import {User} from '../../services/firebaseDataService'
 
 export default {
     data() {
@@ -71,6 +66,15 @@ export default {
     },
     beforeMount() {
         this.user = this.$store.state.user
+    },
+    methods: {
+        updateUser() {
+            console.log('updateUser')
+        },
+        setDefaultProject() {
+            console.log('setDefaultProject', this.user.defaultProject)
+            User.setDefaultProject(this.user.defaultProject);
+        }
     }
 }
 
