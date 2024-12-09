@@ -179,12 +179,6 @@ export default {
             },
             deep: true,
         },
-        project: {
-            handler(newVal) {
-                this.setTempProject()
-            },
-            deep: true,
-        },
     },
     async mounted() {
 
@@ -197,7 +191,7 @@ export default {
         this.isNewProject = this.$store.state.project === null
         
         if (!this.isNewProject) {
-            this.project = this.$store.state.project
+            this.project = { ...this.$store.state.project }
             this.selectedFolders = this.project.folders.map(folder => folder.name);
         }
 
@@ -229,7 +223,7 @@ export default {
         async selectProject(value){
             console.log('selectProject', value)
             this.$store.commit('setProject', value)
-            this.project = this.$store.state.project
+            this.project = { ...this.$store.state.project }
             this.selectedFolders = this.project.folders.map(folder => folder.name);
             this.default = { ...this.project }
             this.users = await Project.getUsersForProject(this.$store.state.project.id, true)
@@ -253,7 +247,8 @@ export default {
         },
 
         setTempProject(){
-            this.$store.commit('setTempProject', this.project)
+            const projectCopy = JSON.parse(JSON.stringify(this.project));
+           // this.$store.commit('setTempProject', projectCopy)
         },
 
         async handleSubmit() { 
