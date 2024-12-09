@@ -256,7 +256,6 @@ const store = createStore({
             }
           });
         }
-
       }
 
       await store.commit('getAllData')
