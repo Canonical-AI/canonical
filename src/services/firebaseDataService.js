@@ -160,9 +160,9 @@ export class User{
    return
   }
 
-  static async setDefaultProject(id, value) {
+  static async setDefaultProject(value) {
     checkUserLoggedIn()
-    const userRef = doc(db, "users", id);
+    const userRef = doc(db, "users", store.state.user.uid);
     await updateDoc(userRef, { defaultProject: value });
   }
 
