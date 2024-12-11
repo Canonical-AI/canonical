@@ -92,7 +92,8 @@ const routes = [
   {
     path: '/settings/user',
     name: 'UsersSettings',
-    component: UsersSettings
+    component: UsersSettings,
+    beforeEnter: checkAuth
   },
   {
     path: '/logout',
