@@ -110,7 +110,6 @@ export class User{
       onAuthStateChanged(auth, async (user) => {
         if (!user) {
           console.log('user not logged in');
-          router.push('/register')
           return resolve(null);
         }
 
