@@ -83,6 +83,11 @@ const routes = [
     component: Home
   },
   {
+    path: '/demo',
+    name: 'demo',
+    component: Home
+  },
+  {
     path: '/settings/project/:id?',
     name: 'ProjectSetup',
     component: ProjectConfig,
