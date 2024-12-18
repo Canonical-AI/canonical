@@ -9,9 +9,12 @@
             <v-card-actions>
                 <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
                 <v-spacer></v-spacer>
+                <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
+                    last update: {{ $dayjs(document.data.updatedDate.seconds*1000).fromNow()}}
+                </div>
                 <v-menu class="border border-surface-light">
                     <template v-slot:activator="{ props }">
-                        <v-btn :disabled="!$store.getters.isUserLoggedIn" v-if="document.id"v-bind="props" icon>
+                        <v-btn :disabled="isDisabled" v-if="document.id"v-bind="props" icon>
                             <v-icon>mdi-dots-vertical</v-icon>
                         </v-btn>
                     </template>
@@ -44,7 +47,7 @@
                 <v-expansion-panel>
                     <v-expansion-panel-title>
                         <v-btn 
-                            :disabled="!$store.getters.isUserLoggedIn"
+                            :disabled="isDisabled"
                             class="text-none gen-btn"
                             @click="sendPromptToVertexAI()"
                             density="compact" 
@@ -59,17 +62,17 @@
 
             <v-spacer/>
             <comment
-                v-if="document.id"
+                v-if="document.id && $store.getters.isUserLoggedIn"
                 :doc-id="document.id"
                 :doc-type="'document'"
             />
     </v-navigation-drawer>
 
     <v-app-bar class="input-container z-10" elevation="0"> 
-        <VersionModal :disabled="!isEditable" :key="document.id" :versions="document.versions"/>
+        <VersionModal :disabled="isDisabled" :key="document.id" :versions="document.versions"/>
         <v-spacer/>
 
-        <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
+        <div v-if="document.data.updatedDate && !$vuetify.display.mobile" class="text-medium-emphasis mr-4">
             last update: {{ $dayjs(document.data.updatedDate.seconds*1000).fromNow()}}
         </div>
 
@@ -86,7 +89,7 @@
         <v-tooltip text="Save as a favorite" location="bottom">
             <template v-slot:activator="{ props }">
                 <v-icon 
-                    :disabled="!$store.getters.isUserLoggedIn"
+                    :disabled="isDisabled"
                     class="mx-2"
                     v-bind="props" 
                     @click="toggleFavorite" 
@@ -96,7 +99,7 @@
         <v-tooltip text="Feedback from your AI coach" location="bottom">
             <template v-slot:activator="{ props }">
                 <v-icon 
-                :disabled="!$store.getters.isUserLoggedIn"
+                :disabled="isDisabled"
                     v-if="$store.getters.canAccessAi"
                     class="mx-2 gen-icon"
                     v-bind="props" 
@@ -133,13 +136,13 @@
                     <input
                         class="position-relative top-0 left-0 right-0 h1 w-100"
                         v-model="document.data.name" 
-                        :disabled="!isLoggedIn || !isEditable"
+                        :disabled="isDisabled || !isEditable"
                         />
 
                     <MilkdownProvider v-if="!isLoading">
                             <ProsemirrorAdapterProvider>
                                 <MilkdownEditor
-                                    :disabled="!isLoggedIn || !isEditable"
+                                    :disabled="isDisabled || !isEditable"
                                     v-model="editorContent"
                                     :key="editorKey"
                                     :data-placeholder="currentPlaceholder"
@@ -413,9 +416,16 @@ export default {
         },
     },   
     computed:{
-        isLoggedIn() {
-            this.isEditable = this.$store.getters.isUserLoggedIn;
-            return this.$store.getters.isUserLoggedIn; 
+        isDisabled() {
+            if (this.$store.getters.isUserLoggedIn || this.$store.state.project?.id != null ) {
+                console.log('true')
+                this.isEditable = true
+                return false
+            } else {
+                console.log('false')
+                this.isEditable = false
+                return true
+            }
         },
         editorContent: {
             get() {
