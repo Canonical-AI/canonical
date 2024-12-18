@@ -104,7 +104,7 @@
 
       <v-navigation-drawer 
         rail
-        :permanent = "!$vuetify.display.mobile"
+        :permanent = "!$vuetify.display.mobile || isNavOpen"
         app
         v-model="isNavOpen"
         >
@@ -135,7 +135,6 @@
         :temporary="drawer !== null" 
         :permanent = "!$vuetify.display.mobile"
         app 
-        :class="{ 'pl-14' : $vuetify.display.mobile}"
         >
 
         <v-window v-model="drawer">
