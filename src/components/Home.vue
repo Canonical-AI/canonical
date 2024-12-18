@@ -20,7 +20,7 @@
         </v-container>
         <v-container v-else-if="favoriteDocuments.length > 0">
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
-            <h1 class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
+            <h1 class="mr-3">{{title}}</h1> <!-- Added Vuetify margin class -->
             <v-btn @click="createDocument" color="primary">Create Document</v-btn>
           </span>
           <v-row>
@@ -59,14 +59,26 @@ export default {
   },
   data() {
     return {
+      title: 'Favorites',
       loading: true, // Add loading state
     };
   },
   computed: {
     favoriteDocuments() {
-      return this.$store.state.documents
+      const favorites = this.$store.state.documents
         .filter(doc => this.$store.getters.isFavorite(doc.id))
-        .sort((a, b) => b.data.updatedDate.seconds - a.data.updatedDate.seconds); // Sort by updatedDate
+        .sort((a, b) => b.data.updatedDate.seconds - a.data.updatedDate.seconds);
+
+      if (favorites.length > 0) {
+        return favorites;
+      }
+      
+      this.title = 'Recent Documents'
+
+      // If no favorites, return the 5 most recent documents
+      return this.$store.state.documents
+        .sort((a, b) => b.data.updatedDate.seconds - a.data.updatedDate.seconds)
+        .slice(0, 5);
     }, 
   },
   watch: {
@@ -90,8 +102,6 @@ export default {
     },
     renderMarkdown(content) {
       const renderer = new marked.Renderer();
-      
-
       // Override the text renderer to detect the pattern inline
       renderer.text = (text) => {
         // Ensure text is a string

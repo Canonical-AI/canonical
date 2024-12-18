@@ -9,10 +9,20 @@
       >
 
       <img src="/canonical-logo.svg" alt="Canonical Logo" width="50" height="50" class="ml-3" />
+       
+      <v-btn
+          icon
+          @click="isNavOpen = !isNavOpen"
+          v-if="$vuetify.display.mobile"
+        >
+          <v-icon>mdi-menu</v-icon>
+      </v-btn>
+      
+      
         <v-app-bar-title>
           <v-btn variant="text" to="/"> Canonical <strong>[BETA]</strong></v-btn>
         </v-app-bar-title>
-        <v-spacer></v-spacer>
+        <v-spacer v-if="!$vuetify.display.mobile"></v-spacer>
 
         <!-- might use a speeddial component here later -->
 
@@ -94,8 +104,9 @@
 
       <v-navigation-drawer 
         rail
-        permanent
+        :permanent = "!$vuetify.display.mobile || isNavOpen"
         app
+        v-model="isNavOpen"
         >
         <v-list
           density="compact"
@@ -119,7 +130,13 @@
 
       </v-navigation-drawer>
 
-      <v-navigation-drawer v-model="isDrawerOpen" :temporary="drawer !== null" app permanent>
+      <v-navigation-drawer 
+        v-model="isDrawerOpen" 
+        :temporary="drawer !== null" 
+        :permanent = "!$vuetify.display.mobile"
+        app 
+        >
+
         <v-window v-model="drawer">
           <v-window-item transition="slide-x-reverse-transition" value="document">
             <DocumentTree/>
@@ -205,6 +222,20 @@
         </v-card>
       </v-dialog>
 
+      <v-dialog v-model="welcomeDialog" max-width="500">
+        <v-card>
+          <v-card-title>Welcome to Canonical 👋</v-card-title>
+          <v-card-text>
+            <p>We're glad to have you onboard!</p>
+            <p>Check out the demo documents to get started 🚀</p>
+            <a class="text-blue-500 underline hover:text-blue-700" @click="$router.push('/document/wv2PNNrm32mTVbtZexcs'); welcomeDialog = false">Canonical Product Vision</a>
+          </v-card-text>
+          <v-card-subtitle>
+            <v-btn class="text-none" variant="text" href="https://github.com/Canonical-AI/.github">Documentation <v-icon>mdi-arrow-right</v-icon></v-btn>
+          </v-card-subtitle>
+        </v-card>
+      </v-dialog>
+
     </v-layout>
   </v-app>
 </template>
@@ -237,14 +268,17 @@ export default {
     loginMenuOpen: false,
     isRegisterDialogOpen: false,
     isNewUser: false,
-    helpDialog: false
+    helpDialog: false,
+    welcomeDialog: false,
+    isNavOpen: true,
   }),
   setup(){
     const theme = useTheme()
     return theme
   },
-  async beforeCreate() {
+  async mounted() {
     //await this.$store.commit('enter')
+    this.isNavOpen = !this.$vuetify.display.mobile
   },
   watch: {
     alerts_: {
@@ -268,6 +302,10 @@ export default {
         if (to.path === '/new-user') {
           this.isNewUser = true;
         }
+        if (to.path === '/demo') {
+          this.welcomeDialog = true;
+          this.tryDemo()
+        }
       },
       immediate: true,
     }
@@ -284,7 +322,7 @@ export default {
     },
     isDrawerOpen: {
       get() {
-        return this.drawer !== null;
+        return this.drawer !== null && this.isNavOpen; // Check if navOpen is true
       },
       set(value) {
         this.drawer = value ? 'document' : null; // or 'chat' based on your logic
