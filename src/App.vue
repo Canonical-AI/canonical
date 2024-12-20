@@ -227,12 +227,13 @@
           <v-card-title>Welcome to Canonical 👋</v-card-title>
           <v-card-text>
             <p>We're glad to have you onboard!</p>
-            <p>Check out the demo documents to get started 🚀</p>
+            <p>Check out the demo documents to get started 🚀 </p>
             <a class="text-blue-500 underline hover:text-blue-700" @click="$router.push('/document/wv2PNNrm32mTVbtZexcs'); welcomeDialog = false">Canonical Product Vision</a>
           </v-card-text>
-          <v-card-subtitle>
+          <v-card-actions>
             <v-btn class="text-none" variant="text" href="https://github.com/Canonical-AI/.github">Documentation <v-icon>mdi-arrow-right</v-icon></v-btn>
-          </v-card-subtitle>
+            <v-btn class="text-none" variant="elevated" color="primary" @click="$router.push('/register'); welcomeDialog = false"> Register for free</v-btn>
+          </v-card-actions>
         </v-card>
       </v-dialog>
 
