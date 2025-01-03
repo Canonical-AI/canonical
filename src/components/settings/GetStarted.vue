@@ -45,7 +45,7 @@
             </v-stepper-actions>
 
             <v-stepper-window style="max-height: 370px;" :class="{ 'overflow-y-auto': currentStep === 1 }">
-                <v-stepper-window-item value="1" key="1">
+                <v-stepper-window-item value="1" key="1-content">
                     <v-card-title>Setting up your account</v-card-title>
                     <div class="flex justify-center my-6">
                         <v-progress-circular v-if="settingUpAccount" color="primary" indeterminate :size="128" :width="11"></v-progress-circular>
@@ -58,22 +58,22 @@
                     </div>
                 </v-stepper-window-item>
 
-                <v-stepper-window-item value="2" key="2" >
-                        <v-card-title>Configure your project (you can change this later)</v-card-title>
-                        <ProjectConfig v-if="currentStep === 1" :newUserSetup="true"></ProjectConfig>
+                <v-stepper-window-item value="2" key="2-content" >
+                    <v-card-title>Configure your project (you can change this later)</v-card-title>
+                    <ProjectConfig v-if="currentStep === 1" :newUserSetup="true" @update:project="updateProject"></ProjectConfig>
                 </v-stepper-window-item>
 
-                <v-stepper-window-item value="3" key="3">
+                <v-stepper-window-item value="3" key="3-content">
                     <v-card-title>Review project</v-card-title>
                     <v-list-item-title>Project Name</v-list-item-title>
-                    <v-list-item-subtitle>{{ tempProject.name }}</v-list-item-subtitle>
+                    <v-list-item-subtitle>{{ setupProject.name }}</v-list-item-subtitle>
                     <v-list-item-title>Owner</v-list-item-title>
                     <v-list-item-subtitle>{{ $store.state.user.email }}</v-list-item-subtitle>
                     <v-list-item-title>Folders</v-list-item-title>
-                    <v-list-item-subtitle>{{ tempProject.folders.map(folder => folder.name).join(', ') }}</v-list-item-subtitle>
+                    <v-list-item-subtitle>{{ setupProject.folders.map(folder => folder.name).join(', ') }}</v-list-item-subtitle>
                 </v-stepper-window-item>
 
-                <v-stepper-window-item value="4" key="4">
+                <v-stepper-window-item value="4" key="4-content">
                     <v-card-subtitle>Tell us about your product [optional]</v-card-subtitle>
                     <v-textarea v-model="productDescription">
                     </v-textarea>
@@ -117,7 +117,10 @@ export default {
         productDescription: '',
         settingUpAccount: true,
         currentStep: 0,
-        tempProject: null
+        setupProject: {
+            name: 'My Project',
+            folders: [] 
+        }
     }),
     watch:{
         '$store.state.user.uid': {
@@ -133,7 +136,7 @@ export default {
         },
         '$store.state.tempProject': {
             handler: function(newValue) {
-                this.tempProject = newValue
+                this.setupProject = newValue
             },
             deep: true
         }
@@ -141,6 +144,9 @@ export default {
     methods: {
         startTour(){
             this.currentStep = 5
+        },
+        updateProject(project){
+            this.setupProject = project
         },
         initiateFirstDocument(){
             if(this.productDescription.length > 0){
@@ -153,11 +159,17 @@ export default {
             console.log("redirect to new doc")
         },
         async launch(){
-            const projectRef = await Project.create(this.tempProject)
-            await this.$store.commit('setProject', projectRef.id )
-            await this.$store.commit('setDefaultProject', projectRef.id)
+            try {
+                const projectRef = await Project.create(this.setupProject)
+                await this.$store.commit('setProject', projectRef.id )
+                await this.$store.commit('setDefaultProject', projectRef.id)
+            } catch (error) {
+                console.error(error)
+                return
+            }
 
             try {
+                let prompt = ''
                 if (this.productDescription.length > 0){
                     prompt = `Create a first product document, it should include basic product info like, product value proposition, target customers, key features. use the provided product description to create the document: ${this.productDescription}`
                 } else {

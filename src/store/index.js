@@ -101,7 +101,7 @@ const store = createStore({
 
       updatedFolders.sort((a, b) => a.id.localeCompare(b.id));
       const documentsInFolders = new Set(state.project.folders.flatMap(folder => folder.children));
-      const ungroupedDocuments = state.documents.filter(doc => !documentsInFolders.has(doc.id)).sort((a, b) => a.data.name.localeCompare(b.data.name));
+      const ungroupedDocuments = state.documents.filter(doc => !documentsInFolders.has(doc.id)).sort((a, b) => a.data?.name.localeCompare(b.data?.name));
       return [...updatedFolders, ...ungroupedDocuments]; // Append ungrouped documents
     },
     documentComments: (state) => {
@@ -267,7 +267,7 @@ const store = createStore({
     },
 
     async setDefaultProject(state,payload){
-      await User.setDefaultProject(state.user.uid, payload)
+      await User.setDefaultProject( payload)
       state.user.defaultProject = payload
       return
     },

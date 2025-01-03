@@ -3,7 +3,7 @@
         <div v-if="!newUserSetup">
             <v-select
                 density="compact"
-                v-model="project.name"
+                v-model="projectData.name"
                 :items="this.$store.state.projects"
                 item-title="name"
                 item-value="id"
@@ -28,7 +28,7 @@
         <v-form @submit.prevent="handleSubmit"> 
             <v-text-field 
                 density="compact" 
-                v-model="project.name" 
+                v-model="projectData.name" 
                 label="Name" 
                 required 
                 variant="solo"
@@ -77,8 +77,8 @@
                 <v-btn class="mx-1" density="compact" @click="reset()">reset</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="isNewProject" type="submit" color="primary">Initalize</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="primary">Update</v-btn>
-                <v-btn :disabled="project.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="warning">Archive</v-btn>
-                <v-btn :disabled="project.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="error">Delete</v-btn>
+                <v-btn :disabled="projectData.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="warning">Archive</v-btn>
+                <v-btn :disabled="projectData.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="error">Delete</v-btn>
             </div>
 
             <div>
@@ -143,10 +143,11 @@
 import { Project } from '../../services/firebaseDataService';
 
 export default {
+    emits: ['update:project'],
     data() {
         return {
             isNewProject: false, // Toggle state
-            project: {
+            projectData: {
                 name: '',
                 description: '',
                 users: [],
@@ -175,9 +176,15 @@ export default {
     watch: {
         selectedFolders: {
             handler(newVal) {
-                this.project.folders = newVal.map(folder => ({ name: folder, children: [] }))
+                this.projectData.folders = newVal.map(folder => ({ name: folder, children: [] }))
             },
             deep: true,
+        },
+        projectData: {
+            handler(newVal) {
+                this.$emit('update:project', JSON.parse(JSON.stringify(newVal)));
+            },
+            deep: true
         },
     },
     async mounted() {
@@ -191,21 +198,21 @@ export default {
         this.isNewProject = this.$store.state.project === null
         
         if (!this.isNewProject) {
-            this.project = { ...this.$store.state.project }
-            this.selectedFolders = this.project.folders.map(folder => folder.name);
+            this.projectData = { ...this.$store.state.project }
+            this.selectedFolders = this.projectData.folders.map(folder => folder.name);
         }
 
         // new user setup
         if(this.newUserSetup){
-            this.project = {
-                name: 'my first project',
+            this.projectData = {
+                name: 'My Project',
                 users: [this.$store.state.user.uid],
                 folders: this.folders.map(folder => ({ name: folder })), /// setup with default folders
                 owner: this.$store.state.user.uid
             }
             
             this.selectedFolders = [...this.folders];
-            this.default = { ...this.project }
+            this.default = { ...this.projectData }
             this.users = [{ ...this.$store.state.user, role: 'admin' }]
             return
         }
@@ -223,9 +230,9 @@ export default {
         async selectProject(value){
             console.log('selectProject', value)
             this.$store.commit('setProject', value)
-            this.project = { ...this.$store.state.project }
-            this.selectedFolders = this.project.folders.map(folder => folder.name);
-            this.default = { ...this.project }
+            this.projectData = { ...this.$store.state.project }
+            this.selectedFolders = this.projectData.folders.map(folder => folder.name);
+            this.default = { ...this.projectData }
             this.users = await Project.getUsersForProject(this.$store.state.project.id, true)
             this.$router.push({ path: `/settings/project/${this.$store.state.project.id}` })
         },
@@ -235,7 +242,7 @@ export default {
             console.log('setupNewProject')
             this.isNewProject = true
 
-            this.project =  {
+            this.projectData =  {
                 name: 'New Project',
                 users: [this.$store.state.user.uid],
                 folders: [],
@@ -247,14 +254,14 @@ export default {
         },
 
         setTempProject(){
-            const projectCopy = JSON.parse(JSON.stringify(this.project));
+            const projectCopy = JSON.parse(JSON.stringify(this.projectData));
            // this.$store.commit('setTempProject', projectCopy)
         },
 
         async handleSubmit() { 
             if (this.isNewProject) {
 
-                console.log('Creating new project:', this.project);
+                console.log('Creating new project:', this.projectData);
 
                 const projectRef = await Project.create(newProjectData)
                 this.$store.commit('setProject', projectRef.id )
@@ -268,8 +275,8 @@ export default {
         },
         reset(){
             console.log('reset')
-            this.project = { ...this.default }
-            this.selectedFolders = this.project.folders.map(folder => folder.name)
+            this.projectData = { ...this.default }
+            this.selectedFolders = this.projectData.folders.map(folder => folder.name)
             //todo users
         }
     }

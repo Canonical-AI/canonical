@@ -163,6 +163,7 @@ export class User{
     checkUserLoggedIn()
     const userRef = doc(db, "users", store.state.user.uid);
     await updateDoc(userRef, { defaultProject: value });
+    store.commit('alert', { type: 'info', message: 'Default project set', autoClear: true });
   }
 
    // USER PROJECTS
@@ -357,6 +358,9 @@ export class Document {
 
   
   static async getDocById(id) {
+    // TODO if not logged in check if doc is public before fetching
+
+
     // todo get if user in project
     const documentRef = doc(db, "documents", id);
     const snapshot = await getDoc(documentRef);

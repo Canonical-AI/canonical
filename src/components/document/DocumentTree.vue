@@ -52,14 +52,14 @@
                         <span v-if="el.renaming">
                             <input 
                                 :ref="'renameInput_' + el.id" 
-                                :value="el.data.name" 
+                                :value="el.data?.name" 
                                 @keyup.enter="submitRenameFolder(el, $event.target.value)" 
                                 @keyup.esc="cancelRenameFolder(el)" 
                                 @blur="cancelRenameFolder(el)" 
                                 />
                         </span>
                         <span v-else class="text-ellipsis overflow-hidden whitespace-nowrap" @click="!el.data.folder && handleItemClick(el)">
-                            {{ el.data.name }}
+                            {{ el.data?.name }}
                         </span>
 
                         <v-spacer/>
@@ -98,8 +98,8 @@
                             >
 
                             <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="child.data.draft" color="warning"></v-icon>
-                            <span class="" > {{ child.data.name }} </span>
+                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="child.data?.draft" color="warning"></v-icon>
+                            <span class="" > {{ child.data?.name }} </span>
 
                         </li>
                 </VueDraggable>
@@ -131,9 +131,9 @@
                     >
 
                     <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data.draft" color="warning"></v-icon>
+                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data?.draft" color="warning"></v-icon>
                     
-                    <span class="" >{{ el.data.name }}</span>
+                    <span class="" >{{ el.data?.name }}</span>
                 </li>
             </VueDraggable>
             </div>
