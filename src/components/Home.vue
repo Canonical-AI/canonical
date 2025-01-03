@@ -26,9 +26,10 @@
           <v-row>
             <v-col v-for="doc in favoriteDocuments" :key="doc.id" cols="12" sm="6" md="4">
               <v-card class="d-flex flex-column p-1 rounded-lg border border-surface-light" height="300" @click="goToDocument(doc.id)" :style="getRandomGradient()"> <!-- Added click event -->
-                <v-card-title><v-icon left>mdi-file-document</v-icon>   {{ doc.data.name }}</v-card-title>
-                <v-card-subtitle>{{ $dayjs(doc.data.updatedDate.seconds*1000).fromNow() }}</v-card-subtitle> <!-- Added subtitle --> 
+                <v-card-title v-if="doc.data?.name" ><v-icon left>mdi-file-document</v-icon>   {{ doc.data.name }}</v-card-title>
+                <v-card-subtitle v-if="doc.data?.updatedDate" >{{ $dayjs(doc.data.updatedDate?.seconds*1000).fromNow() }}</v-card-subtitle> <!-- Added subtitle --> 
                 <v-card-text 
+                  v-if="doc.data?.content"
                   :style="{ backgroundColor: 'rgb(var(--v-theme-surface))!important'}"  
                   class="flex-grow-1 p-3 m-1 rounded-lg border border-surface-light elevation-1 overflow-hidden h-100 doc-card whitespace-normal text-clip" 
                   v-html="renderMarkdown(doc.data.content)"></v-card-text>
@@ -67,7 +68,7 @@ export default {
     favoriteDocuments() {
       const favorites = this.$store.state.documents
         .filter(doc => this.$store.getters.isFavorite(doc.id))
-        .sort((a, b) => b.data.updatedDate.seconds - a.data.updatedDate.seconds);
+        .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds);
 
       if (favorites.length > 0) {
         return favorites;
@@ -75,9 +76,10 @@ export default {
       
       this.title = 'Recent Documents'
 
-      // If no favorites, return the 5 most recent documents
+      // If no favorites, return the 5 most recent documents only if they have content
       return this.$store.state.documents
-        .sort((a, b) => b.data.updatedDate.seconds - a.data.updatedDate.seconds)
+        .filter(doc => doc.data?.content)
+        .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds)
         .slice(0, 5);
     }, 
   },

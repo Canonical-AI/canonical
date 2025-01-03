@@ -71,9 +71,8 @@ export default {
         updateUser() {
             console.log('updateUser')
         },
-        setDefaultProject() {
-            console.log('setDefaultProject', this.user.defaultProject)
-            User.setDefaultProject(this.user.defaultProject);
+        setDefaultProject(projectId) {
+            this.$store.commit('setDefaultProject', this.user.defaultProject)
         }
     }
 }
