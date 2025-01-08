@@ -134,7 +134,7 @@
         <v-fade-transition>
             <div class="position-absolute mx-0 w-100" v-if="!isLoading" :key="editorKey">
                     <div
-                        class="position-relative top-0 left-0 right-0 w-[90%] whitespace-normal text-3xl font-bold bg-transparent text-gray-900 pl-14 -mt-2 rounded"
+                        class="position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 pl-14 -mt-2 rounded"
                         contenteditable="true"
                         :style="{ minHeight: '1em', outline: 'none' }"
                         @input="updateDocumentName"
@@ -602,6 +602,12 @@ export default {
     color: inherit !important;
     max-width: none !important;
     margin-bottom: 0px !important;
+}
+
+@media (max-width: 640px) { /* Tailwind's sm breakpoint */
+    :deep(div.ProseMirror.editor) {
+        padding-right: 4px !important;
+    }
 }
 
 :deep(.milkdown a) {
