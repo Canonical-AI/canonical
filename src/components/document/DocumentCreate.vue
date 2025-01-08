@@ -68,7 +68,7 @@
             />
     </v-navigation-drawer>
 
-    <v-app-bar class="input-container z-10" elevation="0"> 
+    <v-app-bar class="input-container z-10" elevation="0" style="padding-bottom: 0;"> 
         <VersionModal :disabled="isDisabled" :key="document.id" :versions="document.versions"/>
         <v-spacer/>
 
@@ -133,11 +133,16 @@
 
         <v-fade-transition>
             <div class="position-absolute mx-0 w-100" v-if="!isLoading" :key="editorKey">
-                    <input
-                        class="position-relative top-0 left-0 right-0 h1 w-100"
-                        v-model="document.data.name" 
-                        :disabled="isDisabled || !isEditable"
-                        />
+                    <div
+                        class="position-relative top-0 left-0 right-0 w-[90%] whitespace-normal text-3xl font-bold bg-transparent text-gray-900 pl-14 -mt-2 rounded"
+                        contenteditable="true"
+                        :style="{ minHeight: '1em', outline: 'none' }"
+                        @input="updateDocumentName"
+                        @focus="ensureContent"
+                        ref="editableDiv"
+                    >
+                    {{ document.data.name }}
+                    </div>
 
                     <MilkdownProvider v-if="!isLoading">
                             <ProsemirrorAdapterProvider>
@@ -156,7 +161,6 @@
   
 <script>
 import { ProsemirrorAdapterProvider } from '@prosemirror-adapter/vue';
-import { Document } from "../../services/firebaseDataService";
 import {marked} from 'marked'
 import comment from "../comment/comment.vue";
 import {Feedback} from "../../services/vertexAiService"
@@ -413,6 +417,23 @@ export default {
         getRandomPlaceholder() {
             const randomIndex = Math.floor(Math.random() * this.placeholders.length);
             this.currentPlaceholder = this.placeholders[randomIndex];
+        },
+
+        autoGrow(event) {
+            const textarea = event.target;
+            textarea.style.height = 'auto'; // Reset the height
+            textarea.style.height = `${textarea.scrollHeight}px`; // Set it to the scroll height
+        },
+
+        updateDocumentName(event) {
+            this.document.data.name = event.target.innerText.trim();
+        },
+
+        ensureContent() {
+            const el = this.$refs.editableDiv;
+            if (!el.innerText.trim()) {
+                el.innerHTML = '<br>'; // Ensure there's always a line break to maintain focus
+            }
         },
     },   
     computed:{
