@@ -127,8 +127,10 @@ const store = createStore({
     },
 
     async getDocuments ({ commit }) {
-      commit('setDocuments', await Document.getAll())
-      return
+      
+      const documents = await Document.getAll(); 
+      commit('setDocuments', documents);
+      return documents;
     },
 
     async selectDocument({ commit, state }, { id, version = null }) {

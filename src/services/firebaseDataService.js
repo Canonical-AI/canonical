@@ -326,7 +326,6 @@ export class Document {
       order: value.order || 1000,
       version: value.version || [],
     }
-
   }
   
   static async getAll(includeArchived = false, includeDraft = false) {

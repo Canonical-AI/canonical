@@ -129,17 +129,29 @@ export class Chat {
     // this is a back and forth chat with the "product mentor"
 
     constructor() {
-        this.initChat(); // Automatically initialize chat
+        //this.initChat(); // Automatically initialize chat
     }
 
-    async initChat( history=null) {
-        checkUserPermission() 
+    async initChat(history = null) {
 
-        if (store.state.documents.length === 0) {
-            await store.dispatch('getDocuments'); // Ensure this is awaited
+
+        if (store.state.project.id === null) {
+            await store.dispatch('enter');
         }
 
-        const documents = JSON.stringify(store.state.documents); // Get documents
+        checkUserPermission();
+
+        let documents = null;
+
+
+        if (store.state.documents.length === 0) {
+            console.log("loading documents");
+            documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
+        } else {
+            documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
+        }
+
+        
 
         this.generativeModel = getGenerativeModel(vertexAI, { 
             model: "gemini-1.5-flash",
@@ -151,9 +163,11 @@ export class Chat {
                     They have questions about their product.
                     help answer their questions. 
                     Use general best practices in product management
-                    Keep responses short under 3,4 sentances unless asked for more details`
+                    Keep responses short under 3,4 sentances unless asked for more details
+                    Be critial and honest
+                    You have full access to the project documents (in json format) and can use them to answer questions, the user shouldnt need to prompt you specifically to use them`
                 },{
-                    "text": documents 
+                    "text": JSON.stringify(documents)
                 }
             ],
             }

@@ -112,7 +112,8 @@ import {marked} from 'marked'
         async handler(){
 
           if (this.$route.params.id) {    
-            this.isLoading = true
+
+              this.isLoading = true
               const storedChatHist = await ChatHistory.getDocById(this.$route.params.id)
               this.chatHist = storedChatHist
               this.chatInstance = new Chat(); 
@@ -140,8 +141,10 @@ import {marked} from 'marked'
       '$store.getters.isUserLoggedIn':{
         async handler(isUserLoggedIn){
           if(this.$store.getters.isUserLoggedIn){
-            this.chatInstance = new Chat(); 
-            await this.chatInstance.initChat()
+            if (!this.chatInstance && !this.isLoading) {
+              this.chatInstance = new Chat(); 
+              await this.chatInstance.initChat()
+            }
           } else {
             this.$router.push({ path: '/' });
           }
@@ -159,6 +162,7 @@ import {marked} from 'marked'
       renderMarkdown(text) {
         return marked.parse(text); // Convert Markdown to HTML
       },
+
 
       async HandleChatDoc(){
         if (!this.chatHist.id) {
@@ -205,16 +209,18 @@ import {marked} from 'marked'
           let fullResponse = '';
 
           for await (const chunk of chatOut.stream) {
+            this.chatHist.data.messages[lastMessageIndex].isTyping = false;
             const chunkText = chunk.text();
-            await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (900 - 400 + 1)) + 400)); // Random delay between 400 and 900 ms
-          
-            fullResponse += chunkText;
-            this.chatHist.data.messages[lastMessageIndex].text = fullResponse;
-            this.scrollToBottom();
+            for (let char of chunkText) {
+              fullResponse += char;
+              this.chatHist.data.messages[lastMessageIndex].text = fullResponse;
+              this.scrollToBottom();
+              await new Promise(resolve => setTimeout(resolve, 15)); // Adjust the speed of typing animation
+            }
           }
 
           // Remove typing indicator after message is complete
-          this.chatHist.data.messages[lastMessageIndex].isTyping = false;
+          
           this.scrollToBottom();
 
           await this.HandleChatDoc();
@@ -265,6 +271,8 @@ import {marked} from 'marked'
 }
 
 .chat-message{
+  flex-direction: row;
+  width: 100%;
   ul,ol {
     padding-left: 1em;
   }
@@ -316,21 +324,7 @@ import {marked} from 'marked'
     justify-content: left;
 }
 
-.typing {
-  position: relative;
-  display: inline-block; /* Ensure it wraps around the text */
-}
 
-.typing > * {
-  display: inline-block; /* Ensure children are inline-block for animation */
-  animation: typing 0.5s forwards; /* Animation duration can be adjusted */
-}
-
-
-@keyframes typing {
-  from { width: 0 }
-  to { width: 100% }
-}
 
 /* .hal-avatar{
   background: radial-gradient(circle, 
