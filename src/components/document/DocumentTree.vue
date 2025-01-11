@@ -155,6 +155,7 @@ export default {
     }),
     watch: {
         filteredItems: {
+            deep: true,
             immediate: true,
             handler(newItems) {
                 this.folders = [...newItems.filter(el => el?.data?.folder === true)];

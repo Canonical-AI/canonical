@@ -37,27 +37,48 @@
         </v-col>
         <div ref="bottomElement"></div>
       </v-row>
-      <div class="fixed-bottom" style="position: sticky; bottom: 32px; left: 0; right: 0;">
-        <div class="mx-auto rounded-lg border" style="max-width: 800px;">
+      <div class="fixed-bottom" style="
+        position: sticky; 
+        bottom: 32px; 
+        left: 0; 
+        right: 0; 
+        z-index: 100; 
+        padding-top: 10px;
+        ">
+        <div class="mx-auto" style="
+          max-width: 800px;
+          max-height: 400px;
+          overflow: auto;
+        ">
           <v-textarea
             v-model="newMessage"
             @keyup.enter="sendMessage"
-            label="Type a message"
             variant="outlined"
             rows="2"
-            clearable
             auto-grow
             bg-color="rgba(var(--v-theme-surface),1)"
             hide-details
+            placeholder="I need help with..."
+            
           >
             <template v-slot:append-inner>
+              <v-fade-transition>
+              <div v-if="newMessage !== ''" style="
+                position: absolute;
+                bottom: 8px;
+                right: 8px;
+                display: flex; 
+                align-items: center;">
+                <v-btn icon='mdi-close' size="x-small" @click="newMessage = ''"></v-btn>
                 <v-btn 
-                v-if="newMessage !== ''"
-                transition="fade-transition"
-                class="text-none transition-opacity duration-500 ease-in opacity-0"
-                :class="{'opacity-100': newMessage !== ''}"
-                color="success"
-                @click="sendMessage">Send</v-btn>
+                  transition="fade-transition"
+                  class="text-none transition-opacity duration-500 ease-in opacity-0"
+                  style="margin-left: 8px;"
+                  :class="{'opacity-100': newMessage !== ''}"
+                  color="success"
+                  @click="sendMessage">Send</v-btn>
+              </div>
+            </v-fade-transition>
             </template>
         
         </v-textarea>
@@ -234,7 +255,7 @@ import {marked} from 'marked'
   };
   </script>
   
-<style>
+<style scoped>
 
 .fixed-bottom {
   position: fixed;
@@ -244,6 +265,9 @@ import {marked} from 'marked'
   z-index: 1000; /* Ensure it appears above other content */
 }
 
+.v-field__input{
+  overflow: auto;
+}
 
 .typing-indicator {
   display: inline-block;
