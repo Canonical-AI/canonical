@@ -55,7 +55,7 @@
                         </v-btn>          
                     </v-expansion-panel-title>
                     <v-expansion-panel-text>
-                        <p class="generative-feedback text-caption ma-1 pa-1" v-if="generativeFeedback !== null" v-html="renderMarkdown(generativeFeedback)"></p>
+                        <p class="generative-feedback text-sm ma-1 pa-1" v-if="generativeFeedback !== null" v-html="renderMarkdown(generativeFeedback)"></p>
                     </v-expansion-panel-text>
                 </v-expansion-panel>
             </v-expansion-panels>
@@ -150,7 +150,6 @@
                                     :disabled="isDisabled || !isEditable"
                                     v-model="editorContent"
                                     :key="editorKey"
-                                    :data-placeholder="currentPlaceholder"
                             />
                             </ProsemirrorAdapterProvider>
                     </MilkdownProvider>
@@ -617,16 +616,6 @@ export default {
 
 :deep(.milkdown p.crepe-placeholder) {
     color: rgb(var(--v-theme-on-background)) !important;
-}
-
-:deep(.editor) {
-     > p:last-of-type:has(br.ProseMirror-trailingBreak)::after {
-        content: attr(data-placeholder, "Default placeholder text"); /* Use the variable or fallback */
-        color: rgba(var(--v-theme-on-background), 0.4); 
-        pointer-events: none; /* Make it non-interactive */
-        animation: none; /* No animations */
-        display: block; /* Ensure it takes up space */
-    }
 }
 
 :deep( milkdown-slash-menu){

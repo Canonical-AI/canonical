@@ -9,7 +9,7 @@
 
 <script>
 import { Milkdown, useEditor } from '@milkdown/vue';
-import { Crepe} from '@milkdown/crepe'
+import { Crepe } from '@milkdown/crepe'
 import { nord } from '@milkdown/theme-nord'
 
 import { usePluginViewFactory , useWidgetViewFactory, useNodeViewFactory } from '@prosemirror-adapter/vue';
@@ -22,12 +22,11 @@ import { $view , $prose, $nodeSchema } from '@milkdown/utils';
 import {remarkDirective, useReferenceLink} from './reference-link'
 import { useTask } from './task'
 import { Plugin } from 'prosemirror-state';
-import {getCurrentInstance } from 'vue';
+import {getCurrentInstance, onMounted, ref} from 'vue';
 
 import {commonmark } from '@milkdown/preset-commonmark';
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-
 
 export default {
     name: "MilkdownEditor",
@@ -40,16 +39,41 @@ export default {
             type: Boolean,
             default: false
         },
+        placeholder: {
+            type: String,
+            default: 'Get your ideas out...'
+        }
     },
     setup(props, {emit}){
         const nodeViewFactory = useNodeViewFactory();
         const pluginViewFactory = usePluginViewFactory();
         const referenceLink = useReferenceLink();
         const task = useTask();
+        
+        const placeholders = [
+            'Write something...',
+            'Jot some thoughts...',
+            'Compose an idea...',
+            'write it down....',
+            'Whats on your mind?...',
+            'What are you doing dave?...',
+        ];
+        
+        const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
+        
+        onMounted(() => {
+            // Update the placeholder text when mounted
+            placeholderText.value = placeholders[Math.floor(Math.random() * placeholders.length)];
+        });
 
         const editor = useEditor((root) => {
             const crepe = new Crepe({
-                defaultValue: props.modelValue
+                defaultValue: props.modelValue,
+                featureConfigs: {
+                    [Crepe.Feature.Placeholder]: {
+                            text: placeholderText.value
+                    }
+                }
             });
 
             const editable = () => !props.disabled;
@@ -92,17 +116,7 @@ export default {
     },
     data() {
         return {
-            editor: null,
-            placeholder: 'Get your ideas out...',
-            placeholders: [
-                'Write something...',
-                'Start your story...',
-                'Share your thoughts...',
-                'Compose a message...',
-                'Get your ideas out...',
-                'What are you thinking about?',
-                'What are you doing dave?', 
-            ]
+            editor: null
         };
     },
     methods: {

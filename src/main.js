@@ -7,7 +7,6 @@ import VueGtag from "vue-gtag";
 import dayjs from "dayjs";
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'vuetify/dist/vuetify.min.css'
-import 'vue-multiselect/dist/vue-multiselect.css';
 import 'vuetify/styles'
 import './main.css'
 import { formatServerTimeStamp } from './utils';
