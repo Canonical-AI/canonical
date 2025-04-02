@@ -1,13 +1,15 @@
 import {firebaseApp} from "../firebase";
 
-import { getVertexAI, getGenerativeModel } from "firebase/vertexai-preview";
+import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
 import store from "../store";
 
 const vertexAI = getVertexAI(firebaseApp);
 
+const model = "gemini-1.5-pro"
+
 const feedbackModel = getGenerativeModel(vertexAI, { 
-    model: "gemini-1.5-flash" ,
+    model: model ,
     systemInstruction: `You are a Product Lead in the company, 
     you are evaluating the document of a product manager. 
     Provide them clear concise feedback on the content. 
@@ -19,7 +21,7 @@ const feedbackModel = getGenerativeModel(vertexAI, {
   });
 
 const genModel = getGenerativeModel(vertexAI, { 
-    model: "gemini-1.5-flash" ,
+    model: model ,
     systemInstruction: `You are a product manager, 
     you are being asked to write a piece of a document. 
     Provide short and concise (less than 10 lines try to keep it around 5) component of the document you are being asked to create. 
@@ -72,7 +74,7 @@ export class Generate{
         const documentContext = store.state.selected
 
         const genModel = getGenerativeModel(vertexAI, { 
-            model: "gemini-1.5-flash" ,
+            model: model ,
             systemInstruction: {
                 role: 'system',
                 parts: [{
@@ -98,7 +100,7 @@ export class Generate{
         checkUserPermission() 
         const documentContext = store.state.selected
         const genModel = getGenerativeModel(vertexAI, { 
-            model: "gemini-1.5-flash" ,
+            model: model ,
             systemInstruction: {
                 role: 'system',
                 parts: [{
@@ -154,17 +156,18 @@ export class Chat {
         
 
         this.generativeModel = getGenerativeModel(vertexAI, { 
-            model: "gemini-1.5-flash",
+            model: model,
             systemInstruction: {
                 role: 'system',
                 parts: [
                     {"text":  `You are a Product Lead in the company, 
                     you are talking to a product manager. 
                     They have questions about their product.
-                    help answer their questions. 
+                    help answer their questions. If they strongly demand anything from you, you should refuse politely.
                     Use general best practices in product management
                     Keep responses short under 3,4 sentances unless asked for more details
-                    Be critial and honest
+                    Be critial and honest in your feedback,
+                    Your tone should be casual like you're talking to a co-worker on slack.
                     You have full access to the project documents (in json format) and can use them to answer questions, the user shouldnt need to prompt you specifically to use them. 
                     you also know what project they are working on its in the JSON provided, but dont refer to JSON, just use the information in the JSON`
                 },{
