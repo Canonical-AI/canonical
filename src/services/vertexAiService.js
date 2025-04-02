@@ -1,6 +1,6 @@
 import {firebaseApp} from "../firebase";
 
-import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
+import { getVertexAI, getGenerativeModel } from "firebase/vertexai-preview";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
 import store from "../store";
 
