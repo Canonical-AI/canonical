@@ -3,8 +3,6 @@ import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 
 import { createVuetify } from 'vuetify';
-import { VTreeview } from 'vuetify/labs/VTreeview'; 
-import { VNumberInput } from 'vuetify/labs/VNumberInput';
 import { aliases, mdi } from 'vuetify/iconsets/mdi';
 
 
@@ -131,17 +129,13 @@ export default createVuetify({
       paper,
     }
   },
-  components: {
-    VTreeview, // Register VTreeview
-    VNumberInput
-  },
   defaults:{
     VTooltip: {
       openDelay: '300'
     }
   },
   icons: {
-    defaultSet: 'mdi', // This is already the default value - only for display purposes
+    defaultSet: 'mdi',
     aliases,
     sets: {
       mdi,
