@@ -52,12 +52,11 @@ export default {
         
         const placeholders = [
             'Write something...',
-            'Start your story...',
-            'Share your thoughts...',
-            'Compose a message...',
-            'Get your ideas out...',
-            'What are you thinking about?',
-            'What are you doing dave?',
+            'Jot some thoughts...',
+            'Compose an idea...',
+            'write it down....',
+            'Whats on your mind?...',
+            'What are you doing dave?...',
         ];
         
         const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
@@ -70,9 +69,9 @@ export default {
         const editor = useEditor((root) => {
             const crepe = new Crepe({
                 defaultValue: props.modelValue,
-                features: {
-                    placeholder: {
-                        text: placeholderText.value
+                featureConfigs: {
+                    [Crepe.Feature.Placeholder]: {
+                            text: placeholderText.value
                     }
                 }
             });
