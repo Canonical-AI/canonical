@@ -184,6 +184,12 @@ const store = createStore({
     async toggleDraft({ commit, state }) {
         state.selected.data.draft = !state.selected.data.draft;
         await Document.updateDoc(state.selected.id, state.selected.data);
+        
+        // Update the document in the documents array to reflect changes
+        const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
+        if (docIndex !== -1) {
+          state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data };
+        }
     },
 
 
@@ -374,6 +380,12 @@ const store = createStore({
       await Document.updateDoc(state.selected.id, state.selected.data);
       const newTasks = await Task.updateTasks(state.selected.id, state.selected.data);
       state.tasks = state.tasks.filter(task => task.docID !== state.selected.id).concat(newTasks);
+      
+      // Update the document in the documents array to reflect changes
+      const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
+      if (docIndex !== -1) {
+        state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data };
+      }
     },
 
     increment (state) {

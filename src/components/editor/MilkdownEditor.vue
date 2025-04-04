@@ -1,7 +1,7 @@
 <template>
         <Milkdown 
             ref="milkdown"
-            class="editor text-body-2 h-auto"
+            class="canonical-editor editor text-body-2 h-auto"
             style="min-height: 95%;"
             />
 
@@ -16,7 +16,7 @@ import { usePluginViewFactory , useWidgetViewFactory, useNodeViewFactory } from 
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import ReferenceLinkTooltip from './reference-link/ReferenceLinkTooltip.vue'
 import SlashGenerate from './SlashGenerate.vue'
-import { rootCtx , editorViewOptionsCtx} from '@milkdown/core';
+import { rootCtx , editorViewOptionsCtx, editorViewCtx } from '@milkdown/core';
 import { schemaCtx } from '@milkdown/core';
 import { $view , $prose, $nodeSchema } from '@milkdown/utils';
 import {remarkDirective, useReferenceLink} from './reference-link'
@@ -87,7 +87,25 @@ export default {
                     });
                     ctx.update(editorViewOptionsCtx, (prev) => ({
                         ...prev,
-                        editable
+                        editable,
+                        handlePaste: (view, event) => {
+                            // Only intercept if HTML br tags are present
+                            if (event.clipboardData) {
+                                const text = event.clipboardData.getData('text/plain');
+                                
+                                if (text.includes('<br')) {
+                                    event.preventDefault();
+                                    
+                                    // Clean up HTML tags only
+                                    const cleanText = text.replace(/<br\s*\/?>/gi, '\n');
+                                    
+                                    // Let Milkdown handle the markdown content normally
+                                    view.dispatch(view.state.tr.insertText(cleanText));
+                                    return true;
+                                }
+                            }
+                            return false; // Let Milkdown handle other paste events naturally
+                        }
                     }))
                 }) 
                 .use(listener)
@@ -122,6 +140,47 @@ export default {
     methods: {
         updatePlaceholder() {
             this.placeholder = this.placeholders[Math.floor(Math.random() * this.placeholders.length)];
+        },
+        processTasks(content) {
+            if (!content) return content;
+            
+            // Clean up any HTML tags
+            let processedContent = content.replace(/<br\s*\/?>/gi, '\n');
+            
+            // Remove duplicate lines
+            const lines = processedContent.split('\n').filter(line => line.trim() !== '');
+            const uniqueLines = [...new Set(lines)];
+            processedContent = uniqueLines.join('\n\n');
+            
+            return processedContent;
+        },
+        processContentBeforeRender(content) {
+            if (!content) return;
+            
+            // Clean up any HTML tags and normalize content
+            const cleanedContent = this.processTasks(content);
+            
+            // Only update if changed
+            if (cleanedContent !== content) {
+                this.$emit('update:modelValue', cleanedContent);
+            }
+        },
+        insertMarkdown(markdown) {
+            // Get the current editor instance
+            if (this.editor && this.editor.get) {
+                const editor = this.editor.get();
+                
+                // Get the editor view
+                const view = editor.ctx.get(editorViewCtx);
+                if (view) {
+                    const { from, to } = view.state.selection;
+                    const tr = view.state.tr;
+                    
+                    // Insert the markdown text at cursor position
+                    tr.insertText(markdown, from, to);
+                    view.dispatch(tr);
+                }
+            }
         }
     },
     emits:['update:modelValue'],
@@ -140,6 +199,22 @@ export default {
             } else {
                 console.log(this.editor.get())
             }
+        },
+        modelValue: {
+            immediate: true,
+            handler(newVal) {
+                if (!newVal) return;
+                
+                // Process content when it changes
+                if (newVal.includes('<br') || newVal.includes('&lt;br') || newVal.includes(':canonical-task{')) {
+                    this.processContentBeforeRender(newVal);
+                }
+            }
+        }
+    },
+    created() {
+        if (this.modelValue) {
+            this.processContentBeforeRender(this.modelValue);
         }
     }
 };

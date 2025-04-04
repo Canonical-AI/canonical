@@ -20,20 +20,20 @@ export const taskNode = $node('canonical-task', () => ({
     draggable: false,
     defining: true,
     attrs: {
-        src: { default: '' },  // Attribute for src
+        src: { default: '' },
         identity: { default: nanoid() },
-        checked: { default: false },
+        checked: { default: 'false' },
     },
     parseDOM: [{
-        tag: 'div[data-type="canonical-task"]',  // Use span to render inline content
+        tag: 'div[data-type="canonical-task"]',
         getAttrs: (dom) => {
             if (!(dom instanceof HTMLElement))
                 throw expectDomTypeError(dom)
 
             return { 
-                src: dom.dataset.src, 
-                identity: dom.dataset.identity, 
-                checked: dom.dataset.checked 
+                src: dom.dataset.src || '', 
+                identity: dom.dataset.identity || nanoid(), 
+                checked: dom.dataset.checked || 'false' 
             }
         },
     }],
@@ -48,9 +48,9 @@ export const taskNode = $node('canonical-task', () => ({
         match: node => node.type === 'textDirective' && node.name === 'canonical-task',
         runner: (state, node, type) => {
             state.addNode(type, { 
-                src: node.attributes.src, 
-                identity: node.attributes.identity, 
-                checked: node.attributes.checked 
+                src: node.attributes?.src || '', 
+                identity: node.attributes?.identity || nanoid(), 
+                checked: node.attributes?.checked || 'false' 
             });
         },
     },
@@ -86,13 +86,22 @@ function insertTask() {
     new InputRule(/\/\/todo:/i, (state, _match, start) => {
         const nodeType = taskNode.type(ctx)
         const $start = state.doc.resolve(start)
-        const newTaskNode = nodeType.create({ src: '', identity: nanoid(), checked: false })
+        const newTaskNode = nodeType.create({ 
+            src: '', 
+            identity: nanoid(), 
+            checked: 'false' 
+        })
 
-        const tr = state.tr
+        // Create the transaction
+        let tr = state.tr
                 .setMeta('task')
                 .delete(start, start + 6)
                 .replaceRangeWith(start, start, newTaskNode)
                 .insertText(' ')
+ 
+        // Move selection to after the task
+        const newPos = start + 1;
+        tr = tr.setSelection(TextSelection.create(tr.doc, newPos));
  
         return tr.scrollIntoView()
     }))

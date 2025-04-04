@@ -699,30 +699,27 @@ export class Task {
     const tasks = matches.map(match => ({
         src: match[1],
         identity: match[2],
-        checked: match[3] === 'true',
+        checked: match[3]  // Keep as string
     }));
-
 
     let updatedTasks = [];
     for (const task of tasks) {
       const storedTask = snapshot?.data()?.tasks?.find(t => t.identity=== task.identity);
-
 
       if (storedTask) {
         updatedTasks.push({
             ...task, 
             priority: storedTask?.priority || null,
             createdDate: storedTask?.createdDate || null,
-            checkDate: task.checked ? 
-              (!storedTask.checked ? { seconds: Math.floor(Date.now() / 1000) } : storedTask.checkDate) : 
+            checkDate: task.checked === 'true' ? 
+              (storedTask.checked !== 'true' ? { seconds: Math.floor(Date.now() / 1000) } : storedTask.checkDate) : 
               null
           })
-
       } else {
        updatedTasks.push({
         ...task,
         createdDate: { seconds: Math.floor(Date.now() / 1000) },
-        checkDate: task.checked ? { seconds: Math.floor(Date.now() / 1000) } : null
+        checkDate: task.checked === 'true' ? { seconds: Math.floor(Date.now() / 1000) } : null
        })
       }
     }
@@ -733,9 +730,8 @@ export class Task {
       tasks: updatedTasks
     });
 
-
-  await setDoc(tasksRef, data, { merge: true });
-  return data
+    await setDoc(tasksRef, data, { merge: true });
+    return data
   }
 
 

@@ -29,7 +29,7 @@
                                 class="text-none rounded-e-pill ml-0" 
                                 @click.stop="open = !open" 
                                 v-bind="mergeProps(menu, tooltip)">
-                                {{ selectedVersion ? selectedVersion : 'live' }}
+                                {{ currentVersion }}
                             </v-btn>
                         </template>
                     </v-tooltip>
@@ -87,6 +87,10 @@ export default {
         disabled: {
             type: Boolean,
             default: false
+        },
+        currentVersion: {
+            type: String,
+            default: 'live'
         }
     },
     computed: {
@@ -105,6 +109,14 @@ export default {
             creatingVersion: false,
             newVersion: '',
             selectedVersion: null,
+        }
+    },
+    created() {
+        this.selectedVersion = this.currentVersion;
+    },
+    watch: {
+        currentVersion(newVal) {
+            this.selectedVersion = newVal;
         }
     },
     methods: {
