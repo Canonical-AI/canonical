@@ -182,15 +182,16 @@
           {{ document.data.name }}
         </div>
 
-        <MilkdownProvider v-if="!isLoading">
-          <ProsemirrorAdapterProvider>
-            <MilkdownEditor
-              :disabled="isDisabled || !isEditable"
-              v-model="editorContent"
-              :key="editorKey"
-            />
-          </ProsemirrorAdapterProvider>
-        </MilkdownProvider>
+        <div v-if="!isLoading">
+          <MilkdownProvider v-if="showEditor">
+            <ProsemirrorAdapterProvider>
+              <MilkdownEditor
+                :disabled="isDisabled || !isEditable"
+                v-model="editorContent"
+              />
+            </ProsemirrorAdapterProvider>
+          </MilkdownProvider>
+        </div>
       </div>
     </v-fade-transition>
   </div>
@@ -269,7 +270,7 @@ export default {
     previousContent: null,
     previousTitle: null,
     previousData: null,
-    debounceSave: () => {},
+    debounceSave: null,
     isFavorite: false,
     editorKey: 0,
     fadeTransition: fadeTransition,
@@ -284,6 +285,8 @@ export default {
     ],
     currentPlaceholder: "Get your ideas out...",
     isGenPanelExpanded: null,
+    editorMounted: false,
+    showEditor: true,
   }),
   async created() {
     this.isLoading = true;
@@ -294,7 +297,7 @@ export default {
       this.fetchDocument(this.$route.params.id);
     }
     this.isLoading = false;
-    this.debounceSave = this.debounce(this.saveDocument, 5000);
+    this.debounceSave = this.debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
   },
@@ -315,17 +318,21 @@ export default {
       let timeout;
       return function () {
         clearTimeout(timeout);
-        timeout = setTimeout(() => {
+        this._savingTimeout = timeout = setTimeout(() => {
           func.apply();
         }, delay);
       };
     },
 
     async fetchDocument(id, version = null) {
+      // Unmount the editor first
+      this.showEditor = false;
+      await this.$nextTick();
+      
+      this.isLoading = true;
       await this.$store.dispatch("selectDocument", { id, version });
       const selectedDocument = this.$store.state.selected;
-
-      this.isLoading = true;
+      
       this.previousTitle = selectedDocument.data.name;
       this.previousContent = selectedDocument.data.content;
       this.previousType = selectedDocument.data.type;
@@ -333,21 +340,24 @@ export default {
         ...this.document,
         ...selectedDocument,
       };
-      this.$nextTick(); // Ensure the editor is rendered
-      this.editorKey += 1;
+      
       this.isFavorite = this.$store.getters.isFavorite(this.document.id);
       this.isEditorModified = false;
-      this.isLoading = false;
+      
       if (version) {
         this.isEditable = false;
       } else {
         this.isEditable = true;
       }
+      
       // Force focus reset after loading
-      this.$nextTick(() => {
-        // Reset any potential stuck focus state
-        document.activeElement.blur();
-      });
+      document.activeElement?.blur();
+      
+      this.isLoading = false;
+      
+      // Remount the editor after everything is loaded
+      await this.$nextTick();
+      this.showEditor = true;
     },
 
     async createDocument() {
@@ -556,7 +566,10 @@ export default {
         if (this.isEditorModified) {
           console.log("trying to save....");
           this.$store.commit("updateSelectedDocument", this.document); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
-          await this.debounceSave();
+          
+          if (this.debounceSave) {
+            await this.debounceSave();
+          }
           return;
         }
 
@@ -578,31 +591,37 @@ export default {
         if (to === from) {
           return;
         }
-
+        
+        // Unmount the editor completely
+        this.showEditor = false;
+        
+        // Wait for the next tick to ensure unmounting is complete
+        await this.$nextTick();
+        
         if (this.$route.params.id && this.$route.query.v) {
-          this.fetchDocument(this.$route.params.id, this.$route.query.v);
+          await this.fetchDocument(this.$route.params.id, this.$route.query.v);
         } else if (this.$route.params.id) {
-          this.fetchDocument(this.$route.params.id);
-          return;
+          await this.fetchDocument(this.$route.params.id);
         } else if (this.$route.path === "/document/create-document") {
           this.isLoading = true;
-          (this.document = {
+          this.document = {
             id: null,
             data: {
               name: "My New Doc..",
               content: "Hello **World**",
               draft: true,
             },
-          }),
-            (this.editorContent = this.document.data.content);
-
+          };
+          this.editorContent = this.document.data.content;
           this.previousContent = this.document.data.content;
           this.previousTitle = this.document.data.name;
           this.isEditorModified = false;
-          this.editorKey += 1;
           this.isLoading = false;
-          return;
         }
+        
+        // Remount the editor after the next tick
+        await this.$nextTick();
+        this.showEditor = true;
       },
       immediate: true,
     },
@@ -631,6 +650,29 @@ export default {
       // Force component re-render when editable state changes
       this.editorKey += 1;
     },
+  },
+  beforeRouteLeave(to, from, next) {
+    // Ensure editor is unmounted before navigation
+    this.showEditor = false;
+    
+    // Wait for the DOM to update
+    this.$nextTick(() => {
+      next();
+    });
+  },
+  beforeUnmount() {
+    // Make sure editor is fully unmounted before component is destroyed
+    this.showEditor = false;
+    
+    // Clean up resources before component is destroyed
+    if (this.debounceSave) {
+      // Cancel any pending debounced save
+      clearTimeout(this._savingTimeout);
+    }
+    
+    // Force the editor to be unmounted cleanly
+    this.editorKey = 0;
+    this.editorMounted = false;
   },
 };
 </script>
