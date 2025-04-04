@@ -89,6 +89,7 @@
       :disabled="isDisabled"
       :key="document.id"
       :versions="document.versions"
+      :current-version="$route.query.v || 'live'"
     />
     <v-spacer />
 
@@ -345,6 +346,11 @@ export default {
       } else {
         this.isEditable = true;
       }
+      // Force focus reset after loading
+      this.$nextTick(() => {
+        // Reset any potential stuck focus state
+        document.activeElement.blur();
+      });
     },
 
     async createDocument() {
@@ -489,6 +495,12 @@ export default {
       this.document.data.name = event.target.innerText.trim();
     },
 
+    async toggleDraft() {
+      await this.$store.dispatch("toggleDraft");
+      // Force update of documents list to reflect the change in tree
+      await this.$store.dispatch("getDocuments");
+    },
+
     ensureContent() {
       const el = this.$refs.editableDiv;
       if (!el.innerText.trim()) {
@@ -534,6 +546,10 @@ export default {
         if (!this.isLoading && this.document.data.name !== this.previousTitle) {
           this.previousTitle = this.document.data.name;
           this.isEditorModified = true;
+          // This will make the title change visible in the document tree
+          if (this.document.id) {
+            this.$store.commit("updateSelectedDocument", this.document);
+          }
         }
 
         // Check if content has changed
@@ -617,6 +633,11 @@ export default {
       if (newValue !== null) {
         this.isGenPanelExpanded = 0;
       }
+    },
+
+    isEditable(newValue) {
+      // Force component re-render when editable state changes
+      this.editorKey += 1;
     },
   },
 };
