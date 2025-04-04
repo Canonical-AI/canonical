@@ -324,18 +324,15 @@ export default {
     async fetchDocument(id, version = null) {
       await this.$store.dispatch("selectDocument", { id, version });
       const selectedDocument = this.$store.state.selected;
-      console.log(selectedDocument);
 
       this.isLoading = true;
       this.previousTitle = selectedDocument.data.name;
       this.previousContent = selectedDocument.data.content;
       this.previousType = selectedDocument.data.type;
-      console.log(this.document);
       this.document = {
         ...this.document,
         ...selectedDocument,
       };
-      console.log(this.document);
       this.$nextTick(); // Ensure the editor is rendered
       this.editorKey += 1;
       this.isFavorite = this.$store.getters.isFavorite(this.document.id);
@@ -370,9 +367,6 @@ export default {
       if (this.document.id === null) {
         await this.createDocument();
       } else {
-        console.log("save-doc");
-        console.log(this.$store.state.selected.data);
-        // temp disable saving while debuging
         await this.$store.commit("saveSelectedDocument");
       }
 
@@ -514,11 +508,9 @@ export default {
         this.$store.getters.isUserLoggedIn ||
         this.$store.state.project?.id != null
       ) {
-        console.log("true");
         this.isEditable = true;
         return false;
       } else {
-        console.log("false");
         this.isEditable = false;
         return true;
       }
