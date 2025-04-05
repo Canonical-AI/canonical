@@ -357,7 +357,12 @@ export default {
       
       // Remount the editor after everything is loaded
       await this.$nextTick();
-      this.showEditor = true;
+      // Give the DOM time to update and ensure mermaid diagrams have time to initialize
+      setTimeout(() => {
+        this.showEditor = true;
+        // Force editor refresh through key
+        this.editorKey += 1;
+      }, 100);
     },
 
     async createDocument() {
@@ -592,7 +597,7 @@ export default {
           return;
         }
         
-        // Unmount the editor completely
+        // Completely unmount the editor
         this.showEditor = false;
         
         // Wait for the next tick to ensure unmounting is complete
@@ -619,9 +624,12 @@ export default {
           this.isLoading = false;
         }
         
-        // Remount the editor after the next tick
+        // Allow DOM to update before showing editor
         await this.$nextTick();
-        this.showEditor = true;
+        // Force a brief pause to ensure clean mounting
+        setTimeout(() => {
+          this.showEditor = true;
+        }, 50);
       },
       immediate: true,
     },
@@ -652,8 +660,18 @@ export default {
     },
   },
   beforeRouteLeave(to, from, next) {
+    // Save any pending changes
+    if (this.isEditorModified) {
+      this.saveDocument();
+    }
+    
     // Ensure editor is unmounted before navigation
     this.showEditor = false;
+    
+    // Cancel any pending operations
+    if (this.debounceSave) {
+      clearTimeout(this._savingTimeout);
+    }
     
     // Wait for the DOM to update
     this.$nextTick(() => {
@@ -661,6 +679,11 @@ export default {
     });
   },
   beforeUnmount() {
+    // Save any pending changes
+    if (this.isEditorModified) {
+      this.saveDocument();
+    }
+    
     // Make sure editor is fully unmounted before component is destroyed
     this.showEditor = false;
     
@@ -671,7 +694,7 @@ export default {
     }
     
     // Force the editor to be unmounted cleanly
-    this.editorKey = 0;
+    this.editorKey += 1;
     this.editorMounted = false;
   },
 };

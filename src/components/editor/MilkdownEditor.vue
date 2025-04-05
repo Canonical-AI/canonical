@@ -8,23 +8,26 @@
 </template>
 
 <script>
+import {getCurrentInstance, onMounted, ref} from 'vue';
+
 import { Milkdown, useEditor } from '@milkdown/vue';
 import { Crepe } from '@milkdown/crepe'
 import { nord } from '@milkdown/theme-nord'
-
+import { clipboard } from '@milkdown/plugin-clipboard';
 import { usePluginViewFactory , useWidgetViewFactory, useNodeViewFactory } from '@prosemirror-adapter/vue';
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
-import ReferenceLinkTooltip from './reference-link/ReferenceLinkTooltip.vue'
-import SlashGenerate from './SlashGenerate.vue'
-import { rootCtx , editorViewOptionsCtx, editorViewCtx } from '@milkdown/core';
+import { rootCtx , editorViewOptionsCtx, editorViewCtx , parserCtx } from '@milkdown/core';
 import { schemaCtx } from '@milkdown/core';
-import { $view , $prose, $nodeSchema } from '@milkdown/utils';
-import {remarkDirective, useReferenceLink} from './reference-link'
-import { useTask } from './task'
-import { Plugin } from 'prosemirror-state';
-import {getCurrentInstance, onMounted, ref} from 'vue';
-
+import { $view , $prose, $nodeSchema ,} from '@milkdown/utils';
+import { Slice } from 'prosemirror-model';
 import {commonmark } from '@milkdown/preset-commonmark';
+import SlashGenerate from './SlashGenerate.vue'
+import {remarkDirective, useReferenceLink, referenceLinkNode} from './reference-link'
+import ReferenceLinkTooltip from './reference-link/ReferenceLinkTooltip.vue'
+import { useTask, taskNode } from './task'
+import { Plugin } from 'prosemirror-state';
+
+
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
 
@@ -57,6 +60,8 @@ export default {
             'write it down....',
             'Whats on your mind?...',
             'What are you doing dave?...',
+            'Type /gen to generate a new idea',
+            'Type //todo: to create a todo item',
         ];
         
         const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
@@ -89,25 +94,27 @@ export default {
                         ...prev,
                         editable,
                         handlePaste: (view, event) => {
-                            // Only intercept if HTML br tags are present
-                            if (event.clipboardData) {
-                                const text = event.clipboardData.getData('text/plain');
-                                
-                                if (text.includes('<br')) {
-                                    event.preventDefault();
-                                    
-                                    // Clean up HTML tags only
-                                    const cleanText = text.replace(/<br\s*\/?>/gi, '\n');
-                                    
-                                    // Let Milkdown handle the markdown content normally
-                                    view.dispatch(view.state.tr.insertText(cleanText));
-                                    return true;
-                                }
-                            }
-                            return false; // Let Milkdown handle other paste events naturally
+                            const parser = ctx.get(parserCtx);
+                            let text = event.clipboardData.getData('text/plain')
+                            text = text.replace(/<br\s*\/?>/gi, '')
+
+                            const slice = parser(text);
+                            if (!slice || typeof slice === 'string') return false;
+
+                            const contentSlice = view.state.selection.content();
+                            view.dispatch(
+                                view.state.tr.replaceSelection(
+                                    new Slice(slice.content, contentSlice.openStart, contentSlice.openEnd),
+                                ),
+                            );
+
+                            return true;
                         }
                     }))
                 }) 
+                .use(taskNode)
+                .use(referenceLinkNode)
+                .use(clipboard)
                 .use(listener)
                 .use(commonmark)
                 .use($prose((ctx) => new Plugin({
@@ -141,47 +148,17 @@ export default {
         updatePlaceholder() {
             this.placeholder = this.placeholders[Math.floor(Math.random() * this.placeholders.length)];
         },
-        processTasks(content) {
-            if (!content) return content;
-            
-            // Clean up any HTML tags
-            let processedContent = content.replace(/<br\s*\/?>/gi, '\n');
-            
-            // Remove duplicate lines
-            const lines = processedContent.split('\n').filter(line => line.trim() !== '');
-            const uniqueLines = [...new Set(lines)];
-            processedContent = uniqueLines.join('\n\n');
-            
-            return processedContent;
-        },
         processContentBeforeRender(content) {
             if (!content) return;
             
-            // Clean up any HTML tags and normalize content
-            const cleanedContent = this.processTasks(content);
-            
+            let cleanedContent = content.replace(/<br\s*\/?>/gi, '');
             // Only update if changed
             if (cleanedContent !== content) {
                 this.$emit('update:modelValue', cleanedContent);
             }
-        },
-        insertMarkdown(markdown) {
-            // Get the current editor instance
-            if (this.editor && this.editor.get) {
-                const editor = this.editor.get();
-                
-                // Get the editor view
-                const view = editor.ctx.get(editorViewCtx);
-                if (view) {
-                    const { from, to } = view.state.selection;
-                    const tr = view.state.tr;
-                    
-                    // Insert the markdown text at cursor position
-                    tr.insertText(markdown, from, to);
-                    view.dispatch(tr);
-                }
-            }
-        }
+        }, 
+
+
     },
     emits:['update:modelValue'],
     computed: {
@@ -206,7 +183,7 @@ export default {
                 if (!newVal) return;
                 
                 // Process content when it changes
-                if (newVal.includes('<br') || newVal.includes('&lt;br') || newVal.includes(':canonical-task{')) {
+                if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
                     this.processContentBeforeRender(newVal);
                 }
             }
