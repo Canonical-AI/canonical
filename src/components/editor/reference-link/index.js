@@ -16,8 +16,8 @@ export const referenceLinkNode = $node('canonical-ref', () => ({
     atom: true,
     marks: '',
     isolating: true,
-    selectable: false,
-    draggable: false,
+    selectable: true,
+    draggable: true,
     attrs: {
         src: { default: '' },  // Attribute for src
     },

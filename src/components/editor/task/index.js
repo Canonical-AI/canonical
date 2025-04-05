@@ -8,7 +8,6 @@ import { customAlphabet } from 'nanoid'
 
 const nanoid = customAlphabet('abcdefg', 8)
 
-
 // 2. Define the Milkdown Node for custVue
 export const taskNode = $node('canonical-task', () => ({
     group: 'inline',
@@ -16,8 +15,8 @@ export const taskNode = $node('canonical-task', () => ({
     atom: true,
     marks: '',
     isolating: true,
-    selectable: false,
-    draggable: false,
+    selectable: true,
+    draggable: true,
     defining: true,
     attrs: {
         src: { default: '' },
