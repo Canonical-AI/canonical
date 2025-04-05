@@ -1,54 +1,184 @@
 <template>
-  <v-sheet>
-      <section v-if="isLoggedIn">
-        <v-btn @click="logout">Logout</v-btn>
-      </section>
-      <section v-else id="firebaseui-auth-container"></section>
+  <v-sheet class="mx-auto " max-width="400">
+    <v-card v-if="isLoggedIn" class="pa-4">
+      <v-card-title>Your Account</v-card-title>
+      <v-card-text>
+        <div class="text-subtitle-1 mb-4">
+          <span class="text-grey">Email Address</span>
+          <div class="text-h6">{{ userEmail }}</div>
+        </div>
+        <v-btn color="error" block @click="handleSignOut">Sign Out</v-btn>
+      </v-card-text>
+    </v-card>
+
+    <v-card v-else class="">
+      <v-card-text>
+        <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
+        
+        <div class="d-flex flex-column gap-1">
+          <v-btn
+            color="white"
+            variant="outlined"
+            block
+            @click="handleSocialSignIn('google')"
+            class="mb-1"
+          >
+            <v-icon start>mdi-google</v-icon>
+            Sign In with Google
+          </v-btn>
+          
+          <v-btn
+            color="white"
+            variant="outlined"
+            block
+            @click="handleSocialSignIn('github')"
+            class="mb-1"
+          >
+            <v-icon start>mdi-github</v-icon>
+            Sign In with GitHub
+          </v-btn>
+
+          <v-btn
+            color="white"
+            variant="outlined"
+            block
+            @click="showEmailForm = !showEmailForm"
+            class="mb-1"
+          >
+            <v-icon start>mdi-email</v-icon>
+            Sign In withEmail
+          </v-btn>
+        </div>
+
+        <v-expand-transition>
+          <div v-if="showEmailForm">
+            <v-divider class="my-4"></v-divider>
+            
+            <v-form @submit.prevent="handleAuth">
+              <v-text-field
+                v-model="email"
+                label="Email"
+                type="email"
+                required
+                class="mb-4"
+              ></v-text-field>
+              
+              <v-text-field
+                v-model="password"
+                label="Password"
+                type="password"
+                required
+                class="mb-4"
+              ></v-text-field>
+              
+              <v-btn color="primary" block type="submit" class="mb-4">
+                {{ isSignUp ? 'Sign Up' : 'Sign In' }}
+              </v-btn>
+              
+              <v-btn
+                variant="text"
+                block
+                @click="isSignUp = !isSignUp"
+              >
+                {{ isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up' }}
+              </v-btn>
+            </v-form>
+          </div>
+        </v-expand-transition>
+      </v-card-text>
+    </v-card>
   </v-sheet>
 </template>
 
 <script>
-import {firebaseApp} from "../firebase";
-import { getAuth, GoogleAuthProvider, EmailAuthProvider, GithubAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import * as firebaseui from 'firebaseui'
-
-const auth = getAuth(firebaseApp);
+import { ref, computed } from 'vue';
+import { useRouter } from 'vue-router';
+import { useStore } from 'vuex';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  GithubAuthProvider, 
+  signInWithPopup,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
+import { firebaseApp } from '../firebase';
 
 export default {
-  props: {
-    registering: {
-      type: Boolean,
-      default: false
-    }
-  },
-  computed: {
-    isLoggedIn() {
-      return this.$store.getters.isLoggedIn;
-    },
-  },
-  async mounted() {
-    await setPersistence(auth, browserLocalPersistence);
-    let ui = firebaseui.auth.AuthUI.getInstance();
-    if (!ui) {ui = new firebaseui.auth.AuthUI(auth);}
-    var uiConfig = {
-      signInFlow: 'popup',
-      signInOptions: [
-        {
-          provider: GoogleAuthProvider.PROVIDER_ID,
-          customParameters: { prompt: 'select_account'}
-        },
-        GithubAuthProvider.PROVIDER_ID,
-        EmailAuthProvider.PROVIDER_ID,
-      ],
-      callbacks: {
-        signInSuccessWithAuthResult: ()=>{
-          this.$store.dispatch('enter')
-          this.$emit('login-success')
-          return
+  setup() {
+    const router = useRouter();
+    const store = useStore();
+    const auth = getAuth(firebaseApp);
+    
+    const email = ref('');
+    const password = ref('');
+    const isSignUp = ref(false);
+    const error = ref('');
+    const showEmailForm = ref(false);
+    
+    const isLoggedIn = computed(() => store.getters.isLoggedIn);
+    const userEmail = computed(() => store.state.user?.email || '');
+    
+    const handleAuth = async () => {
+      error.value = '';
+      try {
+        if (isSignUp.value) {
+          await createUserWithEmailAndPassword(auth, email.value, password.value);
+        } else {
+          await signInWithEmailAndPassword(auth, email.value, password.value);
         }
+        await store.dispatch('enter');
+        email.value = '';
+        password.value = '';
+        router.push('/');
+      } catch (err) {
+        error.value = err.message;
       }
     };
-   ui.start("#firebaseui-auth-container", uiConfig);
+    
+    const handleSignOut = async () => {
+      try {
+        await signOut(auth);
+        store.commit('logout');
+        store.commit('alert', { type: 'info', message: 'Logged out successfully', autoClear: true });
+      } catch (err) {
+        error.value = err.message;
+      }
+    };
+    
+    const handleSocialSignIn = async (provider) => {
+      error.value = '';
+      try {
+        let authProvider;
+        switch (provider) {
+          case 'google':
+            authProvider = new GoogleAuthProvider();
+            break;
+          case 'github':
+            authProvider = new GithubAuthProvider();
+            break;
+        }
+        await signInWithPopup(auth, authProvider);
+        await store.dispatch('enter');
+        router.push('/');
+      } catch (err) {
+        error.value = err.message;
+      }
+    };
+    
+    return {
+      email,
+      password,
+      isSignUp,
+      error,
+      isLoggedIn,
+      userEmail,
+      showEmailForm,
+      handleAuth,
+      handleSignOut,
+      handleSocialSignIn
+    };
   }
 };
 </script>

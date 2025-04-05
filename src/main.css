@@ -2,7 +2,6 @@
 @import "@milkdown/crepe/theme/common/style.css";
 @import "@milkdown/crepe/theme/nord.css";
 @import "@milkdown/crepe/theme/nord-dark.css";
-@import "firebaseui/dist/firebaseui.css";
 
 @tailwind base;
 @tailwind components;

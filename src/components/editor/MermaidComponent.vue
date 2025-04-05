@@ -56,7 +56,10 @@ export default {
     mermaid.initialize({ 
       startOnLoad: false,
       theme: theme?.global?.current?.value?.dark ? 'dark' : 'default',
-      look: 'handDraw'
+      securityLevel: 'loose',
+      fontFamily: "'Roboto', sans-serif",
+      logLevel: 5,
+      maxTextSize: 100000
      });
     
     // Return setAttrs so it's available in the component
@@ -64,7 +67,8 @@ export default {
       node, 
       setAttrs, 
       nodeViewContent: () => null,
-      uniqueId
+      uniqueId,
+      theme
     }
   },
   props: {
@@ -101,15 +105,36 @@ export default {
         });
       }
     },
+    'theme.global.current.value.dark'(newVal) {
+      // Re-initialize mermaid when theme changes
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: newVal ? 'dark' : 'default',
+        securityLevel: 'loose',
+        fontFamily: "'Roboto', sans-serif",
+        logLevel: 5,
+        maxTextSize: 100000
+      });
+      // Re-render diagram with new theme
+      this.renderDiagram();
+    }
   },
   methods: {
     async renderDiagram() {
       try {
-        const {svg} = await mermaid.render(this.uniqueId, this.editorContent)
-        this.renderedDiagram = svg;
+        // Clear previous rendered content
+        this.renderedDiagram = '';
+        
+        // Only attempt to render if we have content
+        if (this.editorContent.trim()) {
+          mermaid.parse(this.editorContent);
+          const {svg} = await mermaid.render(this.uniqueId, this.editorContent);
+          this.renderedDiagram = svg;
+        }
       } catch (error) {
-        if (this.editorContent != ''){
-          this.renderedDiagram = `<p>Error: ${error}</p>`;
+        console.error("Mermaid rendering error:", error);
+        if (this.editorContent.trim() !== '') {
+          this.renderedDiagram = `<p class="text-error">Error: ${error.message || error}</p>`;
         }
       }
     },
@@ -151,5 +176,25 @@ export default {
   font-weight: 800 !important;
 }
 
+:deep(svg) {
+  height: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+:deep(svg.mermaid) {
+  height: auto !important;
+  display: block !important;
+  margin: 0 auto !important;
+}
+
+:deep(.text-error) {
+  color: rgb(var(--v-theme-error));
+  padding: 8px;
+  border-radius: 4px;
+  background-color: rgba(var(--v-theme-error), 0.1);
+  margin: 8px 0;
+}
 </style>
 

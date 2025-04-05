@@ -1,12 +1,12 @@
 import {firebaseApp} from "../firebase";
 
-import { getVertexAI, getGenerativeModel } from "firebase/vertexai-preview";
+import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
 import store from "../store";
 
 const vertexAI = getVertexAI(firebaseApp);
 
-const model = "gemini-1.5-pro"
+const model = "gemini-2.0-flash-001"
 
 const feedbackModel = getGenerativeModel(vertexAI, { 
     model: model ,
