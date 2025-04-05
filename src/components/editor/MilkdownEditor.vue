@@ -8,23 +8,26 @@
 </template>
 
 <script>
+import {getCurrentInstance, onMounted, ref} from 'vue';
+
 import { Milkdown, useEditor } from '@milkdown/vue';
 import { Crepe } from '@milkdown/crepe'
 import { nord } from '@milkdown/theme-nord'
-
+import { clipboard } from '@milkdown/plugin-clipboard';
 import { usePluginViewFactory , useWidgetViewFactory, useNodeViewFactory } from '@prosemirror-adapter/vue';
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
-import ReferenceLinkTooltip from './reference-link/ReferenceLinkTooltip.vue'
-import SlashGenerate from './SlashGenerate.vue'
-import { rootCtx , editorViewOptionsCtx, editorViewCtx } from '@milkdown/core';
+import { rootCtx , editorViewOptionsCtx, editorViewCtx , parserCtx } from '@milkdown/core';
 import { schemaCtx } from '@milkdown/core';
-import { $view , $prose, $nodeSchema } from '@milkdown/utils';
-import {remarkDirective, useReferenceLink} from './reference-link'
-import { useTask } from './task'
-import { Plugin } from 'prosemirror-state';
-import {getCurrentInstance, onMounted, ref} from 'vue';
-
+import { $view , $prose, $nodeSchema ,} from '@milkdown/utils';
+import { Slice } from 'prosemirror-model';
 import {commonmark } from '@milkdown/preset-commonmark';
+import SlashGenerate from './SlashGenerate.vue'
+import {remarkDirective, useReferenceLink, referenceLinkNode} from './reference-link'
+import ReferenceLinkTooltip from './reference-link/ReferenceLinkTooltip.vue'
+import { useTask, taskNode } from './task'
+import { Plugin } from 'prosemirror-state';
+
+
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
 
@@ -57,6 +60,8 @@ export default {
             'write it down....',
             'Whats on your mind?...',
             'What are you doing dave?...',
+            'Type /gen to generate a new idea',
+            'Type //todo: to create a todo item',
         ];
         
         const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
@@ -89,60 +94,27 @@ export default {
                         ...prev,
                         editable,
                         handlePaste: (view, event) => {
-                            if (event.clipboardData) {
-                                const content = event.clipboardData.getData('text/plain');
-                                const splitRegex = /(:canonical-(?:task|ref){[^}]*})/g;
-                                const parts = content.split(splitRegex).filter(Boolean);
+                            const parser = ctx.get(parserCtx);
+                            let text = event.clipboardData.getData('text/plain')
+                            text = text.replace(/<br\s*\/?>/gi, '')
 
-                                let tr = view.state.tr;
-                                let currentPos = view.state.selection.from;
-                                let lastMatchEnd = 0;
+                            const slice = parser(text);
+                            if (!slice || typeof slice === 'string') return false;
 
-                                const nodes = []
-                                for (const part of parts) {
-                                    if (part.match(splitRegex)) {
-                                        if (part.includes('canonical-task')) {
-                                            const srcMatch = chunk.match(/src="([^"]*)"/)
-                                            const identityMatch = chunk.match(/identity="([^"]*)"/)
-                                            const checkedMatch = chunk.match(/checked="([^"]*)"/)
-                                            
-                                            const src = srcMatch ? srcMatch[1] : '';
-                                            const identity = identityMatch ? identityMatch[1] : '';
-                                            const checked = checkedMatch ? checkedMatch[1] : 'false';
-                                            
-                                            const customNode = taskNode.type(ctx).create({ 
-                                                src, 
-                                                identity, 
-                                                checked 
-                                            });
+                            const contentSlice = view.state.selection.content();
+                            view.dispatch(
+                                view.state.tr.replaceSelection(
+                                    new Slice(slice.content, contentSlice.openStart, contentSlice.openEnd),
+                                ),
+                            );
 
-                                            nodes.push(customNode)
-                                        } else if (part.includes('canonical-ref')) {
-                                            const srcMatch = chunk.match(/src="([^"]*)"/)
-                                            const src = srcMatch ? srcMatch[1] : '';
-                                            
-                                            const customNode = referenceLinkNode.type(ctx).create({ 
-                                                src,
-                                                parent: this.$store.state.selected.id 
-                                            });
-                                                // tr = tr.insertNode(customNode, view);
-                                            nodes.push(customNode)
-                                        }
-                                    } else {
-                                        nodes.push(part)
-                                    }
-                                }
-                                
-                                console.log(nodes)
-                                tr.replaceSelection(nodes.join(''));
-                                view.dispatch(tr);
-
-                                return true;
-                            }
-                            return false; // Let Milkdown handle other paste events naturally
+                            return true;
                         }
                     }))
                 }) 
+                .use(taskNode)
+                .use(referenceLinkNode)
+                .use(clipboard)
                 .use(listener)
                 .use(commonmark)
                 .use($prose((ctx) => new Plugin({
