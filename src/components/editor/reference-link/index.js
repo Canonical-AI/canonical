@@ -67,13 +67,13 @@ export const useReferenceLink = () => {
     const nodeViewFactory = useNodeViewFactory()
 
     const view = $view(referenceLinkNode,() => nodeViewFactory({
-        component: ReferenceLink
+        component: ReferenceLink,
     }))
 
     return {
         plugins: [
             referenceLinkNode,
-            insertReferenceLink,
+            insertReferenceLink(),
             view
         ].flat(),
     }

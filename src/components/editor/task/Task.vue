@@ -5,13 +5,12 @@ import { ref } from 'vue'
 
 export default {
     setup(){
-        const { node, getPos,setAttrs, view, prevState } = useNodeViewContext()
-
+        const { node, getPos,setAttrs, view, prevState, selected } = useNodeViewContext()
         const src = ref(node.value.attrs.src)
         const identity = ref(node.value.attrs.identity)
         const checked = ref(node.value.attrs.checked)
 
-        return {node, src, view, prevState, identity, checked, setAttrs, getPos}
+        return {node, src, view, prevState, identity, checked, setAttrs, getPos, selected}
     },
     data() {
         return {
