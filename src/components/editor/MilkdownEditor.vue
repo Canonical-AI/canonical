@@ -89,20 +89,55 @@ export default {
                         ...prev,
                         editable,
                         handlePaste: (view, event) => {
-                            // Only intercept if HTML br tags are present
                             if (event.clipboardData) {
-                                const text = event.clipboardData.getData('text/plain');
-                                
-                                if (text.includes('<br')) {
-                                    event.preventDefault();
-                                    
-                                    // Clean up HTML tags only
-                                    const cleanText = text.replace(/<br\s*\/?>/gi, '\n');
-                                    
-                                    // Let Milkdown handle the markdown content normally
-                                    view.dispatch(view.state.tr.insertText(cleanText));
-                                    return true;
+                                const content = event.clipboardData.getData('text/plain');
+                                const splitRegex = /(:canonical-(?:task|ref){[^}]*})/g;
+                                const parts = content.split(splitRegex).filter(Boolean);
+
+                                let tr = view.state.tr;
+                                let currentPos = view.state.selection.from;
+                                let lastMatchEnd = 0;
+
+                                const nodes = []
+                                for (const part of parts) {
+                                    if (part.match(splitRegex)) {
+                                        if (part.includes('canonical-task')) {
+                                            const srcMatch = chunk.match(/src="([^"]*)"/)
+                                            const identityMatch = chunk.match(/identity="([^"]*)"/)
+                                            const checkedMatch = chunk.match(/checked="([^"]*)"/)
+                                            
+                                            const src = srcMatch ? srcMatch[1] : '';
+                                            const identity = identityMatch ? identityMatch[1] : '';
+                                            const checked = checkedMatch ? checkedMatch[1] : 'false';
+                                            
+                                            const customNode = taskNode.type(ctx).create({ 
+                                                src, 
+                                                identity, 
+                                                checked 
+                                            });
+
+                                            nodes.push(customNode)
+                                        } else if (part.includes('canonical-ref')) {
+                                            const srcMatch = chunk.match(/src="([^"]*)"/)
+                                            const src = srcMatch ? srcMatch[1] : '';
+                                            
+                                            const customNode = referenceLinkNode.type(ctx).create({ 
+                                                src,
+                                                parent: this.$store.state.selected.id 
+                                            });
+                                                // tr = tr.insertNode(customNode, view);
+                                            nodes.push(customNode)
+                                        }
+                                    } else {
+                                        nodes.push(part)
+                                    }
                                 }
+                                
+                                console.log(nodes)
+                                tr.replaceSelection(nodes.join(''));
+                                view.dispatch(tr);
+
+                                return true;
                             }
                             return false; // Let Milkdown handle other paste events naturally
                         }
@@ -141,47 +176,17 @@ export default {
         updatePlaceholder() {
             this.placeholder = this.placeholders[Math.floor(Math.random() * this.placeholders.length)];
         },
-        processTasks(content) {
-            if (!content) return content;
-            
-            // Clean up any HTML tags
-            let processedContent = content.replace(/<br\s*\/?>/gi, '\n');
-            
-            // Remove duplicate lines
-            const lines = processedContent.split('\n').filter(line => line.trim() !== '');
-            const uniqueLines = [...new Set(lines)];
-            processedContent = uniqueLines.join('\n\n');
-            
-            return processedContent;
-        },
         processContentBeforeRender(content) {
             if (!content) return;
             
-            // Clean up any HTML tags and normalize content
-            const cleanedContent = this.processTasks(content);
-            
+            let cleanedContent = content.replace(/<br\s*\/?>/gi, '');
             // Only update if changed
             if (cleanedContent !== content) {
                 this.$emit('update:modelValue', cleanedContent);
             }
-        },
-        insertMarkdown(markdown) {
-            // Get the current editor instance
-            if (this.editor && this.editor.get) {
-                const editor = this.editor.get();
-                
-                // Get the editor view
-                const view = editor.ctx.get(editorViewCtx);
-                if (view) {
-                    const { from, to } = view.state.selection;
-                    const tr = view.state.tr;
-                    
-                    // Insert the markdown text at cursor position
-                    tr.insertText(markdown, from, to);
-                    view.dispatch(tr);
-                }
-            }
-        }
+        }, 
+
+
     },
     emits:['update:modelValue'],
     computed: {
@@ -206,7 +211,7 @@ export default {
                 if (!newVal) return;
                 
                 // Process content when it changes
-                if (newVal.includes('<br') || newVal.includes('&lt;br') || newVal.includes(':canonical-task{')) {
+                if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
                     this.processContentBeforeRender(newVal);
                 }
             }

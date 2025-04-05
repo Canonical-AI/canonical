@@ -117,6 +117,7 @@ export const useTask = () => {
         plugins: [
             taskNode,
             insertTaskInputRule,
+            insertTask,
             view
         ].flat(),
     }

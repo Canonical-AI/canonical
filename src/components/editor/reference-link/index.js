@@ -73,6 +73,7 @@ export const useReferenceLink = () => {
     return {
         plugins: [
             referenceLinkNode,
+            insertReferenceLink,
             view
         ].flat(),
     }
