@@ -149,6 +149,7 @@
 
   <div
     class="document-create position-relative top-0 left-0 right-0 h-100 ml-6"
+    @click="activateEditor"
   >
     <Transition v-bind="$fadeTransition">
       <div
@@ -186,7 +187,9 @@
           <MilkdownProvider v-if="showEditor">
             <ProsemirrorAdapterProvider>
               <MilkdownEditor
+                :key="editorKey"
                 :disabled="isDisabled || !isEditable"
+                ref="milkdownEditor"
                 v-model="editorContent"
               />
             </ProsemirrorAdapterProvider>
@@ -301,6 +304,13 @@ export default {
 
     this.getRandomPlaceholder();
   },
+  
+  mounted() {
+    // Ensure the editor gets activated after mounting
+    setTimeout(() => {
+      this.activateEditor();
+    }, 500);
+  },
 
   methods: {
     renderMarkdown(text) {
@@ -325,44 +335,50 @@ export default {
     },
 
     async fetchDocument(id, version = null) {
-      // Unmount the editor first
+      // Completely unmount the editor first to prevent state issues
       this.showEditor = false;
-      await this.$nextTick();
-      
       this.isLoading = true;
-      await this.$store.dispatch("selectDocument", { id, version });
-      const selectedDocument = this.$store.state.selected;
       
-      this.previousTitle = selectedDocument.data.name;
-      this.previousContent = selectedDocument.data.content;
-      this.previousType = selectedDocument.data.type;
-      this.document = {
-        ...this.document,
-        ...selectedDocument,
-      };
-      
-      this.isFavorite = this.$store.getters.isFavorite(this.document.id);
-      this.isEditorModified = false;
-      
-      if (version) {
-        this.isEditable = false;
-      } else {
-        this.isEditable = true;
+      try {
+        await this.$store.dispatch("selectDocument", { id, version });
+        const selectedDocument = this.$store.state.selected;
+        
+        if (!selectedDocument || !selectedDocument.data) {
+          console.error("Failed to load document or document data is missing");
+          this.isLoading = false;
+          return;
+        }
+        
+        this.previousTitle = selectedDocument.data.name || "";
+        this.previousContent = selectedDocument.data.content || "";
+        this.previousType = selectedDocument.data.type || "";
+        this.document = {
+          ...this.document,
+          ...selectedDocument,
+        };
+        
+        this.isFavorite = this.$store.getters.isFavorite(this.document.id);
+        this.isEditorModified = false;
+        
+        if (version) {
+          this.isEditable = false;
+        } else {
+          this.isEditable = true;
+        }
+      } catch (error) {
+        console.error("Error fetching document:", error);
+      } finally {
+        this.isLoading = false;
+        
+        // Force a complete component reset before remounting
+        await this.$nextTick();
+        
+        // Set a longer timeout to ensure proper initialization
+        setTimeout(() => {
+          this.showEditor = true;
+          this.editorKey++;
+        }, 200);
       }
-      
-      // Force focus reset after loading
-      document.activeElement?.blur();
-      
-      this.isLoading = false;
-      
-      // Remount the editor after everything is loaded
-      await this.$nextTick();
-      // Give the DOM time to update and ensure mermaid diagrams have time to initialize
-      setTimeout(() => {
-        this.showEditor = true;
-        // Force editor refresh through key
-        this.editorKey += 1;
-      }, 100);
     },
 
     async createDocument() {
@@ -516,6 +532,35 @@ export default {
         el.innerHTML = "<br>"; // Ensure there's always a line break to maintain focus
       }
     },
+
+    activateEditor() {
+      // Skip if loading or editor not mounted
+      if (this.isLoading || !this.showEditor) return;
+      
+      try {
+        // Use a timeout to ensure the DOM is fully rendered
+        setTimeout(() => {
+          const editorElement = document.querySelector('.ProseMirror.editor');
+          if (editorElement) {
+            // First clear any existing focus
+            document.activeElement?.blur();
+            // Then set focus to the editor
+            editorElement.focus();
+            // Ensure the cursor is visible in the editor
+            const selection = window.getSelection();
+            if (selection.rangeCount === 0) {
+              const range = document.createRange();
+              range.setStart(editorElement, 0);
+              range.collapse(true);
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+          }
+        }, 50);
+      } catch (error) {
+        console.error("Error focusing editor:", error);
+      }
+    },
   },
   computed: {
     isDisabled() {
@@ -539,6 +584,7 @@ export default {
           return;
         }
         this.document.data.content = newValue;
+        this.isEditorModified = true;
         return;
       },
     },
@@ -589,47 +635,57 @@ export default {
 
     $route: {
       async handler(to, from) {
-        if (this.isEditorModified) {
-          await this.saveDocument();
-        }
-
-        if (to === from) {
-          return;
-        }
-        
-        // Completely unmount the editor
-        this.showEditor = false;
-        
-        // Wait for the next tick to ensure unmounting is complete
-        await this.$nextTick();
-        
-        if (this.$route.params.id && this.$route.query.v) {
-          await this.fetchDocument(this.$route.params.id, this.$route.query.v);
-        } else if (this.$route.params.id) {
-          await this.fetchDocument(this.$route.params.id);
-        } else if (this.$route.path === "/document/create-document") {
-          this.isLoading = true;
-          this.document = {
-            id: null,
-            data: {
-              name: "My New Doc..",
-              content: "Hello **World**",
-              draft: true,
-            },
-          };
-          this.editorContent = this.document.data.content;
-          this.previousContent = this.document.data.content;
-          this.previousTitle = this.document.data.name;
+        try {
+          // Save any pending changes
+          if (this.isEditorModified) {
+            await this.saveDocument();
+          }
+  
+          if (to === from) {
+            return;
+          }
+          
+          // Ensure editor is completely unmounted
+          this.showEditor = false;
           this.isEditorModified = false;
+          
+          // Wait for the DOM to update
+          await this.$nextTick();
+          
+          if (this.$route.params.id && this.$route.query.v) {
+            await this.fetchDocument(this.$route.params.id, this.$route.query.v);
+          } else if (this.$route.params.id) {
+            await this.fetchDocument(this.$route.params.id);
+          } else if (this.$route.path === "/document/create-document") {
+            this.isLoading = true;
+            this.document = {
+              id: null,
+              data: {
+                name: "My New Doc..",
+                content: "Hello **World**",
+                draft: true,
+              },
+            };
+            this.editorContent = this.document.data.content;
+            this.previousContent = this.document.data.content;
+            this.previousTitle = this.document.data.name;
+            this.isEditorModified = false;
+            this.isLoading = false;
+            
+            // Ensure DOM is updated
+            await this.$nextTick();
+            
+            // Delay showing editor to ensure clean mount
+            setTimeout(() => {
+              this.showEditor = true;
+              this.editorKey++;
+            }, 200);
+          }
+        } catch (error) {
+          console.error("Error during route navigation:", error);
           this.isLoading = false;
-        }
-        
-        // Allow DOM to update before showing editor
-        await this.$nextTick();
-        // Force a brief pause to ensure clean mounting
-        setTimeout(() => {
           this.showEditor = true;
-        }, 50);
+        }
       },
       immediate: true,
     },
