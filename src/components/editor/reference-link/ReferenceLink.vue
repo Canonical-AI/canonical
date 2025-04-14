@@ -49,9 +49,17 @@ export default {
             editorDOM.addEventListener('keyup', () => this.checkSelection())
                },
         checkSelection(){
-            // TODO: check if the selection is on the node
-            console.log('selection changed')
-
+            const selection = this.view.state.selection
+            if (selection.empty === true) {
+                this.isSelected = false
+                return
+            }
+            const nodePos = this.getPos()
+            if (nodePos >= selection.from && nodePos <= selection.to) {
+                this.isSelected = true
+            } else {
+                this.isSelected = false
+            }
         },
         async createDocument() {
             this.loading = true
@@ -97,7 +105,9 @@ export default {
         v-if="newDoc === true" 
         label color="success" 
         @click="createDocument()"
-        :class="{ 'selected-node': isSelected }">
+        :class="{ 'v-chip--selected': isSelected }" 
+
+        >
         <v-progress-linear v-if="this.loading"  indeterminate  style="position: absolute; top: 0; left: 0; right: 0; z-index: 1;" />
         <v-icon icon="mdi-at" />
         {{documentName}}
@@ -106,15 +116,18 @@ export default {
         v-else 
         label color="primary" 
         @click="$router.push('/document/' + src)"
-        :class="{ 'selected-node': isSelected }">
+        :class="{ 'v-chip--selected': isSelected }"
+        >
         <v-icon icon="mdi-at" />
         {{documentName}}
     </v-chip>
 </template>
 
 <style scoped>
-.selected-node {
-    outline: 2px solid var(--v-theme-primary);
-    box-shadow: 0 0 0 2px rgba(var(--v-theme-primary-rgb), 0.4);
+.v-chip--selected {
+  background-color: rgba(var(--v-theme-primary-rgb), 0.12) !important;
+  border: thin solid currentColor !important;
+  color: rgb(var(--v-theme-primary-rgb)) !important;
+  font-weight: 500;
 }
 </style>
