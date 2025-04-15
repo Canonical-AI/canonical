@@ -20,7 +20,7 @@
       
       
         <v-app-bar-title>
-          <v-btn variant="text" to="/"> Canonical <strong>[BETA]</strong></v-btn>
+          <v-btn variant="text" to="/"> Canonical </v-btn>
         </v-app-bar-title>
         <v-spacer v-if="!$vuetify.display.mobile"></v-spacer>
 

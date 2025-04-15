@@ -46,7 +46,7 @@
             class="mb-1"
           >
             <v-icon start>mdi-email</v-icon>
-            Sign In withEmail
+            Sign In with Email
           </v-btn>
         </div>
 
@@ -159,11 +159,27 @@ export default {
             authProvider = new GithubAuthProvider();
             break;
         }
-        await signInWithPopup(auth, authProvider);
-        await store.dispatch('enter');
-        router.push('/');
+        await signInWithPopup(auth, authProvider).then(
+          (userCred) => {
+            console.log(userCred);
+            store.dispatch('enter');
+            router.push('/');
+          }
+        );
       } catch (err) {
-        error.value = err.message;
+        console.error('Auth error details:', err.code, err);
+        if (err.code === 'auth/account-exists-with-different-credential') {
+          // Get the email from the error
+          const email = err.customData?.email;
+          if (email) {
+            // Check if we can sign in with Google instead
+            error.value = `An account with email ${email} already exists. Try signing in with Google or email instead.`;
+          } else {
+            error.value = 'An account already exists with the same email address but different sign-in credentials. Try signing in using another method.';
+          }
+        } else {
+          error.value = err.message;
+        }
       }
     };
     
