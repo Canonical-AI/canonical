@@ -109,6 +109,14 @@ export default {
                             );
 
                             return true;
+                        },
+                        // Fix cursor position issue on mobile
+                        handleDOMEvents: {
+                            touchstart: (view, event) => {
+                                // Prevent cursor from jumping to beginning
+                                event.stopPropagation();
+                                return false;
+                            }
                         }
                     }))
                 }) 
@@ -199,5 +207,31 @@ export default {
   
   <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style>
-
+/* Make editor text smaller on mobile devices */
+@media (max-width: 600px) {
+    .canonical-editor {
+        font-size: 0.7rem !important;
+    }
+    
+    .canonical-editor .ProseMirror p,
+    .canonical-editor .ProseMirror h1,
+    .canonical-editor .ProseMirror h2,
+    .canonical-editor .ProseMirror h3,
+    .canonical-editor .ProseMirror ul,
+    .canonical-editor .ProseMirror ol {
+        font-size: 0.7rem !important;
+    }
+    
+    .canonical-editor .ProseMirror h1 {
+        font-size: 1.0rem !important;
+    }
+    
+    .canonical-editor .ProseMirror h2 {
+        font-size: 0.9rem !important;
+    }
+    
+    .canonical-editor .ProseMirror h3 {
+        font-size: 0.8rem !important;
+    }
+}
 </style>

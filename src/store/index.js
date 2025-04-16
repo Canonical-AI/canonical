@@ -1,4 +1,5 @@
 import { createStore } from 'vuex'
+import router from '../router'
 //import {product, persona} from '../services/firebaseDataService'
 import {User, Document, Template, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 
@@ -136,24 +137,35 @@ const store = createStore({
     async selectDocument({ commit, state }, { id, version = null }) {
       commit('setSelectedDocument', { ...state.selected, isLoading: true });
 
-      let selectedData;
-      if (version) {
-        let selectedBase = await Document.getDocById(id);
-        let selectedVersion = await Document.getDocVersion(id, version);
-        selectedBase.data = selectedVersion.content
-        selectedData = selectedBase
-      } else {
-        selectedData = await Document.getDocById(id);
-      }
+      try {
+        let selectedData;
+        if (version) {
+          let selectedBase = await Document.getDocById(id);
+          let selectedVersion = await Document.getDocVersion(id, version);
+          selectedBase.data = selectedVersion.content;
+          selectedData = selectedBase;
+        } else {
+          selectedData = await Document.getDocById(id);
+        }
 
-      if (typeof selectedData.data === "undefined") {
-        commit("alert", { type: "error", message: `${id} not found` });
+        if (typeof selectedData.data === "undefined") {
+          commit("alert", { type: "error", message: `${id} not found` });
+          commit('setSelectedDocument', { ...state.selected, isLoading: false });
+          return;
+        }
+
+        commit('setSelectedDocument', { ...selectedData, isLoading: false });
+        return selectedData; // Return the selected data
+      } catch (error) {
+        console.error("Error selecting document:", error);
+        // The alert for permission errors is already handled in the Document.getDocById method
         commit('setSelectedDocument', { ...state.selected, isLoading: false });
-        return;
+        // Push to home page if document access is denied
+        if (error.message.includes('Permission denied')) {
+          router.push('/');
+        }
+        return null;
       }
-
-      commit('setSelectedDocument', { ...selectedData, isLoading: false });
-      return selectedData; // Return the selected data
     },
 
     async deleteDocument({ commit }, { id }) {

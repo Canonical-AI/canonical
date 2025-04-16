@@ -340,12 +340,24 @@ export default {
       this.isLoading = true;
       
       try {
-        await this.$store.dispatch("selectDocument", { id, version });
+        const result = await this.$store.dispatch("selectDocument", { id, version });
+        // If document selection returned null, it indicates a permission error that was already handled
+        if (result === null) {
+          this.isLoading = false;
+          // No need to continue processing as the user will be redirected
+          return;
+        }
+        
         const selectedDocument = this.$store.state.selected;
         
         if (!selectedDocument || !selectedDocument.data) {
           console.error("Failed to load document or document data is missing");
           this.isLoading = false;
+          this.$store.commit("alert", { 
+            type: "error", 
+            message: "Unable to load document. It may have been deleted or you don't have permission." 
+          });
+          this.$router.push('/');
           return;
         }
         
@@ -367,17 +379,25 @@ export default {
         }
       } catch (error) {
         console.error("Error fetching document:", error);
+        this.$store.commit("alert", { 
+          type: "error", 
+          message: "An error occurred while loading the document. Please try again." 
+        });
+        this.$router.push('/');
       } finally {
         this.isLoading = false;
         
-        // Force a complete component reset before remounting
-        await this.$nextTick();
-        
-        // Set a longer timeout to ensure proper initialization
-        setTimeout(() => {
-          this.showEditor = true;
-          this.editorKey++;
-        }, 200);
+        // Check if document was successfully loaded before mounting editor
+        if (this.document && this.document.data) {
+          // Force a complete component reset before remounting
+          await this.$nextTick();
+          
+          // Set a longer timeout to ensure proper initialization
+          setTimeout(() => {
+            this.showEditor = true;
+            this.editorKey++;
+          }, 200);
+        }
       }
     },
 
