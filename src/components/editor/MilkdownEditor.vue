@@ -113,19 +113,8 @@ export default {
                         // Fix cursor position issue on mobile
                         handleDOMEvents: {
                             touchstart: (view, event) => {
-                                // Don't stop propagation completely, but prevent default cursor behavior
-                                if (event.target.closest('.ProseMirror')) {
-                                    // Only prevent default if we're actually in the editor
-                                    event.preventDefault();
-                                    return false; // Let ProseMirror handle the event
-                                }
-                                return false;
-                            },
-                            touchend: (view, event) => {
-                                // Ensure cursor position is maintained after touch
-                                if (event.target.closest('.ProseMirror')) {
-                                    return false; // Let ProseMirror handle the event
-                                }
+                                // Prevent cursor from jumping to beginning
+                                event.stopPropagation();
                                 return false;
                             }
                         }
@@ -160,7 +149,8 @@ export default {
     },
     data() {
         return {
-            editor: null
+            editor: null,
+            lastSelection: null
         };
     },
     methods: {
@@ -175,9 +165,46 @@ export default {
             if (cleanedContent !== content) {
                 this.$emit('update:modelValue', cleanedContent);
             }
-        }, 
-
-
+        },
+        // Preserve editor selection on mobile
+        preserveEditorSelection() {
+            const editorInstance = this.editor?.get();
+            if (!editorInstance) return;
+            
+            // Get editor view
+            const editorView = editorInstance.ctx.get(editorViewCtx);
+            if (!editorView) return;
+            
+            // Create a plugin that prevents jumping to position 0
+            const preserveSelectionPlugin = new Plugin({
+                key: 'preserveSelectionPlugin',
+                view: () => {
+                    return {
+                        update: (view, prevState) => {
+                            // If selection is at position 0 and we had a previous non-zero selection
+                            if (view.state.selection.from === 0 && 
+                                view.state.selection.empty && 
+                                prevState && prevState.selection.from > 0) {
+                                    
+                                // Restore previous valid selection
+                                setTimeout(() => {
+                                    const tr = view.state.tr.setSelection(prevState.selection);
+                                    view.dispatch(tr);
+                                }, 0);
+                            }
+                        }
+                    };
+                }
+            });
+            
+            // Add the plugin directly to the ProseMirror state
+            const plugins = editorView.state.plugins.slice();
+            plugins.push(preserveSelectionPlugin);
+            
+            // Create a new state with our plugin
+            const newState = editorView.state.reconfigure({ plugins });
+            editorView.updateState(newState);
+        }
     },
     emits:['update:modelValue'],
     computed: {
@@ -212,6 +239,12 @@ export default {
         if (this.modelValue) {
             this.processContentBeforeRender(this.modelValue);
         }
+    },
+    mounted() {
+        // Apply selection preservation after editor is mounted
+        this.$nextTick(() => {
+            this.preserveEditorSelection();
+        });
     }
 };
 </script>

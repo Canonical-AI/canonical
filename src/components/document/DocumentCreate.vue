@@ -395,7 +395,10 @@ export default {
           // Set a longer timeout to ensure proper initialization
           setTimeout(() => {
             this.showEditor = true;
-            this.editorKey++;
+            // Don't increment editorKey on mobile as it causes cursor position issues
+            if (!this.$vuetify.display.mobile) {
+              this.editorKey++;
+            }
           }, 200);
         }
       }
@@ -698,7 +701,10 @@ export default {
             // Delay showing editor to ensure clean mount
             setTimeout(() => {
               this.showEditor = true;
-              this.editorKey++;
+              // Don't increment editorKey on mobile as it causes cursor position issues
+              if (!this.$vuetify.display.mobile) {
+                this.editorKey++;
+              }
             }, 200);
           }
         } catch (error) {
@@ -732,7 +738,10 @@ export default {
 
     isEditable(newValue) {
       // Force component re-render when editable state changes
-      this.editorKey += 1;
+      // Don't increment editorKey on mobile as it causes cursor position issues
+      if (!this.$vuetify.display.mobile) {
+        this.editorKey += 1;
+      }
     },
   },
   beforeRouteLeave(to, from, next) {
