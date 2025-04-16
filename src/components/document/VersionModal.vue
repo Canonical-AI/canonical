@@ -15,7 +15,7 @@
                                 v-bind="tooltip" 
                                 :color="$store.state.selected.data.draft ? 'orange' : undefined" 
                                 :text-color="$store.state.selected.data.draft ? 'white' : undefined" 
-                                class="mx-3 mr-0 text-none rounded-s-pill" 
+                                class="mx-1 mr-0 text-none rounded-s-pill" 
                                 @click="toggleDraft()">
                                 {{ $store.state.selected.data.draft ? 'Staged' : 'Released' }}
                             </v-btn>
