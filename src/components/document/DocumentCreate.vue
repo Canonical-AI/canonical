@@ -565,24 +565,55 @@ export default {
         setTimeout(() => {
           const editorElement = document.querySelector('.ProseMirror.editor');
           if (editorElement) {
-            // First clear any existing focus
-            document.activeElement?.blur();
-            // Then set focus to the editor
-            editorElement.focus();
-            // Ensure the cursor is visible in the editor
-            const selection = window.getSelection();
-            if (selection.rangeCount === 0) {
-              const range = document.createRange();
-              range.setStart(editorElement, 0);
-              range.collapse(true);
-              selection.removeAllRanges();
-              selection.addRange(range);
+            // On mobile, just focus the editor without manipulating selection
+            if (this.$vuetify.display.mobile) {
+              // Only focus if not already focused to avoid triggering on-screen keyboard unnecessarily
+              if (document.activeElement !== editorElement) {
+                editorElement.focus();
+              }
+            } else {
+              // Desktop behavior: clear focus, then set focus with cursor
+              document.activeElement?.blur();
+              editorElement.focus();
+              
+              // Only set cursor position if there's no existing selection
+              const selection = window.getSelection();
+              if (selection.rangeCount === 0) {
+                // Find a text node to place cursor in rather than at element position 0
+                const textNode = this.findFirstTextNode(editorElement);
+                if (textNode) {
+                  const range = document.createRange();
+                  // Place cursor at end of text rather than beginning
+                  range.setStart(textNode, textNode.textContent.length);
+                  range.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                }
+              }
             }
           }
         }, 50);
       } catch (error) {
         console.error("Error focusing editor:", error);
       }
+    },
+    
+    // Helper function to find the first text node in the editor
+    findFirstTextNode(element) {
+      // If this is a text node, return it
+      if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
+        return element;
+      }
+      
+      // Otherwise, recursively search for text nodes
+      for (let i = 0; i < element.childNodes.length; i++) {
+        const textNode = this.findFirstTextNode(element.childNodes[i]);
+        if (textNode) {
+          return textNode;
+        }
+      }
+      
+      return null;
     },
   },
   computed: {
