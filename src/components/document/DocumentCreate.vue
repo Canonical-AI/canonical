@@ -42,15 +42,6 @@
     </v-card-actions>
     <v-divider></v-divider>
 
-    <!-- <v-list-item>
-                <v-btn
-                :disabled="!$store.getters.isUserLoggedIn"
-                class="text-none gen-btn"
-                @click="sendPromptToVertexAI()"
-                density="compact" >Generate Feedback</v-btn>
-            </v-list-item>
-            <p class="generative-feedback text-caption border-thin rounded ma-1 pa-1" v-if="generativeFeedback !== null" v-html="renderMarkdown(generativeFeedback)"></p>  -->
-
     <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
       <v-expansion-panel>
         <v-expansion-panel-title>
@@ -173,11 +164,12 @@
         :key="editorKey"
       >
         <div
-          class="position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 pl-14 -mt-2 rounded"
+          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
           contenteditable="true"
           :style="{ minHeight: '1em', outline: 'none' }"
           @input="updateDocumentName"
           @focus="ensureContent"
+          @click.stop
           ref="editableDiv"
         >
           {{ document.data.name }}
@@ -340,12 +332,24 @@ export default {
       this.isLoading = true;
       
       try {
-        await this.$store.dispatch("selectDocument", { id, version });
+        const result = await this.$store.dispatch("selectDocument", { id, version });
+        // If document selection returned null, it indicates a permission error that was already handled
+        if (result === null) {
+          this.isLoading = false;
+          // No need to continue processing as the user will be redirected
+          return;
+        }
+        
         const selectedDocument = this.$store.state.selected;
         
         if (!selectedDocument || !selectedDocument.data) {
           console.error("Failed to load document or document data is missing");
           this.isLoading = false;
+          this.$store.commit("alert", { 
+            type: "error", 
+            message: "Unable to load document. It may have been deleted or you don't have permission." 
+          });
+          this.$router.push('/');
           return;
         }
         
@@ -367,17 +371,28 @@ export default {
         }
       } catch (error) {
         console.error("Error fetching document:", error);
+        this.$store.commit("alert", { 
+          type: "error", 
+          message: "An error occurred while loading the document. Please try again." 
+        });
+        this.$router.push('/');
       } finally {
         this.isLoading = false;
         
-        // Force a complete component reset before remounting
-        await this.$nextTick();
-        
-        // Set a longer timeout to ensure proper initialization
-        setTimeout(() => {
-          this.showEditor = true;
-          this.editorKey++;
-        }, 200);
+        // Check if document was successfully loaded before mounting editor
+        if (this.document && this.document.data) {
+          // Force a complete component reset before remounting
+          await this.$nextTick();
+          
+          // Set a longer timeout to ensure proper initialization
+          setTimeout(() => {
+            this.showEditor = true;
+            // Don't increment editorKey on mobile as it causes cursor position issues
+            if (!this.$vuetify.display.mobile) {
+              this.editorKey++;
+            }
+          }, 200);
+        }
       }
     },
 
@@ -542,24 +557,55 @@ export default {
         setTimeout(() => {
           const editorElement = document.querySelector('.ProseMirror.editor');
           if (editorElement) {
-            // First clear any existing focus
-            document.activeElement?.blur();
-            // Then set focus to the editor
-            editorElement.focus();
-            // Ensure the cursor is visible in the editor
-            const selection = window.getSelection();
-            if (selection.rangeCount === 0) {
-              const range = document.createRange();
-              range.setStart(editorElement, 0);
-              range.collapse(true);
-              selection.removeAllRanges();
-              selection.addRange(range);
+            // On mobile, just focus the editor without manipulating selection
+            if (this.$vuetify.display.mobile) {
+              // Only focus if not already focused to avoid triggering on-screen keyboard unnecessarily
+              if (document.activeElement !== editorElement) {
+                editorElement.focus();
+              }
+            } else {
+              // Desktop behavior: clear focus, then set focus with cursor
+              document.activeElement?.blur();
+              editorElement.focus();
+              
+              // Only set cursor position if there's no existing selection
+              const selection = window.getSelection();
+              if (selection.rangeCount === 0) {
+                // Find a text node to place cursor in rather than at element position 0
+                const textNode = this.findFirstTextNode(editorElement);
+                if (textNode) {
+                  const range = document.createRange();
+                  // Place cursor at end of text rather than beginning
+                  range.setStart(textNode, textNode.textContent.length);
+                  range.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                }
+              }
             }
           }
         }, 50);
       } catch (error) {
         console.error("Error focusing editor:", error);
       }
+    },
+    
+    // Helper function to find the first text node in the editor
+    findFirstTextNode(element) {
+      // If this is a text node, return it
+      if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
+        return element;
+      }
+      
+      // Otherwise, recursively search for text nodes
+      for (let i = 0; i < element.childNodes.length; i++) {
+        const textNode = this.findFirstTextNode(element.childNodes[i]);
+        if (textNode) {
+          return textNode;
+        }
+      }
+      
+      return null;
     },
   },
   computed: {
@@ -678,7 +724,10 @@ export default {
             // Delay showing editor to ensure clean mount
             setTimeout(() => {
               this.showEditor = true;
-              this.editorKey++;
+              // Don't increment editorKey on mobile as it causes cursor position issues
+              if (!this.$vuetify.display.mobile) {
+                this.editorKey++;
+              }
             }, 200);
           }
         } catch (error) {
@@ -712,7 +761,10 @@ export default {
 
     isEditable(newValue) {
       // Force component re-render when editable state changes
-      this.editorKey += 1;
+      // Don't increment editorKey on mobile as it causes cursor position issues
+      if (!this.$vuetify.display.mobile) {
+        this.editorKey += 1;
+      }
     },
   },
   beforeRouteLeave(to, from, next) {
@@ -815,10 +867,19 @@ export default {
   margin-bottom: 0px !important;
 }
 
+.document-title{
+  padding-left: 3.5rem !important;
+}
+
 @media (max-width: 640px) {
   /* Tailwind's sm breakpoint */
+
+  .document-title{
+    padding-left: 0px !important;
+  }
+
   :deep(div.ProseMirror.editor) {
-    padding-right: 4px !important;
+    padding: 8px 8px !important;
   }
 }
 
@@ -861,6 +922,12 @@ export default {
 
 :deep(milkdown-toolbar *) {
   font-size: 0.95em !important;
+}
+
+@media (max-width: 640px) {
+  :deep(milkdown-block-handle) {
+    display: none !important;
+  }
 }
 
 .editor-container {

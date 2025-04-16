@@ -5,7 +5,8 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"dev-local": "vite --host"
 	},
 	"dependencies": {
 		"@mdi/font": "5.9.55",

@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaV3Provider, getToken } from "firebase/app-check";
+import { getAnalytics, setAnalyticsCollectionEnabled } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,6 +15,11 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 
+// Initialize Firebase Analytics
+const analytics = getAnalytics(firebaseApp);
+// Enable analytics collection
+setAnalyticsCollectionEnabled(analytics, true);
+
 if(location.hostname === 'localhost') {
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 }
@@ -25,10 +31,10 @@ const appCheck = initializeAppCheck(firebaseApp, {
 
 getToken(appCheck)
   .then(() => {
-    console.log("success")
+    
   })
   .catch((error) => {
     console.log(error.message)
   })
 
-export { firebaseApp, appCheck };
+export { firebaseApp, appCheck, analytics };

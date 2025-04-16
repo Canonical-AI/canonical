@@ -71,6 +71,8 @@ export default {
             placeholderText.value = placeholders[Math.floor(Math.random() * placeholders.length)];
         });
 
+        const isMobile = () => window.innerWidth <= 600;
+
         const editor = useEditor((root) => {
             const crepe = new Crepe({
                 defaultValue: props.modelValue,
@@ -78,6 +80,7 @@ export default {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
                     }
+ 
                 }
             });
 
@@ -109,6 +112,14 @@ export default {
                             );
 
                             return true;
+                        },
+                        // Fix cursor position issue on mobile
+                        handleDOMEvents: {
+                            touchstart: (view, event) => {
+                                // Prevent cursor from jumping to beginning
+                                event.stopPropagation();
+                                return false;
+                            }
                         }
                     }))
                 }) 
@@ -141,7 +152,8 @@ export default {
     },
     data() {
         return {
-            editor: null
+            editor: null,
+            lastSelection: null
         };
     },
     methods: {
@@ -156,9 +168,46 @@ export default {
             if (cleanedContent !== content) {
                 this.$emit('update:modelValue', cleanedContent);
             }
-        }, 
-
-
+        },
+        // Preserve editor selection on mobile
+        preserveEditorSelection() {
+            const editorInstance = this.editor?.get();
+            if (!editorInstance) return;
+            
+            // Get editor view
+            const editorView = editorInstance.ctx.get(editorViewCtx);
+            if (!editorView) return;
+            
+            // Create a plugin that prevents jumping to position 0
+            const preserveSelectionPlugin = new Plugin({
+                key: 'preserveSelectionPlugin',
+                view: () => {
+                    return {
+                        update: (view, prevState) => {
+                            // If selection is at position 0 and we had a previous non-zero selection
+                            if (view.state.selection.from === 0 && 
+                                view.state.selection.empty && 
+                                prevState && prevState.selection.from > 0) {
+                                    
+                                // Restore previous valid selection
+                                setTimeout(() => {
+                                    const tr = view.state.tr.setSelection(prevState.selection);
+                                    view.dispatch(tr);
+                                }, 0);
+                            }
+                        }
+                    };
+                }
+            });
+            
+            // Add the plugin directly to the ProseMirror state
+            const plugins = editorView.state.plugins.slice();
+            plugins.push(preserveSelectionPlugin);
+            
+            // Create a new state with our plugin
+            const newState = editorView.state.reconfigure({ plugins });
+            editorView.updateState(newState);
+        }
     },
     emits:['update:modelValue'],
     computed: {
@@ -193,11 +242,50 @@ export default {
         if (this.modelValue) {
             this.processContentBeforeRender(this.modelValue);
         }
+    },
+    mounted() {
+        // Apply selection preservation after editor is mounted
+        this.$nextTick(() => {
+            this.preserveEditorSelection();
+        });
     }
 };
 </script>
   
   <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style>
+/* Make editor text smaller on mobile devices */
+@media (max-width: 600px) {
+    .canonical-editor {
+        font-size: 0.7rem !important;
+    }
+    
+    .canonical-editor .ProseMirror p,
+    .canonical-editor .ProseMirror ul,
+    .canonical-editor .ProseMirror ol {
+        font-size: 0.85rem !important; /* Slightly larger to prevent zoom */
+    }
+    
+    .canonical-editor .ProseMirror h1 {
+        font-size: 2.5rem !important;
+    }
+    
+    .canonical-editor .ProseMirror h2 {
+        font-size: 1.3rem !important;
+    }
+    
+    .canonical-editor .ProseMirror h3 {
+        font-size: 1.0rem !important;
+    }
+    
+    /* Add touch-action to prevent browser gestures from interfering */
+    .canonical-editor .ProseMirror {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+    }
 
+    .canonical-editor .ProseMirror-focused {
+        outline: none;
+    }
+}
 </style>

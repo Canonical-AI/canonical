@@ -357,28 +357,74 @@ export class Document {
 
   
   static async getDocById(id) {
-    // TODO if not logged in check if doc is public before fetching
-
-
-    // todo get if user in project
+    // Get document ref first to use in the permission checks
     const documentRef = doc(db, "documents", id);
-    const snapshot = await getDoc(documentRef);
-
+    
+    // Get basic document data to check permissions
+    const docSnapshot = await getDoc(documentRef);
+    
+    if (!docSnapshot.exists()) {
+      throw new Error(`Document with ID ${id} not found`);
+    }
+    
+    const docData = docSnapshot.data();
+    const isUserLoggedIn = store.getters.isUserLoggedIn;
+    
+    // Permission check 1: Check if user is not logged in and document is in draft mode
+    if (!isUserLoggedIn && docData.draft) {
+      store.commit('alert', { 
+        type: 'error', 
+        message: 'This document is not publicly available. Please sign in to view it.' 
+      });
+      throw new Error('Permission denied: Document is not public and user is not logged in');
+    }
+    
+    // Permission check 2: If user is logged in, check additional permissions
+    if (isUserLoggedIn) {
+      const currentUserId = store.state.user.uid;
+      
+      // If document is in draft mode, check if user is the creator
+      if (docData.draft && docData.createdBy !== currentUserId) {
+        store.commit('alert', { 
+          type: 'error', 
+          message: 'This document is a draft and can only be viewed by its creator.' 
+        });
+        throw new Error('Permission denied: Draft document can only be viewed by creator');
+      }
+      
+      // Check if user is in the document's project
+      const projectId = docData.project;
+      if (projectId) {
+        // Get user's projects
+        const userProjects = store.state.user.projects || [];
+        
+        // Check if user is in the document's project
+        if (!userProjects.includes(projectId)) {
+          store.commit('alert', { 
+            type: 'error', 
+            message: 'You do not have access to this document. Please contact the project administrator.' 
+          });
+          throw new Error('Permission denied: User is not a member of the document\'s project');
+        }
+      }
+    }
+    
+    // All permission checks passed, get full document data
     const versionsRef = collection(documentRef, "versions");
-    const versionsSnapshot =  await getDocs(versionsRef);
-
+    const versionsSnapshot = await getDocs(versionsRef);
+    
     const commentsRef = collection(documentRef, "comments");
     const commentsSnapshot = await getDocs(commentsRef);
-
+    
     return {
-      id: snapshot.id,
-      data: snapshot.data(),
+      id: docSnapshot.id,
+      data: docData,
       versions: versionsSnapshot.docs.map(doc => ({
-          id: doc.id, 
-          ...doc.data()
-        })),
+        id: doc.id, 
+        ...doc.data()
+      })),
       comments: commentsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}))
-    }
+    };
   }
   
   static async create(value) {

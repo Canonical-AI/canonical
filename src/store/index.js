@@ -1,4 +1,5 @@
 import { createStore } from 'vuex'
+import router from '../router'
 //import {product, persona} from '../services/firebaseDataService'
 import {User, Document, Template, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 
@@ -37,6 +38,7 @@ const store = createStore({
         defaultProject: null,
         projects: []
       },
+      loadingUser: true,
       project: {
         id: null,
         folders: [],
@@ -112,11 +114,13 @@ const store = createStore({
   },
   actions: {
     async enter({ commit , state}) {
+      await commit('setLoadingUser', true);
       const user = await User.getUserAuth();
       if (user) {
         await commit('setUserData', user);
         await commit('setProject', user.defaultProject)
       } 
+      await commit('setLoadingUser', false);
     },
 
     async createDocument({ commit, state }, { data , select = true}) {
@@ -136,24 +140,35 @@ const store = createStore({
     async selectDocument({ commit, state }, { id, version = null }) {
       commit('setSelectedDocument', { ...state.selected, isLoading: true });
 
-      let selectedData;
-      if (version) {
-        let selectedBase = await Document.getDocById(id);
-        let selectedVersion = await Document.getDocVersion(id, version);
-        selectedBase.data = selectedVersion.content
-        selectedData = selectedBase
-      } else {
-        selectedData = await Document.getDocById(id);
-      }
+      try {
+        let selectedData;
+        if (version) {
+          let selectedBase = await Document.getDocById(id);
+          let selectedVersion = await Document.getDocVersion(id, version);
+          selectedBase.data = selectedVersion.content;
+          selectedData = selectedBase;
+        } else {
+          selectedData = await Document.getDocById(id);
+        }
 
-      if (typeof selectedData.data === "undefined") {
-        commit("alert", { type: "error", message: `${id} not found` });
+        if (typeof selectedData.data === "undefined") {
+          commit("alert", { type: "error", message: `${id} not found` });
+          commit('setSelectedDocument', { ...state.selected, isLoading: false });
+          return;
+        }
+
+        commit('setSelectedDocument', { ...selectedData, isLoading: false });
+        return selectedData; // Return the selected data
+      } catch (error) {
+        console.error("Error selecting document:", error);
+        // The alert for permission errors is already handled in the Document.getDocById method
         commit('setSelectedDocument', { ...state.selected, isLoading: false });
-        return;
+        // Push to home page if document access is denied
+        if (error.message.includes('Permission denied')) {
+          router.push('/');
+        }
+        return null;
       }
-
-      commit('setSelectedDocument', { ...selectedData, isLoading: false });
-      return selectedData; // Return the selected data
     },
 
     async deleteDocument({ commit }, { id }) {
@@ -232,14 +247,21 @@ const store = createStore({
       state.user.uid = null;
       state.user.email = null;
       state.user.projects = []
+      router.push('/')
 
       store.commit('setProject', state.user.defaultProject)
       return
     },
 
+    async setLoadingUser(state, payload){
+      state.loadingUser = payload
+    },
+
     async getUserData(state){
+      state.loadingUser = true
       state.user = await User.getById(state.user.uid)
       await commit('setUserData', state.user);
+      state.loadingUser = false
       return
     },
 
