@@ -38,6 +38,7 @@ const store = createStore({
         defaultProject: null,
         projects: []
       },
+      loadingUser: true,
       project: {
         id: null,
         folders: [],
@@ -113,11 +114,13 @@ const store = createStore({
   },
   actions: {
     async enter({ commit , state}) {
+      await commit('setLoadingUser', true);
       const user = await User.getUserAuth();
       if (user) {
         await commit('setUserData', user);
         await commit('setProject', user.defaultProject)
       } 
+      await commit('setLoadingUser', false);
     },
 
     async createDocument({ commit, state }, { data , select = true}) {
@@ -244,14 +247,21 @@ const store = createStore({
       state.user.uid = null;
       state.user.email = null;
       state.user.projects = []
+      router.push('/')
 
       store.commit('setProject', state.user.defaultProject)
       return
     },
 
+    async setLoadingUser(state, payload){
+      state.loadingUser = payload
+    },
+
     async getUserData(state){
+      state.loadingUser = true
       state.user = await User.getById(state.user.uid)
       await commit('setUserData', state.user);
+      state.loadingUser = false
       return
     },
 

@@ -71,6 +71,8 @@ export default {
             placeholderText.value = placeholders[Math.floor(Math.random() * placeholders.length)];
         });
 
+        const isMobile = () => window.innerWidth <= 600;
+
         const editor = useEditor((root) => {
             const crepe = new Crepe({
                 defaultValue: props.modelValue,
@@ -78,6 +80,7 @@ export default {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
                     }
+ 
                 }
             });
 
@@ -258,30 +261,31 @@ export default {
     }
     
     .canonical-editor .ProseMirror p,
-    .canonical-editor .ProseMirror h1,
-    .canonical-editor .ProseMirror h2,
-    .canonical-editor .ProseMirror h3,
     .canonical-editor .ProseMirror ul,
     .canonical-editor .ProseMirror ol {
         font-size: 0.85rem !important; /* Slightly larger to prevent zoom */
     }
     
     .canonical-editor .ProseMirror h1 {
-        font-size: 1.0rem !important;
+        font-size: 2.5rem !important;
     }
     
     .canonical-editor .ProseMirror h2 {
-        font-size: 0.9rem !important;
+        font-size: 1.3rem !important;
     }
     
     .canonical-editor .ProseMirror h3 {
-        font-size: 0.8rem !important;
+        font-size: 1.0rem !important;
     }
     
     /* Add touch-action to prevent browser gestures from interfering */
     .canonical-editor .ProseMirror {
         touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
+    }
+
+    .canonical-editor .ProseMirror-focused {
+        outline: none;
     }
 }
 </style>

@@ -42,15 +42,6 @@
     </v-card-actions>
     <v-divider></v-divider>
 
-    <!-- <v-list-item>
-                <v-btn
-                :disabled="!$store.getters.isUserLoggedIn"
-                class="text-none gen-btn"
-                @click="sendPromptToVertexAI()"
-                density="compact" >Generate Feedback</v-btn>
-            </v-list-item>
-            <p class="generative-feedback text-caption border-thin rounded ma-1 pa-1" v-if="generativeFeedback !== null" v-html="renderMarkdown(generativeFeedback)"></p>  -->
-
     <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
       <v-expansion-panel>
         <v-expansion-panel-title>
@@ -173,11 +164,12 @@
         :key="editorKey"
       >
         <div
-          class="position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 pl-14 -mt-2 rounded"
+          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
           contenteditable="true"
           :style="{ minHeight: '1em', outline: 'none' }"
           @input="updateDocumentName"
           @focus="ensureContent"
+          @click.stop
           ref="editableDiv"
         >
           {{ document.data.name }}
@@ -875,10 +867,19 @@ export default {
   margin-bottom: 0px !important;
 }
 
+.document-title{
+  padding-left: 3.5rem !important;
+}
+
 @media (max-width: 640px) {
   /* Tailwind's sm breakpoint */
+
+  .document-title{
+    padding-left: 0px !important;
+  }
+
   :deep(div.ProseMirror.editor) {
-    padding-right: 4px !important;
+    padding: 8px 8px !important;
   }
 }
 
@@ -921,6 +922,12 @@ export default {
 
 :deep(milkdown-toolbar *) {
   font-size: 0.95em !important;
+}
+
+@media (max-width: 640px) {
+  :deep(milkdown-block-handle) {
+    display: none !important;
+  }
 }
 
 .editor-container {

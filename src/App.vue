@@ -291,8 +291,9 @@ export default {
   async mounted() {
     //await this.$store.commit('enter')
     this.isNavOpen = !this.$vuetify.display.mobile
-    this.loginMenuOpen = !this.$store.getters.isUserLoggedIn
     
+
+
     // Add event listeners to track user activity
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     activityEvents.forEach(event => {
@@ -320,6 +321,16 @@ export default {
         this.alerts = this.alerts_;
       },
       deep: true,
+    },
+    '$store.getters.isUserLoggedIn': {
+      handler(newValue) {
+        if (newValue === true) {
+          this.loginMenuOpen = false;
+        } else {
+          this.loginMenuOpen = true;
+        }
+      },
+      immediate: true
     },
     $route: {
       handler(to) {
@@ -350,7 +361,7 @@ export default {
         }
       },
       immediate: true,
-    }
+    },
   },
   computed:{
     alerts_(){
@@ -409,9 +420,17 @@ export default {
 
     },
     startLoginPromptTimer() {
+      // Clear any existing timer first
+      if (this.loginPromptTimer) {
+        clearTimeout(this.loginPromptTimer);
+      }
+      
       this.loginPromptTimer = setTimeout(() => {
-        // Only show login menu if user is not logged in and hasn't been prompted yet
-        if (!this.$store.getters.isUserLoggedIn && !this.userActivity.hasShownPrompt) {
+        // Only show login menu if user is not logged in, hasn't been prompted yet,
+        // and has been inactive for 5 minutes
+        if (!this.$store.getters.isUserLoggedIn && 
+            !this.userActivity.hasShownPrompt && 
+            (Date.now() - this.userActivity.lastActive) >= 300000) {
           this.loginMenuOpen = true;
           this.userActivity.hasShownPrompt = true;
         }

@@ -125,9 +125,12 @@ export default {
         clearTimeout(inactivityTimer);
       }
       
-      if (!isLoggedIn.value && !isPromptDismissed()) {
+      // Only set timer if user is not logged in and prompt not dismissed
+      if (!store.getters.isUserLoggedIn && !isPromptDismissed()) {
         inactivityTimer = setTimeout(() => {
-          showPrompt.value = true;
+          if (!store.getters.isUserLoggedIn) { // Check again before showing
+            showPrompt.value = true;
+          }
         }, INACTIVITY_TIMEOUT);
       }
     };
@@ -200,19 +203,33 @@ export default {
       }
     };
     
+    // Watch for auth state changes to hide prompt if user logs in
+    const unwatch = store.watch(
+      () => store.getters.isUserLoggedIn, 
+      (isLoggedIn) => {
+        if (isLoggedIn) {
+          showPrompt.value = false;
+        }
+      }
+    );
+    
     onMounted(() => {
-      // Set up event listeners for user activity
+      // Check if already logged in - don't show prompt in that case
+      if (store.getters.isUserLoggedIn) {
+        showPrompt.value = false;
+        return;
+      }
+      
+      // Set up user activity tracking for login prompt
       const activityEvents = ['mousedown', 'keypress', 'scroll', 'touchstart'];
       activityEvents.forEach(event => {
         window.addEventListener(event, resetTimer);
       });
       
-      // Start the initial timer
       resetTimer();
     });
     
     onBeforeUnmount(() => {
-      // Clean up event listeners
       const activityEvents = ['mousedown', 'keypress', 'scroll', 'touchstart'];
       activityEvents.forEach(event => {
         window.removeEventListener(event, resetTimer);
@@ -220,6 +237,11 @@ export default {
       
       if (inactivityTimer) {
         clearTimeout(inactivityTimer);
+      }
+      
+      // Remove watcher
+      if (unwatch) {
+        unwatch();
       }
     });
     
