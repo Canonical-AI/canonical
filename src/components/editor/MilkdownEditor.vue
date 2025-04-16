@@ -263,7 +263,7 @@ export default {
     .canonical-editor .ProseMirror h3,
     .canonical-editor .ProseMirror ul,
     .canonical-editor .ProseMirror ol {
-        font-size: 0.7rem !important;
+        font-size: 0.85rem !important; /* Slightly larger to prevent zoom */
     }
     
     .canonical-editor .ProseMirror h1 {
@@ -276,6 +276,12 @@ export default {
     
     .canonical-editor .ProseMirror h3 {
         font-size: 0.8rem !important;
+    }
+    
+    /* Add touch-action to prevent browser gestures from interfering */
+    .canonical-editor .ProseMirror {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
     }
 }
 </style>
