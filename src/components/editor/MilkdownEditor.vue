@@ -113,8 +113,19 @@ export default {
                         // Fix cursor position issue on mobile
                         handleDOMEvents: {
                             touchstart: (view, event) => {
-                                // Prevent cursor from jumping to beginning
-                                event.stopPropagation();
+                                // Don't stop propagation completely, but prevent default cursor behavior
+                                if (event.target.closest('.ProseMirror')) {
+                                    // Only prevent default if we're actually in the editor
+                                    event.preventDefault();
+                                    return false; // Let ProseMirror handle the event
+                                }
+                                return false;
+                            },
+                            touchend: (view, event) => {
+                                // Ensure cursor position is maintained after touch
+                                if (event.target.closest('.ProseMirror')) {
+                                    return false; // Let ProseMirror handle the event
+                                }
                                 return false;
                             }
                         }
