@@ -77,6 +77,7 @@
     style="padding-bottom: 0"
   >
     <VersionModal
+      class="-mr-5"
       :disabled="isDisabled"
       :key="document.id"
       :versions="document.versions"
@@ -95,7 +96,7 @@
     <v-tooltip text="Share Link" location="bottom">
       <template v-slot:activator="{ props }">
         <v-icon
-          class="mx-2"
+          class="mx-1"
           v-bind="props"
           @click="copyToClipboard"
           icon="mdi-share"
@@ -107,7 +108,7 @@
       <template v-slot:activator="{ props }">
         <v-icon
           :disabled="isDisabled"
-          class="mx-2"
+          class="mx-1"
           v-bind="props"
           @click="toggleFavorite"
           :icon="isFavorite ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -119,7 +120,7 @@
         <v-icon
           :disabled="isDisabled"
           v-if="$store.getters.canAccessAi"
-          class="mx-2 gen-icon"
+          class="mx-1 gen-icon"
           v-bind="props"
           @click="sendPromptToVertexAI()"
           icon="mdi-comment-quote"
@@ -129,7 +130,7 @@
     <v-tooltip text="Open the sidebar" location="bottom">
       <template v-slot:activator="{ props }">
         <v-icon
-          class="mx-2 mr-6"
+          class="mx-1 mr-6"
           v-bind="props"
           @click.stop="drawer = !drawer"
           icon="mdi-file-document"
@@ -974,4 +975,6 @@ input.h1 {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
 }
+
+
 </style>

@@ -158,4 +158,8 @@ export default {
 
 <style scoped>
 
+.v-btn--size-default{
+  padding: 0px 8px !important;
+}
+
 </style>

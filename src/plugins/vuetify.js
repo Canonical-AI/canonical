@@ -121,6 +121,16 @@ const hal2001 = {
 }
 
 export default createVuetify({
+  display: {
+    mobileBreakpoint: 'lg',
+    thresholds: {
+      xs: 0,
+      sm: 340,
+      md: 540,
+      lg: 800,
+      xl: 1280,
+    },
+  },
   theme: {
     defaultTheme: 'hal2001',
     themes: { 
