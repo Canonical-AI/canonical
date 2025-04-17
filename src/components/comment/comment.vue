@@ -13,7 +13,7 @@
 
         <commentCard v-if="event.type === 'comment'" :comment="event.value"/>
         <v-card v-if="event.type === 'version'">
-          <v-card-subtitle class="text-caption"> {{$dayjs(event.value.createDate.seconds*1000).fromNow() || ''}}  </v-card-subtitle>
+          <v-card-subtitle class="text-caption"> {{$dayjs(event?.value?.createDate?.seconds*1000).fromNow() || ''}}  </v-card-subtitle>
           <v-chip v-if="event.type === 'version'" @click="$router.push({ query: { v: event.value.versionNumber }})">{{ event.value.versionNumber }}</v-chip>
         </v-card>
       </v-timeline-item>

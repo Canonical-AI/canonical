@@ -18,7 +18,8 @@ export default {
         return {
             newDoc: false,
             loading: false,
-            isSelected: false
+            isSelected: false,
+            isDraft: false
         }
     },
     name: "ReferenceLink",
@@ -27,9 +28,11 @@ export default {
             const document = this.$store.state.documents.find(doc => doc.id === this.src); // Fetch document from store
             if (document) {
                 this.newDoc = false
+                this.isDraft = document.data.draft
                 return document.data.name
             } else {
                 this.newDoc = true
+                this.isDraft = false
                 return this.src
             }
         }
@@ -120,6 +123,7 @@ export default {
         >
         <v-icon icon="mdi-at" />
         {{documentName}}
+        <v-icon class="text-medium-emphasis" icon="mdi-pencil" v-if="this.isDraft" color="warning"></v-icon>
     </v-chip>
 </template>
 

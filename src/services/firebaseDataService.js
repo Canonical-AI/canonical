@@ -384,13 +384,13 @@ export class Document {
       const currentUserId = store.state.user.uid;
       
       // If document is in draft mode, check if user is the creator
-      if (docData.draft && docData.createdBy !== currentUserId) {
-        store.commit('alert', { 
-          type: 'error', 
-          message: 'This document is a draft and can only be viewed by its creator.' 
-        });
-        throw new Error('Permission denied: Draft document can only be viewed by creator');
-      }
+      // if (docData.draft && docData.createdBy !== currentUserId) {
+      //   store.commit('alert', { 
+      //     type: 'error', 
+      //     message: 'This document is a draft and can only be viewed by its creator.' 
+      //   });
+      //   throw new Error('Permission denied: Draft document can only be viewed by creator');
+      // }
       
       // Check if user is in the document's project
       const projectId = docData.project;
