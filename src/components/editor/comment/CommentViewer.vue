@@ -84,7 +84,6 @@ export default {
         },
 
         handleCommentClick(event) {
-            console.log('Comment clicked:', event.detail); // Debug log
             const { id, comment: commentText, pos } = event.detail;
             this.showComment(id, commentText, pos);
         },
@@ -93,7 +92,6 @@ export default {
         // Wait for view to be available and add event listeners
         const addEventListeners = () => {
             if (this.view && this.view.dom) {
-                console.log('Adding comment-click listener'); // Debug log
                 this.view.dom.addEventListener('comment-click', this.handleCommentClick);
             } else {
                 // Retry after a short delay if view is not ready

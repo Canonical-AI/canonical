@@ -55,7 +55,6 @@ export const createCommentPlugin = () => {
                 return this.getState(state);
             },
             handleClick(view, pos, event) {
-                console.log('Click detected:', event.target); // Debug log
                 const target = event.target;
                 
                 // Check if the clicked element or any parent has the comment class
@@ -64,13 +63,12 @@ export const createCommentPlugin = () => {
                     if (commentElement.classList && commentElement.classList.contains('canonical-comment')) {
                         const id = commentElement.getAttribute('data-comment-id');
                         const comment = commentStore.get(id);
-                        console.log('Found comment:', id, comment); // Debug log
                         if (comment) {
                             // Dispatch an event that our Vue component can listen to
                             const customEvent = new CustomEvent('comment-click', {
                                 detail: { id, comment, pos }
                             });
-                            console.log('Dispatching comment-click event'); // Debug log
+            
                             view.dom.dispatchEvent(customEvent);
                             return true;
                         }
