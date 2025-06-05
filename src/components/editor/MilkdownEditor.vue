@@ -30,11 +30,16 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
+import { createCommentPlugin } from './comment';
+import CommentTooltip from './comment/CommentTooltip.vue';
+import CommentViewer from './comment/CommentViewer.vue';
 
 export default {
     name: "MilkdownEditor",
     components:{
         Milkdown,
+        CommentTooltip,
+        CommentViewer,
     },
     props: {
         modelValue: String,
@@ -134,6 +139,13 @@ export default {
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: ReferenceLinkTooltip, key: 'reference-link-tooltip'}),
                     })))
+                .use($prose((ctx) => new Plugin({
+                        view: pluginViewFactory({component: CommentTooltip, key: 'comment-tooltip'}),
+                    })))
+                .use($prose((ctx) => new Plugin({
+                        view: pluginViewFactory({component: CommentViewer, key: 'comment-viewer'}),
+                    })))
+                .use($prose(() => createCommentPlugin()))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
