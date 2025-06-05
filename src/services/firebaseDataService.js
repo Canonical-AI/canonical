@@ -1,5 +1,5 @@
 import {firebaseApp} from "../firebase";
-import { getFirestore, collection, query, where, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
+import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
 import store from "../store";
@@ -310,6 +310,9 @@ export class Project {
 export class Comment {
   constructor(value) {
     this.comment = value.comment; 
+    this.documentVersion = value.documentVersion || null;
+    this.editorID = value.editorID || null;
+    this.resolved = value.resolved || false;
     Object.assign(this, addInDefaults(this));
   }
 }
@@ -512,6 +515,8 @@ export class Document {
     await deleteDoc(commentRef);
     console.log('comment deleted')
   }
+
+
 
   ///-----------------------------------
   /// DOC VERSIONS

@@ -4,71 +4,78 @@
     location="right"
     width="400"
     :temporary="!drawer"
-    class="h-100"
+    class="h-100 d-flex flex-column"
   >
-    <v-card-actions>
-      <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
-      <v-spacer></v-spacer>
-      <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
-        last update:
-        {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
-      </div>
-      <v-menu class="border border-surface-light">
-        <template v-slot:activator="{ props }">
-          <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
-            <v-icon>mdi-dots-vertical</v-icon>
-          </v-btn>
-        </template>
-        <v-list class="border border-surface-light" density="compact">
-          <v-list-item
-            @click="toggleDraft()"
-            prepend-icon="mdi-file-edit"
-            :class="document.data.draft ? 'text-orange' : ''"
-          >
-            {{ document.data.draft ? "Release doc" : "Stage doc" }}
-          </v-list-item>
-          <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
-            Archive doc
-          </v-list-item>
-          <v-list-item
-            class="text-error"
-            @click="deleteDocument"
-            prepend-icon="mdi-trash-can"
-          >
-            Permanently delete doc
-          </v-list-item>
-        </v-list>
-      </v-menu>
-    </v-card-actions>
-    <v-divider></v-divider>
+    <!-- Fixed header section -->
+    <div class="drawer-header flex-shrink-0">
+      <v-card-actions>
+        <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
+        <v-spacer></v-spacer>
+        <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
+          last update:
+          {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
+        </div>
+        <v-menu class="border border-surface-light">
+          <template v-slot:activator="{ props }">
+            <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
+              <v-icon>mdi-dots-vertical</v-icon>
+            </v-btn>
+          </template>
+          <v-list class="border border-surface-light" density="compact">
+            <v-list-item
+              @click="toggleDraft()"
+              prepend-icon="mdi-file-edit"
+              :class="document.data.draft ? 'text-orange' : ''"
+            >
+              {{ document.data.draft ? "Release doc" : "Stage doc" }}
+            </v-list-item>
+            <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
+              Archive doc
+            </v-list-item>
+            <v-list-item
+              class="text-error"
+              @click="deleteDocument"
+              prepend-icon="mdi-trash-can"
+            >
+              Permanently delete doc
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </v-card-actions>
+      <v-divider></v-divider>
 
-    <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
-      <v-expansion-panel>
-        <v-expansion-panel-title>
-          <v-btn
-            :disabled="isDisabled"
-            class="text-none gen-btn"
-            @click="sendPromptToVertexAI()"
-            density="compact"
-            >Generate Feedback
-          </v-btn>
-        </v-expansion-panel-title>
-        <v-expansion-panel-text>
-          <p
-            class="generative-feedback text-sm ma-1 pa-1"
-            v-if="generativeFeedback !== null"
-            v-html="renderMarkdown(generativeFeedback)"
-          ></p>
-        </v-expansion-panel-text>
-      </v-expansion-panel>
-    </v-expansion-panels>
+      <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
+        <v-expansion-panel>
+          <v-expansion-panel-title>
+            <v-btn
+              :disabled="isDisabled"
+              class="text-none gen-btn"
+              @click="sendPromptToVertexAI()"
+              density="compact"
+              >Generate Feedback
+            </v-btn>
+          </v-expansion-panel-title>
+          <v-expansion-panel-text>
+            <p
+              class="generative-feedback text-sm ma-1 pa-1"
+              v-if="generativeFeedback !== null"
+              v-html="renderMarkdown(generativeFeedback)"
+            ></p>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
+    </div>
 
-    <v-spacer />
-    <comment
-      v-if="document.id && $store.getters.isUserLoggedIn"
-      :doc-id="document.id"
-      :doc-type="'document'"
-    />
+    <!-- Scrollable comments section -->
+    <div class="comments-container flex-grow-1 overflow-y-auto">
+      <comment
+        v-if="document.id && $store.getters.isUserLoggedIn"
+        :doc-id="document.id"
+        :doc-type="'document'"
+        ref="commentComponent"
+        @scroll-to-comment="scrollToComment"
+      />
+    </div>
   </v-navigation-drawer>
 
   <v-app-bar
@@ -185,6 +192,7 @@
                 :disabled="isDisabled || !isEditable"
                 ref="milkdownEditor"
                 v-model="editorContent"
+                @comment-clicked="openDrawerAndScrollToComment"
               />
             </ProsemirrorAdapterProvider>
           </MilkdownProvider>
@@ -371,6 +379,8 @@ export default {
         } else {
           this.isEditable = true;
         }
+        
+
       } catch (error) {
         console.error("Error fetching document:", error);
         this.$store.commit("alert", { 
@@ -634,6 +644,29 @@ export default {
       
       return null;
     },
+
+    // Method to open drawer and scroll to specific comment
+    openDrawerAndScrollToComment(commentId) {
+      // Open the drawer first
+      this.drawer = true;
+      
+      // Wait for the drawer to open and comment component to render
+      this.$nextTick(() => {
+        setTimeout(() => {
+          if (this.$refs.commentComponent) {
+            this.$refs.commentComponent.scrollToComment(commentId);
+          }
+        }, 300); // Give drawer time to fully open
+      });
+    },
+
+    // Handle scroll to comment event from comment component
+    scrollToComment(commentId) {
+      // This method can be used for additional logic if needed
+      console.log('Scrolling to comment:', commentId);
+    },
+
+
   },
   computed: {
     isDisabled() {
@@ -1018,6 +1051,48 @@ input.h1 {
 .generative-feedback :deep(p) {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+}
+
+/* Navigation drawer layout styles */
+.drawer-header {
+  border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
+  overflow-x: hidden; /* Prevent horizontal overflow in header */
+}
+
+/* Ensure the entire drawer doesn't overflow horizontally */
+:deep(.v-navigation-drawer__content) {
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.comments-container {
+  min-height: 0; /* Allow flexbox to shrink this container */
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  overflow-y: auto; /* Allow vertical scrolling */
+  width: 100%;
+  padding-right: 8px; /* Add some padding to prevent content from touching scrollbar */
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar styling for better UX */
+.comments-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.comments-container::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-outline), 0.1);
+  border-radius: 3px;
+}
+
+.comments-container::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-outline), 0.3);
+  border-radius: 3px;
+}
+
+.comments-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-outline), 0.5);
 }
 
 

@@ -4,98 +4,173 @@ import { customAlphabet } from 'nanoid';
 
 const nanoid = customAlphabet('abcdefg', 8);
 
-// Store comments in memory (we'll move this to a database later)
+// Store comments in memory for quick access
 const commentStore = new Map();
+
+// Comment schema:
+// {
+//   id: string,
+//   comment: string,
+//   documentId: string,
+//   documentVersion?: string,
+//   editorID?: { from: number, to: number, selectedText: string },
+//   resolved?: boolean (default: false)
+//   createdBy: string,
+//   createDate: { seconds: number },
+//   updatedDate?: { seconds: number }
+// }
 
 // Plugin key for accessing the plugin state
 export const commentPluginKey = new PluginKey('commentPlugin');
 
-// Create a decoration for a comment
-const createCommentDecoration = (from, to, id) => {
+// Export the decoration creation function for external use
+export const createCommentDecoration = (from, to, id) => {
     return Decoration.inline(from, to, {
         'data-comment-id': id,
         class: 'canonical-comment',
-        style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer;',
+        style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer;'
     });
+};
+
+// Comment functions that will be accessible via the plugin key
+const commentFunctions = {
+    createComment: (view, from, to, comment, documentId, documentVersion) => {
+        const id = nanoid();
+        const commentData = {
+            id,
+            comment,
+            from,
+            to,
+            documentId,
+            documentVersion,
+            createdAt: new Date().toISOString(),
+            resolved: false
+        };
+
+        // Store comment data
+        commentStore.set(id, commentData);
+
+        // Create transaction to add decoration
+        const tr = view.state.tr;
+        tr.setMeta(commentPluginKey, {
+            type: 'ADD_DECORATION',
+            id,
+            from,
+            to
+        });
+
+        view.dispatch(tr);
+        return commentData;
+    },
+
+    addDecoration: (view, from, to, commentData) => {
+        // Store comment data if not already stored
+        if (!commentStore.has(commentData.id)) {
+            commentStore.set(commentData.id, commentData);
+        }
+
+        // Create transaction to add decoration
+        const tr = view.state.tr;
+        tr.setMeta(commentPluginKey, {
+            type: 'ADD_DECORATION',
+            id: commentData.id,
+            from,
+            to
+        });
+
+        view.dispatch(tr);
+    },
+
+    removeComment: (view, id) => {
+        // Remove from store
+        commentStore.delete(id);
+
+        // Create transaction to remove decoration
+        const tr = view.state.tr;
+        tr.setMeta(commentPluginKey, {
+            type: 'REMOVE_DECORATION',
+            id
+        });
+
+        view.dispatch(tr);
+    }
 };
 
 // Create the comment plugin
 export const createCommentPlugin = () => {
     return new Plugin({
         key: commentPluginKey,
+        
         state: {
-            init: () => DecorationSet.empty,
-            apply(tr, old) {
-                // Map existing decorations through document changes
-                let decos = old.map(tr.mapping, tr.doc);
-
-                // Handle adding new comments
-                const addCommentMeta = tr.getMeta('addComment');
-                if (addCommentMeta) {
-                    const { from, to, comment } = addCommentMeta;
-                    const id = nanoid();
-                    commentStore.set(id, comment);
-                    const deco = createCommentDecoration(from, to, id);
-                    decos = decos.add(tr.doc, [deco]);
-                }
-
-                // Handle removing comments
-                const removeCommentMeta = tr.getMeta('removeComment');
-                if (removeCommentMeta) {
-                    const { id } = removeCommentMeta;
-                    commentStore.delete(id);
-                    decos = decos.remove(decos.find(null, null, spec => spec['data-comment-id'] === id));
-                }
-
-                return decos;
+            init() {
+                return DecorationSet.empty;
             },
+            
+            apply(tr, decorationSet, oldState, newState) {
+                // Map decorations through document changes
+                decorationSet = decorationSet.map(tr.mapping, tr.doc);
+                
+                // Handle plugin-specific actions
+                const meta = tr.getMeta(commentPluginKey);
+                if (meta) {
+                    switch (meta.type) {
+                        case 'ADD_DECORATION':
+                            const decoration = createCommentDecoration(meta.from, meta.to, meta.id);
+                            decorationSet = decorationSet.add(tr.doc, [decoration]);
+                            break;
+                            
+                        case 'REMOVE_DECORATION':
+                            decorationSet = decorationSet.remove(
+                                decorationSet.find(null, null, spec => spec['data-comment-id'] === meta.id)
+                            );
+                            break;
+                    }
+                }
+                
+                return decorationSet;
+            }
         },
+        
         props: {
             decorations(state) {
                 return this.getState(state);
             },
-            handleClick(view, pos, event) {
-                const target = event.target;
-                
-                // Check if the clicked element or any parent has the comment class
-                let commentElement = target;
-                while (commentElement && commentElement !== view.dom) {
-                    if (commentElement.classList && commentElement.classList.contains('canonical-comment')) {
-                        const id = commentElement.getAttribute('data-comment-id');
-                        const comment = commentStore.get(id);
-                        if (comment) {
-                            // Dispatch an event that our Vue component can listen to
-                            const customEvent = new CustomEvent('comment-click', {
-                                detail: { id, comment, pos }
-                            });
             
+            handleDOMEvents: {
+                click: (view, event) => {
+                    const target = event.target;
+                    // Check if the clicked element or its parent has the comment class
+                    const commentElement = target.closest('.canonical-comment');
+                    if (commentElement) {
+                        const commentId = commentElement.getAttribute('data-comment-id');
+                        if (commentId) {
+                            // Dispatch custom event
+                            const customEvent = new CustomEvent('comment-clicked', {
+                                detail: { commentId },
+                                bubbles: true
+                            });
                             view.dom.dispatchEvent(customEvent);
-                            return true;
+                            return true; // Prevent default handling
                         }
                     }
-                    commentElement = commentElement.parentElement;
+                    return false;
                 }
-                return false;
-            },
-        },
+            }
+        }
     });
 };
 
-// Helper function to add a comment
-export const addComment = (view, from, to, comment) => {
-    const { state, dispatch } = view;
-    dispatch(state.tr.setMeta('addComment', { from, to, comment }));
-};
+// Export the comment functions to be accessed via plugin key
+export { commentFunctions };
 
-// Helper function to remove a comment
-export const removeComment = (view, id) => {
-    const { state, dispatch } = view;
-    dispatch(state.tr.setMeta('removeComment', { id }));
-};
-
-// Helper function to get a comment
+// Helper function to get comment data
 export const getComment = (id) => {
     return commentStore.get(id);
+};
+
+// Helper function to get all comments
+export const getAllComments = () => {
+    return Array.from(commentStore.values());
 };
 
 // Export the store for debugging/development

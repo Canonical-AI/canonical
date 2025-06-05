@@ -60,6 +60,8 @@ const store = createStore({
         version: null,
         comments: [],
         versions: [],
+        isVersion: false,
+        currentVersion: 'live'
       },
       detailClose: 1,
       globalAlerts:[],
@@ -111,6 +113,24 @@ const store = createStore({
         .sort((a, b) => a.date.createDate - b.date.createDate);
     },
     
+    // Filter comments by version - shows all comments for 'live' version, or only version-specific comments
+    filteredCommentsByVersion: (state) => {
+      if (!state.selected.comments) return [];
+      
+      const currentVersion = state.selected.currentVersion;
+      
+      // If viewing 'live' version or no version specified, show ALL comments (from all versions)
+      if (!currentVersion || currentVersion === 'live') {
+        return state.selected.comments
+          .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+      }
+      
+      // If viewing a specific version, show only comments for that version
+      return state.selected.comments
+        .filter(comment => comment.documentVersion === currentVersion)
+        .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
+    
   },
   actions: {
     async enter({ commit , state}) {
@@ -156,6 +176,10 @@ const store = createStore({
           commit('setSelectedDocument', { ...state.selected, isLoading: false });
           return;
         }
+
+        // Set version information in the selected document
+        selectedData.isVersion = !!version;
+        selectedData.currentVersion = version || 'live';
 
         commit('setSelectedDocument', { ...selectedData, isLoading: false });
         return selectedData; // Return the selected data
@@ -534,6 +558,29 @@ const store = createStore({
       await Document.deleteComment(state.selected.id, id)
       state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
     },
+
+    async updateCommentPositions(state, positionUpdates) {
+      // positionUpdates is an array of { commentId, newFrom, newTo }
+      console.log('Updating comment positions:', positionUpdates);
+      
+      for (const update of positionUpdates) {
+        const comment = state.selected.comments.find(c => c.id === update.commentId);
+        if (comment && comment.editorID) {
+          // Update local state
+          comment.editorID.from = update.newFrom;
+          comment.editorID.to = update.newTo;
+          
+          console.log(`Updated comment ${comment.id} position from [${comment.editorID.from}, ${comment.editorID.to}] to [${update.newFrom}, ${update.newTo}]`);
+        }
+      }
+      
+      // For now, we'll just update the local state
+      // TODO: Implement position updates in database when needed
+      // The comment positions will be preserved in the local session
+      // and can be persisted when the comment is next edited
+    }
+
+
   }
 });
 

@@ -11,7 +11,7 @@
 <script>
 import {getCurrentInstance, onMounted, ref} from 'vue';
 
-import { Milkdown, useEditor } from '@milkdown/vue';
+import { Milkdown, useEditor, useInstance } from '@milkdown/vue';
 import { Crepe } from '@milkdown/crepe'
 import { nord } from '@milkdown/theme-nord'
 import { clipboard } from '@milkdown/plugin-clipboard';
@@ -31,7 +31,7 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { createCommentPlugin } from './comment';
+import { createCommentPlugin, commentFunctions, commentPluginKey } from './comment';
 import CommentViewer from './comment/CommentViewer.vue';
 import CustomToolbar from './CustomToolbar.vue';
 
@@ -58,6 +58,7 @@ export default {
         const pluginViewFactory = usePluginViewFactory();
         const referenceLink = useReferenceLink();
         const task = useTask();
+        const [loading, get] = useInstance();
         
         const placeholders = [
             'Write something...',
@@ -99,6 +100,7 @@ export default {
                             emit("update:modelValue", markdown);
                         }
                     });
+                    
                     ctx.update(editorViewOptionsCtx, (prev) => ({
                         ...prev,
                         editable: isEditable,
@@ -147,6 +149,17 @@ export default {
                         view: pluginViewFactory({component: CommentViewer, key: 'comment-viewer'}),
                     })))
                 .use($prose(() => createCommentPlugin()))
+                .use($prose(() => new Plugin({
+                    appendTransaction: (transactions, oldState, newState) => {
+                        // Track comment position changes for transactions that modify content
+                        transactions.forEach(tr => {
+                            if (tr.docChanged && this.trackCommentPositionChanges) {
+                                this.trackCommentPositionChanges(tr);
+                            }
+                        });
+                        return null;
+                    }
+                })))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
@@ -161,12 +174,20 @@ export default {
                 
             return crepe
         })
-        return { editor}
+        
+        return { 
+            editor,
+            get,
+            loading
+        }
     },
     data() {
         return {
-            editor: null,
-            lastSelection: null
+            editorInstance: null,
+            lastSelection: null,
+            editorReady: false,
+            editorElement: null,
+            commentClickHandler: null
         };
     },
     methods: {
@@ -182,47 +203,240 @@ export default {
                 this.$emit('update:modelValue', cleanedContent);
             }
         },
-        // Preserve editor selection on mobile
-        preserveEditorSelection() {
-            const editorInstance = this.editor?.get();
-            if (!editorInstance) return;
-            
-            // Get editor view
-            const editorView = editorInstance.ctx.get(editorViewCtx);
-            if (!editorView) return;
-            
-            // Create a plugin that prevents jumping to position 0
-            const preserveSelectionPlugin = new Plugin({
-                key: 'preserveSelectionPlugin',
-                view: () => {
-                    return {
-                        update: (view, prevState) => {
-                            // If selection is at position 0 and we had a previous non-zero selection
-                            if (view.state.selection.from === 0 && 
-                                view.state.selection.empty && 
-                                prevState && prevState.selection.from > 0) {
-                                    
-                                // Restore previous valid selection
-                                setTimeout(() => {
-                                    const tr = view.state.tr.setSelection(prevState.selection);
-                                    view.dispatch(tr);
-                                }, 0);
+
+        // Method to create comment decoration that can be called externally
+        createCommentDecoration(from, to, commentData) {
+            if (!this.get || this.loading) {
+                console.error('Editor is not ready yet');
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    
+                    // Use the comment functions to add the decoration
+                    commentFunctions.addDecoration(view, from, to, commentData);
+                });
+            } catch (error) {
+                console.error('Failed to create comment decoration:', error);
+            }
+        },
+
+        // Method to create a new comment with decoration
+        createComment(from, to, text, documentId, documentVersion) {
+            if (!this.get || this.loading) {
+                console.error('Editor is not ready yet');
+                return null;
+            }
+
+            try {
+                let commentData = null;
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    
+                    // Use the comment functions to create the comment
+                    commentData = commentFunctions.createComment(view, from, to, text, documentId, documentVersion);
+                });
+                return commentData;
+            } catch (error) {
+                console.error('Failed to create comment:', error);
+                return null;
+            }
+        },
+
+        // Method to remove a comment decoration
+        removeComment(commentId) {
+            if (!this.get || this.loading) {
+                console.error('Editor is not ready yet');
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    
+                    // Use the comment functions to remove the comment
+                    commentFunctions.removeComment(view, commentId);
+                });
+            } catch (error) {
+                console.error('Failed to remove comment:', error);
+            }
+        },
+
+        // Method to clear all comment decorations
+        clearAllComments() {
+            if (!this.get || this.loading) {
+                console.log('Editor not ready, cannot clear comments');
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    
+                    // Get all existing comment decorations
+                    const { state } = view;
+                    const commentPluginState = commentPluginKey.getState(state);
+                    
+                    if (commentPluginState) {
+                        // Find all comment decorations and remove them
+                        commentPluginState.find().forEach(decoration => {
+                            const commentId = decoration.spec['data-comment-id'];
+                            if (commentId) {
+                                commentFunctions.removeComment(view, commentId);
                             }
-                        }
-                    };
+                        });
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to clear comments:', error);
+            }
+        },
+
+        // Method to apply comments from store data
+        applyCommentsFromStore(comments) {
+            if (!comments || !Array.isArray(comments) || comments.length === 0) {
+                console.log('No comments to apply');
+                return;
+            }
+
+            if (!this.get || this.loading) {
+                console.log('Editor not ready, cannot apply comments');
+                return;
+            }
+
+            console.log('Applying comments from store:', comments);
+
+            comments.forEach(comment => {
+                // Check if comment has the required position data
+                if (comment.editorID && 
+                    typeof comment.editorID.from === 'number' && 
+                    typeof comment.editorID.to === 'number') {
+                    
+                    try {
+                        this.createCommentDecoration(
+                            comment.editorID.from, 
+                            comment.editorID.to, 
+                            comment
+                        );
+                        console.log('Applied comment decoration:', comment.id);
+                    } catch (error) {
+                        console.error('Failed to apply comment decoration:', comment.id, error);
+                    }
+                } else {
+                    console.warn('Comment missing position data:', comment.id, comment);
                 }
             });
+        },
+
+        // Method to track comment position changes when document content changes
+        trackCommentPositionChanges(tr) {
+            if (!tr.docChanged || !this.$store.state.selected.comments) return;
+
+            const positionUpdates = [];
+            // Use all comments for position tracking, not just filtered ones
+            const allComments = this.$store.state.selected.comments;
             
-            // Add the plugin directly to the ProseMirror state
-            const plugins = editorView.state.plugins.slice();
-            plugins.push(preserveSelectionPlugin);
-            
-            // Create a new state with our plugin
-            const newState = editorView.state.reconfigure({ plugins });
-            editorView.updateState(newState);
-        }
+            allComments.forEach(comment => {
+                if (comment.editorID && typeof comment.editorID.from === 'number' && typeof comment.editorID.to === 'number') {
+                    // Map the old positions through the transaction changes
+                    const newFrom = tr.mapping.map(comment.editorID.from);
+                    const newTo = tr.mapping.map(comment.editorID.to);
+                    
+                    // If positions changed, record the update
+                    if (newFrom !== comment.editorID.from || newTo !== comment.editorID.to) {
+                        console.log(`Comment ${comment.id} position changed from [${comment.editorID.from}, ${comment.editorID.to}] to [${newFrom}, ${newTo}]`);
+                        
+                        positionUpdates.push({
+                            commentId: comment.id,
+                            newFrom,
+                            newTo
+                        });
+                    }
+                }
+            });
+
+            // Update positions in store and database if any changed
+            if (positionUpdates.length > 0) {
+                this.$store.commit('updateCommentPositions', positionUpdates);
+            }
+        },
+
+        // Method to set up comment click handler
+        setupCommentClickHandler() {
+            // Wait for editor to be ready
+            setTimeout(() => {
+                const editorElement = this.$el?.querySelector('.ProseMirror');
+                if (editorElement) {
+                    this.editorElement = editorElement;
+                    this.commentClickHandler = this.handleCommentClick.bind(this);
+                    editorElement.addEventListener('comment-clicked', this.commentClickHandler);
+                }
+            }, 1000);
+        },
+
+        // Method to remove comment click handler
+        removeCommentClickHandler() {
+            if (this.editorElement && this.commentClickHandler) {
+                this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
+            }
+        },
+
+        // Handle comment clicks
+        handleCommentClick(event) {
+            const commentId = event.detail?.commentId;
+            if (commentId) {
+                console.log('Comment clicked:', commentId);
+                // Emit event to parent component to open drawer and scroll to comment
+                this.$emit('comment-clicked', commentId);
+            }
+        },
+
+        // Method to update comments based on current version
+        updateCommentsForCurrentVersion() {
+            const currentVersion = this.$store.state.selected.currentVersion;
+            console.log('Updating comments for version:', currentVersion);
+
+            // Check if editor is ready
+            if (!this.get || this.loading) {
+                console.log('Editor not ready, deferring comment application');
+                
+                // Retry after a short delay if editor is not ready
+                setTimeout(() => {
+                    if (!this.loading && this.get) {
+                        console.log('Retrying comment application after delay');
+                        this.updateCommentsForCurrentVersion();
+                    }
+                }, 500);
+                return;
+            }
+
+            // Clear existing comment decorations first
+            this.clearAllComments();
+
+            // Get filtered comments for current version
+            const filteredComments = this.$store.getters.filteredCommentsByVersion;
+            console.log('Filtered comments for version', currentVersion, ':', filteredComments);
+
+            // Apply filtered comments if any exist
+            if (filteredComments && Array.isArray(filteredComments) && filteredComments.length > 0) {
+                // Filter out resolved comments
+                const activeComments = filteredComments.filter(comment => !comment.resolved);
+                
+                if (activeComments.length > 0) {
+                    console.log('Applying', activeComments.length, 'active comments for version', currentVersion);
+                    this.applyCommentsFromStore(activeComments);
+                } else {
+                    console.log('All comments are resolved for version', currentVersion, ', no decorations to show');
+                }
+            } else {
+                console.log('No comments to display for version', currentVersion);
+            }
+        },
+
     },
-    emits:['update:modelValue'],
+    emits:['update:modelValue', 'comment-clicked'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
@@ -239,15 +453,36 @@ export default {
                 console.log(this.editor.get())
             }
         },
+        // Watch both comments and version changes to filter comments by version
+        '$store.state.selected.comments': {
+            handler() {
+                this.updateCommentsForCurrentVersion();
+            },
+            immediate: true,
+            deep: true
+        },
+        '$store.state.selected.currentVersion': {
+            handler() {
+                this.updateCommentsForCurrentVersion();
+            },
+            immediate: true
+        },
         modelValue: {
             immediate: true,
-            handler(newVal) {
+            handler(newVal, oldVal) {
                 if (!newVal) return;
                 
                 // Process content when it changes
                 if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
                     this.processContentBeforeRender(newVal);
                 }
+                
+                // If this is a significant content change (new document), clear existing comments first
+                if (oldVal && newVal !== oldVal && this.editorReady) {
+                    console.log('Document content changed, clearing existing comments');
+                    this.clearAllComments();
+                }
+
             }
         }
     },
@@ -257,10 +492,20 @@ export default {
         }
     },
     mounted() {
-        // Apply selection preservation after editor is mounted
         this.$nextTick(() => {
-            this.preserveEditorSelection();
+            console.log('MilkdownEditor mounted, editor will be ready shortly');
+            
+            // The comments watcher will handle applying comment decorations
+            // when the editor is ready and comments are available
+            
+            // Add event listener for comment clicks
+            this.setupCommentClickHandler();
         });
+    },
+    
+    beforeUnmount() {
+        // Clean up event listener
+        this.removeCommentClickHandler();
     }
 };
 </script>

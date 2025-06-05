@@ -11,8 +11,20 @@
                         @click="closeViewer"
                     ></v-btn>
                 </div>
-                <div class="comment-content mb-2">{{ comment }}</div>
+                <div class="comment-content mb-2">{{ commentData.comment }}</div>
+                <div class="text-caption text-medium-emphasis mb-2" v-if="commentData.editorID?.selectedText">
+                    "{{ commentData.editorID.selectedText }}"
+                </div>
                 <div class="d-flex justify-end">
+                    <v-btn
+                        size="small"
+                        variant="text"
+                        color="success"
+                        @click="resolveComment"
+                        class="text-none mr-2"
+                    >
+                        Resolve
+                    </v-btn>
                     <v-btn
                         size="small"
                         variant="text"
@@ -30,7 +42,7 @@
 
 <script>
 import { usePluginViewContext } from '@prosemirror-adapter/vue';
-import { removeComment, getComment } from './index';
+import { commentFunctions, getComment } from './index';
 import { ref } from 'vue';
 import { fadeTransition } from "../../../utils/transitions";
 
@@ -48,14 +60,14 @@ export default {
     data() {
         return {
             show: false,
-            comment: '',
+            commentData: null,
             commentId: null,
             viewerStyle: {},
         };
     },
     methods: {
-        showComment(id, commentText, pos) {
-            this.comment = commentText;
+        showComment(id, commentData, pos) {
+            this.commentData = commentData;
             this.commentId = id;
             
             // Position the viewer near the comment
@@ -72,20 +84,38 @@ export default {
 
         closeViewer() {
             this.show = false;
-            this.comment = '';
+            this.commentData = null;
             this.commentId = null;
         },
 
+        resolveComment() {
+            if (this.commentId && this.commentData) {
+                // Update in database to mark as resolved
+                this.$store.commit('updateComment', { 
+                    id: this.commentId, 
+                    updatedComment: { ...this.commentData, resolved: true } 
+                });
+                
+                // Remove from editor display
+                commentFunctions.removeComment(this.view, this.commentId);
+                this.closeViewer();
+            }
+        },
+
         deleteComment() {
-            if (this.commentId) {
-                removeComment(this.view, this.commentId);
+            if (this.commentId && this.commentData) {
+                // Delete from database
+                this.$store.commit('deleteComment', this.commentId);
+                
+                // Remove from editor display
+                commentFunctions.removeComment(this.view, this.commentId);
                 this.closeViewer();
             }
         },
 
         handleCommentClick(event) {
-            const { id, comment: commentText, pos } = event.detail;
-            this.showComment(id, commentText, pos);
+            const { id, commentData, pos } = event.detail;
+            this.showComment(id, commentData, pos);
         },
     },
     mounted() {
