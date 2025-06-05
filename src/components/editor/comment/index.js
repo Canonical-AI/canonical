@@ -28,7 +28,7 @@ export const createCommentDecoration = (from, to, id) => {
     return Decoration.inline(from, to, {
         'data-comment-id': id,
         class: 'canonical-comment',
-        style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer;'
+        style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer; border-radius: 4px; border: 1px solid rgba(255, 255, 0, 0.3);'
     });
 };
 

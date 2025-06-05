@@ -130,6 +130,34 @@ const store = createStore({
         .filter(comment => comment.documentVersion === currentVersion)
         .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
     },
+
+    // Get threaded comments organized as parent-child structure
+    threadedCommentsByVersion: (state, getters) => {
+      const filteredComments = getters.filteredCommentsByVersion;
+      const threaded = [];
+      const commentMap = new Map();
+      
+      // First pass: create map of all comments
+      filteredComments.forEach(comment => {
+        commentMap.set(comment.id, { 
+          ...comment, 
+          children: [] 
+        });
+      });
+      
+      // Second pass: organize into parent-child structure
+      filteredComments.forEach(comment => {
+        if (comment.parentId && commentMap.has(comment.parentId)) {
+          // This is a child comment
+          commentMap.get(comment.parentId).children.push(commentMap.get(comment.id));
+        } else if (!comment.parentId) {
+          // This is a top-level comment
+          threaded.push(commentMap.get(comment.id));
+        }
+      });
+      
+      return threaded.sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
     
   },
   actions: {
@@ -544,6 +572,16 @@ const store = createStore({
       const newComment = await Document.createComment(state.selected.id, comment)
       newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
       state.selected.comments.push(newComment);
+    },
+
+    async addReply(state, { parentId, comment }) {
+      const replyData = {
+        ...comment,
+        parentId: parentId
+      };
+      const newReply = await Document.createComment(state.selected.id, replyData);
+      newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
+      state.selected.comments.push(newReply);
     },
 
     async updateComment(state, { id, updatedComment }) {

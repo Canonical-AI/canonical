@@ -11,11 +11,22 @@
         :dot-color="event.value.createdBy === $store.state.user.uid ? 'teal' : 'grey'"
       >
 
-        <commentCard 
-          v-if="event.type === 'comment'" 
-          :comment="event.value"
-          :ref="`comment-${event.value.id}`"
-        />
+        <div v-if="event.type === 'comment'" class="w-100">
+          <commentCard 
+            :comment="event.value"
+            :ref="`comment-${event.value.id}`"
+          />
+          <!-- Render child comments with indentation -->
+          <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
+            <commentCard 
+              v-for="child in event.value.children"
+              :key="child.id"
+              :comment="child"
+              :ref="`comment-${child.id}`"
+              class="mb-2"
+            />
+          </div>
+        </div>
         <v-card v-if="event.type === 'version'">
           <v-card-subtitle class="text-caption"> {{$dayjs(event?.value?.createDate?.seconds*1000).fromNow() || ''}}  </v-card-subtitle>
           <v-chip v-if="event.type === 'version'" @click="$router.push({ query: { v: event.value.versionNumber }})">{{ event.value.versionNumber }}</v-chip>
@@ -60,6 +71,9 @@ import commentCard from "./commentCard.vue"
 //TODO: 
 // - need a way to filter comments
 // - need a way to "scroll" to comment in the side bar but also scroll to comments in the editor
+// - need a way to show the original text of the comment in the editor
+// - need a way to resolve comments (i.e. stop showing them inline but show in sidebar unless filtered)
+// - need a way to have comment threads ( start a thread from one comment and keep adding to it)
 
 export default {
   components: {
@@ -95,9 +109,9 @@ export default {
             sortDate: v.createDate?.seconds || 0
           })) : []; // Default to an empty array if not an array
         
-        // Use the filtered comments getter instead of all comments
-        const filteredComments = this.$store.getters.filteredCommentsByVersion;
-        const comments = filteredComments.map(c => ({
+        // Use the threaded comments getter for organized display
+        const threadedComments = this.$store.getters.threadedCommentsByVersion;
+        const comments = threadedComments.map(c => ({
           type: 'comment',
           value: c,
           sortDate: c.createDate?.seconds || 0

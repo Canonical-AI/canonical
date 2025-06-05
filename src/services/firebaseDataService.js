@@ -313,6 +313,7 @@ export class Comment {
     this.documentVersion = value.documentVersion || null;
     this.editorID = value.editorID || null;
     this.resolved = value.resolved || false;
+    this.parentId = value.parentId || null; // For thread support
     Object.assign(this, addInDefaults(this));
   }
 }
@@ -485,6 +486,17 @@ export class Document {
   static async createComment(docID, comment) {
     checkUserLoggedIn();
     const documentRef = doc(db, "documents", docID);
+    
+    // If this is a child comment (has parentId), enforce single-level nesting
+    if (comment.parentId) {
+      // Get parent comment to check if it's already a child
+      const parentCommentRef = doc(documentRef, "comments", comment.parentId);
+      const parentCommentSnap = await getDoc(parentCommentRef);
+      
+      if (parentCommentSnap.exists() && parentCommentSnap.data().parentId) {
+        throw new Error("Child comments cannot have children (single-level nesting only)");
+      }
+    }
     
     const commentInstance = new Comment(comment);
     

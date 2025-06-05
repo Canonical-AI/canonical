@@ -32,14 +32,12 @@ import { Plugin } from 'prosemirror-state';
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
 import { createCommentPlugin, commentFunctions, commentPluginKey } from './comment';
-import CommentViewer from './comment/CommentViewer.vue';
 import CustomToolbar from './CustomToolbar.vue';
 
 export default {
     name: "MilkdownEditor",
     components:{
         Milkdown,
-        CommentViewer,
         CustomToolbar,
     },
     props: {
@@ -144,9 +142,6 @@ export default {
                     })))
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
-                    })))
-                .use($prose((ctx) => new Plugin({
-                        view: pluginViewFactory({component: CommentViewer, key: 'comment-viewer'}),
                     })))
                 .use($prose(() => createCommentPlugin()))
                 .use($prose(() => new Plugin({
