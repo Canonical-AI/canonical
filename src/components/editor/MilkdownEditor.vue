@@ -3,6 +3,7 @@
             ref="milkdown"
             class="canonical-editor editor text-body-2 h-auto"
             style="min-height: 95%;"
+            :data-disabled="disabled"
             />
 
 </template>
@@ -31,15 +32,15 @@ import { Plugin } from 'prosemirror-state';
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
 import { createCommentPlugin } from './comment';
-import CommentTooltip from './comment/CommentTooltip.vue';
 import CommentViewer from './comment/CommentViewer.vue';
+import CustomToolbar from './CustomToolbar.vue';
 
 export default {
     name: "MilkdownEditor",
     components:{
         Milkdown,
-        CommentTooltip,
         CommentViewer,
+        CustomToolbar,
     },
     props: {
         modelValue: String,
@@ -79,17 +80,17 @@ export default {
         const isMobile = () => window.innerWidth <= 600;
 
         const editor = useEditor((root) => {
+            const isEditable = () => !props.disabled;
+            
             const crepe = new Crepe({
                 defaultValue: props.modelValue,
                 featureConfigs: {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
                     }
- 
+                    // Completely remove Toolbar feature config to disable it
                 }
             });
-
-            const editable = () => !props.disabled;
 
             crepe.editor.config((ctx)=>{
                     ctx.set(rootCtx, root)
@@ -100,7 +101,7 @@ export default {
                     });
                     ctx.update(editorViewOptionsCtx, (prev) => ({
                         ...prev,
-                        editable,
+                        editable: isEditable,
                         handlePaste: (view, event) => {
                             const parser = ctx.get(parserCtx);
                             let text = event.clipboardData.getData('text/plain')
@@ -140,7 +141,7 @@ export default {
                         view: pluginViewFactory({component: ReferenceLinkTooltip, key: 'reference-link-tooltip'}),
                     })))
                 .use($prose((ctx) => new Plugin({
-                        view: pluginViewFactory({component: CommentTooltip, key: 'comment-tooltip'}),
+                        view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
                     })))
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: CommentViewer, key: 'comment-viewer'}),
@@ -267,6 +268,17 @@ export default {
   <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style>
 /* Make editor text smaller on mobile devices */
+/* Disabled state for Crepe toolbar when editing is disabled */
+.canonical-editor[data-disabled="true"] milkdown-toolbar {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.canonical-editor[data-disabled="true"] milkdown-toolbar button {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 @media (max-width: 600px) {
     .canonical-editor {
         font-size: 0.7rem !important;

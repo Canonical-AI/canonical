@@ -168,7 +168,8 @@
           class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
           contenteditable="true"
           :style="{ minHeight: '1em', outline: 'none' }"
-          @input="updateDocumentName"
+          @blur="updateDocumentNameOnBlur"
+          @keydown.enter="finishEditingTitle"
           @focus="ensureContent"
           @click.stop
           ref="editableDiv"
@@ -532,8 +533,33 @@ export default {
       textarea.style.height = `${textarea.scrollHeight}px`; // Set it to the scroll height
     },
 
-    updateDocumentName(event) {
-      this.document.data.name = event.target.innerText.trim();
+    updateDocumentNameOnBlur(event) {
+      const newName = event.target.innerText.trim();
+      if (newName !== this.document.data.name) {
+        this.document.data.name = newName;
+      }
+    },
+
+    finishEditingTitle(event) {
+      event.preventDefault(); // Prevent adding a new line
+      const newName = event.target.innerText.trim();
+      if (newName !== this.document.data.name) {
+        this.document.data.name = newName;
+      }
+      event.target.blur(); // Remove focus from the title
+    },
+
+    placeCursorAtEnd(element) {
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false); // false means collapse to end
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (error) {
+        console.warn('Could not place cursor at end:', error);
+      }
     },
 
     async toggleDraft() {
@@ -862,14 +888,23 @@ export default {
   flex-grow: 1 !important;
   height: 100% !important;
   min-height: 95% !important;
-  padding: 16px 60px !important;
+  padding: 24px !important;
   color: inherit !important;
   max-width: none !important;
   margin-bottom: 0px !important;
 }
 
+/* More specific selector to override Nord theme padding */
+:deep(.milkdown .ProseMirror) {
+  padding: 24px !important;
+}
+
+:deep(.milkdown .ProseMirror.editor) {
+  padding: 24px !important;
+}
+
 .document-title{
-  padding-left: 3.5rem !important;
+  padding-left: 1.5rem !important;
 }
 
 @media (max-width: 640px) {
@@ -880,7 +915,16 @@ export default {
   }
 
   :deep(div.ProseMirror.editor) {
-    padding: 8px 8px !important;
+    padding: 8px !important;
+  }
+  
+  /* More specific selectors for mobile to override Nord theme */
+  :deep(.milkdown .ProseMirror) {
+    padding: 8px !important;
+  }
+  
+  :deep(.milkdown .ProseMirror.editor) {
+    padding: 8px !important;
   }
 }
 
