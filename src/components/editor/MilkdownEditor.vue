@@ -526,18 +526,18 @@ export default {
 <style>
 /* Make editor text smaller on mobile devices */
 /* Disabled state for Crepe toolbar when editing is disabled */
-.canonical-editor[data-disabled="true"] milkdown-toolbar {
-    pointer-events: none;
-    opacity: 0.5;
-}
-
-.canonical-editor[data-disabled="true"] milkdown-toolbar button {
-    opacity: 0.5;
-    cursor: not-allowed;
+.canonical-editor[data-show="true"] .milkdown-toolbar {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 .mildown .milkdown-toolbar {
-    display: none;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 @media (max-width: 600px) {
