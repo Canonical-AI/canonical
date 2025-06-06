@@ -526,14 +526,14 @@ export default {
 <style>
 /* Make editor text smaller on mobile devices */
 /* Disabled state for Crepe toolbar when editing is disabled */
-.canonical-editor[data-show="true"] milkdown-toolbar {
+div.milkdown-toolbar {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-.mildown .milkdown-toolbar {
+.milkdown .milkdown-toolbar {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
