@@ -90,7 +90,7 @@ export default {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
                     },
-                    [Crepe.Feature.Toolbar]: false // Explicitly disable toolbar
+                    //[Crepe.Feature.Toolbar]: false // Explicitly disable toolbar
                 }
             });
 
@@ -534,6 +534,10 @@ export default {
 .canonical-editor[data-disabled="true"] milkdown-toolbar button {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.mildown .milkdown-toolbar {
+    display: none;
 }
 
 @media (max-width: 600px) {
