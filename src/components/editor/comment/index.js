@@ -29,6 +29,9 @@ export const createCommentDecoration = (from, to, id) => {
         'data-comment-id': id,
         class: 'canonical-comment',
         style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer; border-radius: 4px; border: 1px solid rgba(255, 255, 0, 0.3);'
+    }, {
+        // Store the comment ID in the spec for easy access
+        commentId: id
     });
 };
 

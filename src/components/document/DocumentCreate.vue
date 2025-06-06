@@ -340,13 +340,15 @@ export default {
       // Completely unmount the editor first to prevent state issues
       this.showEditor = false;
       this.isLoading = true;
+
+      while (this.$store.state.loadingUser) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       
       try {
         const result = await this.$store.dispatch("selectDocument", { id, version });
-        // If document selection returned null, it indicates a permission error that was already handled
         if (result === null) {
           this.isLoading = false;
-          // No need to continue processing as the user will be redirected
           return;
         }
         
@@ -427,6 +429,8 @@ export default {
       } else {
         await this.$store.commit("saveSelectedDocument");
       }
+
+      this.$refs.milkdownEditor.updateCommentPositionsOnSave();
 
       this.isEditorModified = false;
     },

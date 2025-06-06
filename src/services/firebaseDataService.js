@@ -513,6 +513,14 @@ export class Document {
     console.log('comment updated')
   } 
 
+  static async updateCommentData(docID, id, values) {
+    checkUserLoggedIn();
+    const documentRef = doc(db, "documents", docID);
+    const commentRef = doc(documentRef, "comments", id);
+    await updateDoc(commentRef, {updatedDate: serverTimestamp(), ...values});
+    console.log('comment updated')
+  } 
+
   static async archiveComment(docID, id) {
     checkUserLoggedIn();
     const documentRef = doc(db, "documents", docID);

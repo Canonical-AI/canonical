@@ -78,6 +78,9 @@ export default {
 
         const isMobile = () => window.innerWidth <= 600;
 
+        // Get reference to current component instance for use in plugins
+        const currentInstance = getCurrentInstance();
+        
         const editor = useEditor((root) => {
             const isEditable = () => !props.disabled;
             
@@ -144,17 +147,6 @@ export default {
                         view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
                     })))
                 .use($prose(() => createCommentPlugin()))
-                .use($prose(() => new Plugin({
-                    appendTransaction: (transactions, oldState, newState) => {
-                        // Track comment position changes for transactions that modify content
-                        transactions.forEach(tr => {
-                            if (tr.docChanged && this.trackCommentPositionChanges) {
-                                this.trackCommentPositionChanges(tr);
-                            }
-                        });
-                        return null;
-                    }
-                })))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
@@ -178,11 +170,8 @@ export default {
     },
     data() {
         return {
-            editorInstance: null,
-            lastSelection: null,
-            editorReady: false,
             editorElement: null,
-            commentClickHandler: null
+            commentClickHandler: null,
         };
     },
     methods: {
@@ -259,108 +248,96 @@ export default {
             }
         },
 
-        // Method to clear all comment decorations
-        clearAllComments() {
+
+        // Method to refresh comment decorations (useful after plugin changes)
+        refreshCommentDecorations() {
             if (!this.get || this.loading) {
-                console.log('Editor not ready, cannot clear comments');
                 return;
             }
 
             try {
                 this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    
-                    // Get all existing comment decorations
                     const { state } = view;
-                    const commentPluginState = commentPluginKey.getState(state);
                     
-                    if (commentPluginState) {
-                        // Find all comment decorations and remove them
-                        commentPluginState.find().forEach(decoration => {
-                            const commentId = decoration.spec['data-comment-id'];
+                    // Get current decorations and clear them more thoroughly
+                    const commentPluginState = commentPluginKey.getState(state);
+                    if (commentPluginState && commentPluginState.find) {
+                        const existingDecorations = commentPluginState.find();
+                        existingDecorations.forEach(decoration => {
+                            const commentId = decoration.spec.commentId || decoration.spec['data-comment-id'];
                             if (commentId) {
                                 commentFunctions.removeComment(view, commentId);
                             }
                         });
                     }
-                });
-            } catch (error) {
-                console.error('Failed to clear comments:', error);
-            }
-        },
-
-        // Method to apply comments from store data
-        applyCommentsFromStore(comments) {
-            if (!comments || !Array.isArray(comments) || comments.length === 0) {
-                console.log('No comments to apply');
-                return;
-            }
-
-            if (!this.get || this.loading) {
-                console.log('Editor not ready, cannot apply comments');
-                return;
-            }
-
-            console.log('Applying comments from store:', comments);
-
-            comments.forEach(comment => {
-                // Check if comment has the required position data
-                if (comment.editorID && 
-                    typeof comment.editorID.from === 'number' && 
-                    typeof comment.editorID.to === 'number') {
                     
-                    try {
-                        this.createCommentDecoration(
-                            comment.editorID.from, 
-                            comment.editorID.to, 
-                            comment
-                        );
-                        console.log('Applied comment decoration:', comment.id);
-                    } catch (error) {
-                        console.error('Failed to apply comment decoration:', comment.id, error);
-                    }
-                } else {
-                    console.warn('Comment missing position data:', comment.id, comment);
-                }
-            });
-        },
-
-        // Method to track comment position changes when document content changes
-        trackCommentPositionChanges(tr) {
-            if (!tr.docChanged || !this.$store.state.selected.comments) return;
-
-            const positionUpdates = [];
-            // Use all comments for position tracking, not just filtered ones
-            const allComments = this.$store.state.selected.comments;
-            
-            allComments.forEach(comment => {
-                if (comment.editorID && typeof comment.editorID.from === 'number' && typeof comment.editorID.to === 'number') {
-                    // Map the old positions through the transaction changes
-                    const newFrom = tr.mapping.map(comment.editorID.from);
-                    const newTo = tr.mapping.map(comment.editorID.to);
-                    
-                    // If positions changed, record the update
-                    if (newFrom !== comment.editorID.from || newTo !== comment.editorID.to) {
-                        console.log(`Comment ${comment.id} position changed from [${comment.editorID.from}, ${comment.editorID.to}] to [${newFrom}, ${newTo}]`);
-                        
-                        positionUpdates.push({
-                            commentId: comment.id,
-                            newFrom,
-                            newTo
+                    // Re-add comments with the new decoration format
+                    const comments = this.$store.state.selected.comments;
+                    if (comments && comments.length > 0) {
+                        comments.forEach(comment => {
+                            if (comment.editorID && 
+                                !comment.resolved &&
+                                comment.editorID.from !== comment.editorID.to) {
+                                commentFunctions.addDecoration(
+                                    view, 
+                                    comment.editorID.from, 
+                                    comment.editorID.to, 
+                                    comment
+                                );
+                            }
                         });
                     }
+                });
+            } catch (error) {
+                console.error('Failed to refresh comment decorations:', error);
+            }
+        },
+
+        // Method to update comments based on current version
+        updateCommentsForCurrentVersion() {
+
+            if (this.commentsApplied)  return;
+            
+            const currentVersion = this.$store.state.selected.currentVersion;
+            if (!this.get || this.loading) {
+                setTimeout(() => this.updateCommentsForCurrentVersion(), 500);
+                return;
+            }
+
+            // Get filtered comments for current version
+            const filteredComments = this.$store.getters.filteredCommentsByVersion;
+            if (!filteredComments?.length)  return;
+
+            // Filter out resolved comments and apply active ones
+            const activeComments = filteredComments.filter(comment => 
+                !comment.resolved && 
+                comment.editorID?.from >= 0 && 
+                comment.editorID?.to >= 0
+            );
+            
+            if (!activeComments.length) {return}
+ 
+            // Apply each comment decoration
+            activeComments.forEach(comment => {
+                if (comment.editorID.from === comment.editorID.to) return;
+                
+                try {
+                    this.createCommentDecoration(
+                        comment.editorID.from, 
+                        comment.editorID.to, 
+                        comment
+                    );
+                } catch (error) {
+                    console.error('Failed to apply comment decoration:', comment.id, error);
                 }
             });
 
-            // Update positions in store and database if any changed
-            if (positionUpdates.length > 0) {
-                this.$store.commit('updateCommentPositions', positionUpdates);
-            }
+            this.commentsApplied = true;
         },
 
         // Method to set up comment click handler
         setupCommentClickHandler() {
-            // Wait for editor to be ready
             setTimeout(() => {
                 const editorElement = this.$el?.querySelector('.ProseMirror');
                 if (editorElement) {
@@ -371,67 +348,96 @@ export default {
             }, 1000);
         },
 
-        // Method to remove comment click handler
-        removeCommentClickHandler() {
-            if (this.editorElement && this.commentClickHandler) {
-                this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
-            }
-        },
-
         // Handle comment clicks
         handleCommentClick(event) {
             const commentId = event.detail?.commentId;
             if (commentId) {
                 console.log('Comment clicked:', commentId);
-                // Emit event to parent component to open drawer and scroll to comment
                 this.$emit('comment-clicked', commentId);
             }
         },
 
-        // Method to update comments based on current version
-        updateCommentsForCurrentVersion() {
-            const currentVersion = this.$store.state.selected.currentVersion;
-            console.log('Updating comments for version:', currentVersion);
-
-            // Check if editor is ready
+        updateCommentPositionsOnSave() {
             if (!this.get || this.loading) {
-                console.log('Editor not ready, deferring comment application');
-                
-                // Retry after a short delay if editor is not ready
-                setTimeout(() => {
-                    if (!this.loading && this.get) {
-                        console.log('Retrying comment application after delay');
-                        this.updateCommentsForCurrentVersion();
-                    }
-                }, 500);
+                console.log('Editor not ready, cannot save comment positions');
                 return;
             }
 
-            // Clear existing comment decorations first
-            this.clearAllComments();
-
-            // Get filtered comments for current version
-            const filteredComments = this.$store.getters.filteredCommentsByVersion;
-            console.log('Filtered comments for version', currentVersion, ':', filteredComments);
-
-            // Apply filtered comments if any exist
-            if (filteredComments && Array.isArray(filteredComments) && filteredComments.length > 0) {
-                // Filter out resolved comments
-                const activeComments = filteredComments.filter(comment => !comment.resolved);
+            try {
+                const comments = this.$store.state.selected.comments;
                 
-                if (activeComments.length > 0) {
-                    console.log('Applying', activeComments.length, 'active comments for version', currentVersion);
-                    this.applyCommentsFromStore(activeComments);
-                } else {
-                    console.log('All comments are resolved for version', currentVersion, ', no decorations to show');
+                if (!comments?.length) {
+                    console.log('No comments found, returning');
+                    return;
                 }
-            } else {
-                console.log('No comments to display for version', currentVersion);
+
+                // Get actual current positions from comment plugin decorations
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const { state } = view;
+                    const commentPluginState = commentPluginKey.getState(state);
+                    
+                    if (!commentPluginState) {
+                        console.log('No comment plugin state found');
+                        return;
+                    }
+                    
+                    const positionUpdates = [];
+
+                    // Try different ways to access decorations
+                    if (commentPluginState.find) {
+                        const decorations = commentPluginState.find();
+                        
+                        decorations.forEach((decoration, index) => {
+                            
+                            // Get the comment ID from the spec (now properly stored there)
+                            const commentId = decoration.spec.commentId || 
+                                            decoration.spec['data-comment-id'] || 
+                                            decoration.attrs?.['data-comment-id'];                       
+ 
+                            if (commentId) {
+                                // Find the corresponding comment in our store
+                                const comment = comments.find(c => c.id === commentId);
+   
+                                if (comment && comment.editorID) {
+                                    const currentFrom = decoration.from;
+                                    const currentTo = decoration.to;
+                                    
+                                    // Always add to updates for now to test saving
+                                    positionUpdates.push({
+                                        commentId: commentId,
+                                        newFrom: currentFrom,
+                                        newTo: currentTo
+                                    });
+                                } else {
+                                    console.log(`No matching comment found for ID: ${commentId}`);
+                                }
+                            } 
+                        });
+                    } 
+
+                    if (positionUpdates.length > 0) {
+                        const uniqueUpdates = [];
+                        const seenIds = new Set();
+                        
+                        positionUpdates.forEach(update => {
+                            if (!seenIds.has(update.commentId)) {
+                                seenIds.add(update.commentId);
+                                uniqueUpdates.push(update);
+                            }
+                        });
+
+                        this.$store.commit('updateCommentPositions', uniqueUpdates);
+                    } 
+                });
+            } catch (error) {
+                console.error('Failed to save comment positions:', error);
             }
         },
 
     },
     emits:['update:modelValue', 'comment-clicked'],
+    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
@@ -471,12 +477,7 @@ export default {
                 if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
                     this.processContentBeforeRender(newVal);
                 }
-                
-                // If this is a significant content change (new document), clear existing comments first
-                if (oldVal && newVal !== oldVal && this.editorReady) {
-                    console.log('Document content changed, clearing existing comments');
-                    this.clearAllComments();
-                }
+            
 
             }
         }
@@ -488,19 +489,15 @@ export default {
     },
     mounted() {
         this.$nextTick(() => {
-            console.log('MilkdownEditor mounted, editor will be ready shortly');
-            
-            // The comments watcher will handle applying comment decorations
-            // when the editor is ready and comments are available
-            
-            // Add event listener for comment clicks
             this.setupCommentClickHandler();
         });
     },
     
     beforeUnmount() {
         // Clean up event listener
-        this.removeCommentClickHandler();
+        if (this.editorElement && this.commentClickHandler) {
+            this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
+        }
     }
 };
 </script>

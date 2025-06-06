@@ -213,9 +213,7 @@ const store = createStore({
         return selectedData; // Return the selected data
       } catch (error) {
         console.error("Error selecting document:", error);
-        // The alert for permission errors is already handled in the Document.getDocById method
         commit('setSelectedDocument', { ...state.selected, isLoading: false });
-        // Push to home page if document access is denied
         if (error.message.includes('Permission denied')) {
           router.push('/');
         }
@@ -597,25 +595,34 @@ const store = createStore({
       state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
     },
 
+
+    // Update comment positions in database (called on document save)
     async updateCommentPositions(state, positionUpdates) {
       // positionUpdates is an array of { commentId, newFrom, newTo }
-      console.log('Updating comment positions:', positionUpdates);
       
       for (const update of positionUpdates) {
         const comment = state.selected.comments.find(c => c.id === update.commentId);
+        
         if (comment && comment.editorID) {
+
           // Update local state
           comment.editorID.from = update.newFrom;
           comment.editorID.to = update.newTo;
-          
-          console.log(`Updated comment ${comment.id} position from [${comment.editorID.from}, ${comment.editorID.to}] to [${update.newFrom}, ${update.newTo}]`);
-        }
+
+          // Update in database - only update the editorID field
+          try {
+
+            const result = await Document.updateCommentData(state.selected.id, comment.id, {
+              editorID: {
+                from: update.newFrom,
+                to: update.newTo
+              }
+            });
+          } catch (error) {
+            console.error(`STORE MUTATION: Failed to save comment ${comment.id} position to database:`, error);
+          }
+        } 
       }
-      
-      // For now, we'll just update the local state
-      // TODO: Implement position updates in database when needed
-      // The comment positions will be preserved in the local session
-      // and can be persisted when the comment is next edited
     }
 
 
