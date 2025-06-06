@@ -26,11 +26,11 @@
           <div>
             <v-btn
               density="compact"
-              class="text-none mr-1"
+              class="text-none"
               variant="text"
-              color="blue"
+              color="teal accent-4"
               size="small"
-              @click="showReplyInput = true">reply
+              @click="startEditing">edit
             </v-btn>
             <v-btn
               v-if="!comment.resolved"
@@ -43,11 +43,11 @@
             </v-btn>
             <v-btn
               density="compact"
-              class="text-none"
+              class="text-none mr-1"
               variant="text"
-              color="teal accent-4"
+              color="blue"
               size="small"
-              @click="startEditing">edit
+              @click="showReplyInput = true">reply
             </v-btn>
           </div>
         </v-card-subtitle>

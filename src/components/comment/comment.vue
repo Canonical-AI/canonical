@@ -1,21 +1,23 @@
 <template>
   <div class="">
     <!-- Filter controls -->
-    <div class="mx-2 mb-2">
-      <v-btn-toggle
-        v-model="showResolved"
-        mandatory
-        variant="outlined"
+    <div class="mx-2 mb-2 d-flex gap-2">
+      <v-btn
+        @click="toggleFilter"
+        variant="plain"
         density="compact"
-        class="w-100"
+        class="text-none flex-1"
       >
-        <v-btn value="all" size="small" class="text-none">
-          All Comments
-        </v-btn>
-        <v-btn value="active" size="small" class="text-none">
-          Active Only
-        </v-btn>
-      </v-btn-toggle>
+        {{ showResolved === 'all' ? 'All Comments' : 'Active Only' }}
+      </v-btn>
+      <v-btn
+        @click="toggleSort"
+        variant="plain"
+        density="compact"
+        class="text-none flex-1"
+      >
+        {{ sortBy === 'date' ? 'By Date' : 'By Position' }}
+      </v-btn>
     </div>
 
     <v-list class="mx-2 w-100">
@@ -106,6 +108,7 @@ export default {
       valid: true,
       newComment: "",
       showResolved: 'all', // 'all' or 'active'
+      sortBy: 'date', // 'date' or 'position'
       rules:{
         required: value => !!value || 'Required.',
         counter: value => value.length <= 250 || 'Max 250 characters',
@@ -126,7 +129,8 @@ export default {
           this.$store.state.selected.versions.map(v => ({
             type: 'version',
             value: v,
-            sortDate: v.createDate?.seconds || 0
+            sortDate: v.createDate?.seconds || 0,
+            position: null // versions don't have positions
           })) : []; // Default to an empty array if not an array
         
         // Use the threaded comments getter for organized display
@@ -137,13 +141,56 @@ export default {
           threadedComments = threadedComments.filter(comment => !comment.resolved);
         }
         
+        // Sort child comments within each parent by date (oldest to newest)
+        threadedComments = threadedComments.map(comment => {
+          if (comment.children && comment.children.length > 0) {
+            const sortedChildren = [...comment.children].sort((a, b) => {
+              const aDate = a.createDate?.seconds || 0;
+              const bDate = b.createDate?.seconds || 0;
+              return aDate - bDate;
+            });
+            return { ...comment, children: sortedChildren };
+          }
+          return comment;
+        });
+        
         const comments = threadedComments.map(c => ({
           type: 'comment',
           value: c,
-          sortDate: c.createDate?.seconds || 0
+          sortDate: c.createDate?.seconds || 0,
+          position: c.editorID?.from || null
         }));
         
-        return [...versions, ...comments].sort((a, b) => a.sortDate - b.sortDate);  
+        const allItems = [...versions, ...comments];
+        
+        if (this.sortBy === 'position') {
+          // Sort by position: comments with no position first (by date), then by position
+          return allItems.sort((a, b) => {
+            // Versions always go by date
+            if (a.type === 'version' && b.type === 'version') {
+              return a.sortDate - b.sortDate;
+            }
+            
+            // Mix of versions and comments - handle based on position
+            const aHasPosition = a.position !== null && a.position !== undefined;
+            const bHasPosition = b.position !== null && b.position !== undefined;
+            
+            // If neither has position, sort by date
+            if (!aHasPosition && !bHasPosition) {
+              return a.sortDate - b.sortDate;
+            }
+            
+            // Items without position come first
+            if (!aHasPosition && bHasPosition) return -1;
+            if (aHasPosition && !bHasPosition) return 1;
+            
+            // Both have positions, sort by position (lowest to highest)
+            return a.position - b.position;
+          });
+        } else {
+          // Default sort by date
+          return allItems.sort((a, b) => a.sortDate - b.sortDate);
+        }
       }
     },
     methods: {
@@ -217,6 +264,14 @@ export default {
       refreshEditorDecorations() {
         // Emit event to parent (DocumentCreate) to refresh editor decorations
         this.$emit('refresh-editor-decorations');
+      },
+
+      toggleFilter() {
+        this.showResolved = this.showResolved === 'all' ? 'active' : 'all';
+      },
+
+      toggleSort() {
+        this.sortBy = this.sortBy === 'date' ? 'position' : 'date';
       },
     },
   }
