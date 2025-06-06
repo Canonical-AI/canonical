@@ -74,6 +74,7 @@
         :doc-type="'document'"
         ref="commentComponent"
         @scroll-to-comment="scrollToComment"
+        @refresh-editor-decorations="refreshEditorDecorations"
       />
     </div>
   </v-navigation-drawer>
@@ -667,7 +668,15 @@ export default {
     // Handle scroll to comment event from comment component
     scrollToComment(commentId) {
       // This method can be used for additional logic if needed
-      console.log('Scrolling to comment:', commentId);
+    },
+
+    // Method to refresh editor decorations when comments are resolved/unresolved
+    refreshEditorDecorations() {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
     },
 
 

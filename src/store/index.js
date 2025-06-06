@@ -262,13 +262,30 @@ const store = createStore({
     /// Chats
 
     async renameChat({state, commit}, {id, newName}){
-      const chat = state.chats.find(chat => chat.id === id);
-      if (chat) {
-        chat.data.name = newName; // Rename the chat
+      try {
+        await ChatHistory.updateChatField(id, 'name', newName);
+        const updatedChats = state.chats.map(chat => 
+          chat.id === id ? { ...chat, data: { ...chat.data, name: newName } } : chat
+        );
+        commit('setChats', updatedChats);
+      } catch (error) {
+        console.error("Failed to rename chat:", error);
       }
-      await ChatHistory.updateChatField(id, 'name' , newName);
-      state.chats = await ChatHistory.getAll()
-      return
+    },
+
+    // Action for updating comment data (replaces the async mutation)
+    async updateCommentData({ state, commit }, { id, data }) {
+      await Document.updateCommentData(state.selected.id, id, data);
+      const index = state.selected.comments.findIndex(comment => comment.id === id);
+      if (index !== -1) {
+        // Create a new comments array with the updated comment
+        const updatedComments = [...state.selected.comments];
+        updatedComments[index] = {
+          ...updatedComments[index],
+          ...data
+        };
+        commit('setComments', updatedComments);
+      }
     },
 
   },
@@ -566,6 +583,10 @@ const store = createStore({
       state.selected.comments = comments;
     },
 
+    setChats(state, chats) {
+      state.chats = chats;
+    },
+
     async addComment(state, comment) {
       const newComment = await Document.createComment(state.selected.id, comment)
       newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
@@ -589,6 +610,8 @@ const store = createStore({
         state.selected.comments[index].comment = updatedComment;
       }
     },
+
+
 
     async deleteComment(state, id) {
       await Document.deleteComment(state.selected.id, id)

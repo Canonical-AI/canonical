@@ -1,7 +1,5 @@
-
-
 <template id="">
-  <v-card class="comment-card border border-surface-light w-100" density="compact">
+  <v-card class="comment-card border border-surface-light w-100" density="compact" :class="{ 'comment-resolved': comment.resolved }">
     <div v-if="editing === false" class="w-full">
         <v-card-subtitle class="text-caption d-flex justify-space-between align-center">
           <div class="d-flex align-center">
@@ -15,6 +13,15 @@
             >
               {{ comment.documentVersion }}
             </v-chip>
+            <v-chip
+              v-if="comment.resolved"
+              size="x-small"
+              color="success"
+              variant="outlined"
+              class="ml-2"
+            >
+              resolved
+            </v-chip>
           </div>
           <div>
             <v-btn
@@ -26,12 +33,21 @@
               @click="showReplyInput = true">reply
             </v-btn>
             <v-btn
+              v-if="!comment.resolved"
+              density="compact"
+              class="text-none mr-1"
+              variant="text"
+              color="success"
+              size="small"
+              @click="resolveComment">resolve
+            </v-btn>
+            <v-btn
               density="compact"
               class="text-none"
               variant="text"
               color="teal accent-4"
               size="small"
-              @click="editing = true">edit
+              @click="startEditing">edit
             </v-btn>
           </div>
         </v-card-subtitle>
@@ -190,12 +206,60 @@ export default {
       this.editing = false
     },
 
+    async startEditing() {
+      this.editing = true;
+      // Unresolve comment when user starts editing
+      if (this.comment.resolved) {
+        await this.unresolveComment();
+      }
+    },
+
     async updateComment (id,updatedComment) {
       await this.$store.commit('updateComment',{id,updatedComment})
       this.resetForm()
     },
+    
     async deleteComment (id) {
       await this.$store.commit('deleteComment',id)
+    },
+
+    async resolveComment() {
+      try {
+        await this.$store.dispatch('updateCommentData', {
+          id: this.comment.id,
+          data: { resolved: true }
+        });
+        
+        this.$store.commit('alert', {
+          type: 'success',
+          message: 'Comment resolved',
+          autoClear: true
+        });
+        
+        // Now that the store is properly updated, emit the event
+        this.$emit('comment-resolved', this.comment.id);
+      } catch (error) {
+        console.error('Error resolving comment:', error);
+        this.$store.commit('alert', {
+          type: 'error',
+          message: 'Failed to resolve comment',
+          autoClear: true
+        });
+      }
+    },
+
+    async unresolveComment() {
+      try {
+        await this.$store.dispatch('updateCommentData', {
+          id: this.comment.id,
+          data: { resolved: false }
+        });
+        
+        // Now that the store is properly updated, emit the event
+        this.$emit('comment-unresolved', this.comment.id);
+      } catch (error) {
+        console.error('Error unresolving comment:', error);
+      }
     },
 
     toggleOriginalTextExpanded() {
@@ -233,6 +297,11 @@ export default {
   .v-field{
       font-size: 14px !important;
   }
+}
+
+.comment-resolved {
+  opacity: 0.7;
+  background-color: rgba(var(--v-theme-success), 0.05);
 }
 
 .original-text {

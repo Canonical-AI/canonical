@@ -248,50 +248,33 @@ export default {
             }
         },
 
-
         // Method to refresh comment decorations (useful after plugin changes)
         refreshCommentDecorations() {
             if (!this.get || this.loading) {
                 return;
             }
 
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    const { state } = view;
-                    
-                    // Get current decorations and clear them more thoroughly
-                    const commentPluginState = commentPluginKey.getState(state);
-                    if (commentPluginState && commentPluginState.find) {
-                        const existingDecorations = commentPluginState.find();
-                        existingDecorations.forEach(decoration => {
-                            const commentId = decoration.spec.commentId || decoration.spec['data-comment-id'];
-                            if (commentId) {
-                                commentFunctions.removeComment(view, commentId);
-                            }
+            // Use $nextTick twice to ensure all updates have propagated
+            this.$nextTick(() => {
+                this.$nextTick(() => {
+                    try {
+                        this.get().action((ctx) => {
+                            const view = ctx.get(editorViewCtx);
+                        
+                            // Create a function that will get fresh data when called by the plugin
+                            const getFreshComments = () => {
+                                // Ensure we get the absolute latest state
+                                return this.$store.state.selected.comments || [];
+                            };
+                            
+                            // Use the plugin's refreshAllDecorations method with fresh data getter
+                            commentFunctions.refreshAllDecorations(view, getFreshComments);
                         });
-                    }
-                    
-                    // Re-add comments with the new decoration format
-                    const comments = this.$store.state.selected.comments;
-                    if (comments && comments.length > 0) {
-                        comments.forEach(comment => {
-                            if (comment.editorID && 
-                                !comment.resolved &&
-                                comment.editorID.from !== comment.editorID.to) {
-                                commentFunctions.addDecoration(
-                                    view, 
-                                    comment.editorID.from, 
-                                    comment.editorID.to, 
-                                    comment
-                                );
-                            }
-                        });
+                    } catch (error) {
+                        console.error('Failed to refresh comment decorations:', error);
                     }
                 });
-            } catch (error) {
-                console.error('Failed to refresh comment decorations:', error);
-            }
+            });
         },
 
         // Method to update comments based on current version
@@ -352,14 +335,12 @@ export default {
         handleCommentClick(event) {
             const commentId = event.detail?.commentId;
             if (commentId) {
-                console.log('Comment clicked:', commentId);
                 this.$emit('comment-clicked', commentId);
             }
         },
 
         updateCommentPositionsOnSave() {
             if (!this.get || this.loading) {
-                console.log('Editor not ready, cannot save comment positions');
                 return;
             }
 
@@ -367,7 +348,6 @@ export default {
                 const comments = this.$store.state.selected.comments;
                 
                 if (!comments?.length) {
-                    console.log('No comments found, returning');
                     return;
                 }
 
@@ -378,7 +358,6 @@ export default {
                     const commentPluginState = commentPluginKey.getState(state);
                     
                     if (!commentPluginState) {
-                        console.log('No comment plugin state found');
                         return;
                     }
                     
@@ -409,8 +388,6 @@ export default {
                                         newFrom: currentFrom,
                                         newTo: currentTo
                                     });
-                                } else {
-                                    console.log(`No matching comment found for ID: ${commentId}`);
                                 }
                             } 
                         });
@@ -449,14 +426,14 @@ export default {
     watch: {
         isDarkTheme(newVal) {
             if (newVal) {
-                console.log(this.editor.get().remove(nord))
+                this.editor.get().remove(nord)
             } else {
-                console.log(this.editor.get())
+                this.editor.get()
             }
         },
         // Watch both comments and version changes to filter comments by version
         '$store.state.selected.comments': {
-            handler() {
+            handler(newComments, oldComments) {
                 this.updateCommentsForCurrentVersion();
             },
             immediate: true,

@@ -1,5 +1,22 @@
 <template>
   <div class="">
+    <!-- Filter controls -->
+    <div class="mx-2 mb-2">
+      <v-btn-toggle
+        v-model="showResolved"
+        mandatory
+        variant="outlined"
+        density="compact"
+        class="w-100"
+      >
+        <v-btn value="all" size="small" class="text-none">
+          All Comments
+        </v-btn>
+        <v-btn value="active" size="small" class="text-none">
+          Active Only
+        </v-btn>
+      </v-btn-toggle>
+    </div>
 
     <v-list class="mx-2 w-100">
       <v-list-item
@@ -12,6 +29,8 @@
             <commentCard 
               :comment="event.value"
               :ref="`comment-${event.value.id}`"
+              @comment-resolved="refreshEditorDecorations"
+              @comment-unresolved="refreshEditorDecorations"
             />
             <!-- Render child comments with indentation -->
             <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
@@ -21,6 +40,8 @@
                 :comment="child"
                 :ref="`comment-${child.id}`"
                 class="mb-2"
+                @comment-resolved="refreshEditorDecorations"
+                @comment-unresolved="refreshEditorDecorations"
               />
             </div>
           </div>
@@ -84,6 +105,7 @@ export default {
     data: () => ({
       valid: true,
       newComment: "",
+      showResolved: 'all', // 'all' or 'active'
       rules:{
         required: value => !!value || 'Required.',
         counter: value => value.length <= 250 || 'Max 250 characters',
@@ -108,7 +130,13 @@ export default {
           })) : []; // Default to an empty array if not an array
         
         // Use the threaded comments getter for organized display
-        const threadedComments = this.$store.getters.threadedCommentsByVersion;
+        let threadedComments = this.$store.getters.threadedCommentsByVersion;
+        
+        // Filter comments based on showResolved setting
+        if (this.showResolved === 'active') {
+          threadedComments = threadedComments.filter(comment => !comment.resolved);
+        }
+        
         const comments = threadedComments.map(c => ({
           type: 'comment',
           value: c,
@@ -132,7 +160,9 @@ export default {
       },
       async editComment (id,updatedComment) {
         await this.$refs.form.validate();
-        this.valid ? await this.$store.commit('updateComment', {id, updatedComment}) : console.log('not valid');
+        if (this.valid) {
+          await this.$store.commit('updateComment', {id, updatedComment});
+        }
         this.$refs.form.resetValidation();
       },
       async deleteComment (id) {
@@ -182,6 +212,11 @@ export default {
             }, 2000);
           }
         });
+      },
+
+      refreshEditorDecorations() {
+        // Emit event to parent (DocumentCreate) to refresh editor decorations
+        this.$emit('refresh-editor-decorations');
       },
     },
   }

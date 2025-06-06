@@ -96,6 +96,34 @@ const commentFunctions = {
         });
 
         view.dispatch(tr);
+    },
+
+    // Clear all decorations and rebuild from store data
+    refreshAllDecorations: (view, storeGetterFn) => {
+        // Get fresh data from store
+        const allComments = storeGetterFn ? storeGetterFn() : [];
+        const activeComments = allComments.filter(comment => 
+            comment.editorID && 
+            comment.resolved !== true &&
+            comment.editorID.from !== comment.editorID.to
+        );
+        
+        // Clear the in-memory store
+        commentStore.clear();
+        
+        // Store active comments data
+        activeComments.forEach(comment => {
+            commentStore.set(comment.id, comment);
+        });
+        
+        // Create transaction to refresh decorations
+        const tr = view.state.tr;
+        tr.setMeta(commentPluginKey, {
+            type: 'REFRESH_DECORATIONS',
+            activeComments: activeComments
+        });
+
+        view.dispatch(tr);
     }
 };
 
@@ -123,9 +151,29 @@ export const createCommentPlugin = () => {
                             break;
                             
                         case 'REMOVE_DECORATION':
-                            decorationSet = decorationSet.remove(
-                                decorationSet.find(null, null, spec => spec['data-comment-id'] === meta.id)
+                            // Find decorations that match the comment ID (check both spec fields)
+                            const decorationsToRemove = decorationSet.find(null, null, spec => 
+                                spec.commentId === meta.id || spec['data-comment-id'] === meta.id
                             );
+                            if (decorationsToRemove.length > 0) {
+                                decorationSet = decorationSet.remove(decorationsToRemove);
+                            }
+                            break;
+                            
+                        case 'CLEAR_ALL_DECORATIONS':
+                            decorationSet = DecorationSet.empty;
+                            break;
+                            
+                        case 'REFRESH_DECORATIONS':
+                            // Clear all decorations and rebuild with active comments
+                            decorationSet = DecorationSet.empty;
+                            const activeComments = meta.activeComments || [];
+                            const newDecorations = activeComments.map(comment => 
+                                createCommentDecoration(comment.editorID.from, comment.editorID.to, comment.id)
+                            );
+                            if (newDecorations.length > 0) {
+                                decorationSet = decorationSet.add(tr.doc, newDecorations);
+                            }
                             break;
                     }
                 }

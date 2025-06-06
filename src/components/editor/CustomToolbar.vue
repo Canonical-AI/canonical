@@ -1,6 +1,6 @@
 <template>
     <Teleport to="body">
-        <div class="custom-toolbar" v-if="show" ref="toolbar" :class="{ 'comment-only': !isEditable }">
+        <div class="custom-toolbar border border-surface-light" v-if="show" ref="toolbar" :class="{ 'comment-only': !isEditable }">
         <div class="toolbar-content">
             <!-- Text Formatting (only when editable) -->
             <template v-if="isEditable">
