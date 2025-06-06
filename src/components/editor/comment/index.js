@@ -7,18 +7,6 @@ const nanoid = customAlphabet('abcdefg', 8);
 // Store comments in memory for quick access
 const commentStore = new Map();
 
-// Comment schema:
-// {
-//   id: string,
-//   comment: string,
-//   documentId: string,
-//   documentVersion?: string,
-//   editorID?: { from: number, to: number, selectedText: string },
-//   resolved?: boolean (default: false)
-//   createdBy: string,
-//   createDate: { seconds: number },
-//   updatedDate?: { seconds: number }
-// }
 
 // Plugin key for accessing the plugin state
 export const commentPluginKey = new PluginKey('commentPlugin');
@@ -36,7 +24,7 @@ export const createCommentDecoration = (from, to, id) => {
 };
 
 // Comment functions that will be accessible via the plugin key
-const commentFunctions = {
+export const commentFunctions = {
     createComment: (view, from, to, comment, documentId, documentVersion) => {
         const id = nanoid();
         const commentData = {
@@ -146,6 +134,7 @@ export const createCommentPlugin = () => {
                 if (meta) {
                     switch (meta.type) {
                         case 'ADD_DECORATION':
+   
                             const decoration = createCommentDecoration(meta.from, meta.to, meta.id);
                             decorationSet = decorationSet.add(tr.doc, [decoration]);
                             break;
@@ -210,19 +199,3 @@ export const createCommentPlugin = () => {
         }
     });
 };
-
-// Export the comment functions to be accessed via plugin key
-export { commentFunctions };
-
-// Helper function to get comment data
-export const getComment = (id) => {
-    return commentStore.get(id);
-};
-
-// Helper function to get all comments
-export const getAllComments = () => {
-    return Array.from(commentStore.values());
-};
-
-// Export the store for debugging/development
-export const getCommentStore = () => commentStore; 
