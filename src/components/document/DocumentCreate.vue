@@ -73,8 +73,9 @@
         :doc-id="document.id"
         :doc-type="'document'"
         ref="commentComponent"
-        @scroll-to-comment="scrollToComment"
+        @scroll-to-comment="openDrawerAndScrollToComment"
         @refresh-editor-decorations="refreshEditorDecorations"
+        @scroll-to-editor="scrollToCommentInEditor"
       />
     </div>
   </v-navigation-drawer>
@@ -591,17 +592,14 @@ export default {
     },
 
     activateEditor() {
-      // Skip if loading or editor not mounted
       if (this.isLoading || !this.showEditor) return;
       
       try {
-        // Use a timeout to ensure the DOM is fully rendered
         setTimeout(() => {
           const editorElement = document.querySelector('.ProseMirror.editor');
           if (editorElement) {
-            // On mobile, just focus the editor without manipulating selection
+
             if (this.$vuetify.display.mobile) {
-              // Only focus if not already focused to avoid triggering on-screen keyboard unnecessarily
               if (document.activeElement !== editorElement) {
                 editorElement.focus();
               }
@@ -638,8 +636,7 @@ export default {
       if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
         return element;
       }
-      
-      // Otherwise, recursively search for text nodes
+
       for (let i = 0; i < element.childNodes.length; i++) {
         const textNode = this.findFirstTextNode(element.childNodes[i]);
         if (textNode) {
@@ -652,29 +649,32 @@ export default {
 
     // Method to open drawer and scroll to specific comment
     openDrawerAndScrollToComment(commentId) {
-      // Open the drawer first
       this.drawer = true;
-      
-      // Wait for the drawer to open and comment component to render
+
       this.$nextTick(() => {
         setTimeout(() => {
           if (this.$refs.commentComponent) {
             this.$refs.commentComponent.scrollToComment(commentId);
           }
-        }, 300); // Give drawer time to fully open
+        }, 300); 
       });
     },
 
-    // Handle scroll to comment event from comment component
-    scrollToComment(commentId) {
-      // This method can be used for additional logic if needed
-    },
 
     // Method to refresh editor decorations when comments are resolved/unresolved
     refreshEditorDecorations() {
       this.$nextTick(() => {
         if (this.$refs.milkdownEditor) {
           this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
+    },
+
+    // Method to scroll to a comment position in the editor when clicked from sidebar
+    scrollToCommentInEditor(commentId) {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.scrollToComment(commentId);
         }
       });
     },

@@ -33,6 +33,7 @@
               :ref="`comment-${event.value.id}`"
               @comment-resolved="refreshEditorDecorations"
               @comment-unresolved="refreshEditorDecorations"
+              @scroll-to-editor="$emit('scroll-to-editor', $event)"
             />
             <!-- Render child comments with indentation -->
             <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
@@ -44,6 +45,7 @@
                 class="mb-2"
                 @comment-resolved="refreshEditorDecorations"
                 @comment-unresolved="refreshEditorDecorations"
+                @scroll-to-editor="$emit('scroll-to-editor', $event)"
               />
             </div>
           </div>
@@ -89,7 +91,6 @@
 </template>
 
 <script>
-import {Comment} from "../../services/firebaseDataService";
 import commentCard from "./commentCard.vue"
 
 //TODO: 
@@ -97,6 +98,7 @@ import commentCard from "./commentCard.vue"
 
 
 export default {
+  emits: ['refresh-editor-decorations', 'scroll-to-editor'],
   components: {
     commentCard
   },
@@ -164,31 +166,24 @@ export default {
         const allItems = [...versions, ...comments];
         
         if (this.sortBy === 'position') {
-          // Sort by position: comments with no position first (by date), then by position
           return allItems.sort((a, b) => {
-            // Versions always go by date
             if (a.type === 'version' && b.type === 'version') {
               return a.sortDate - b.sortDate;
             }
             
-            // Mix of versions and comments - handle based on position
             const aHasPosition = a.position !== null && a.position !== undefined;
             const bHasPosition = b.position !== null && b.position !== undefined;
             
-            // If neither has position, sort by date
             if (!aHasPosition && !bHasPosition) {
               return a.sortDate - b.sortDate;
             }
             
-            // Items without position come first
             if (!aHasPosition && bHasPosition) return -1;
             if (aHasPosition && !bHasPosition) return 1;
             
-            // Both have positions, sort by position (lowest to highest)
             return a.position - b.position;
           });
         } else {
-          // Default sort by date
           return allItems.sort((a, b) => a.sortDate - b.sortDate);
         }
       }
@@ -229,29 +224,26 @@ export default {
           const commentRef = this.$refs[`comment-${commentId}`];
           if (commentRef && commentRef[0]) {
             const commentElement = commentRef[0].$el;
-            
-            // Find the scrollable container (comments-container)
             const scrollContainer = commentElement.closest('.comments-container');
             
             if (scrollContainer) {
-              // Get the position of the comment relative to the container
+
               const containerRect = scrollContainer.getBoundingClientRect();
               const commentRect = commentElement.getBoundingClientRect();
               
-              // Calculate the scroll position to center the comment in the container
+
               const scrollTop = scrollContainer.scrollTop + 
                 (commentRect.top - containerRect.top) - 
                 (containerRect.height / 2) + 
                 (commentRect.height / 2);
               
-              // Smooth scroll within the container
+ 
               scrollContainer.scrollTo({
                 top: scrollTop,
                 behavior: 'smooth'
               });
             }
-            
-            // Add a highlight effect
+     
             commentElement.style.transition = 'background-color 0.5s';
             commentElement.style.backgroundColor = 'rgba(var(--v-theme-primary), 0.1)';
             setTimeout(() => {
@@ -262,7 +254,6 @@ export default {
       },
 
       refreshEditorDecorations() {
-        // Emit event to parent (DocumentCreate) to refresh editor decorations
         this.$emit('refresh-editor-decorations');
       },
 

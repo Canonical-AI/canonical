@@ -1,5 +1,10 @@
 <template id="">
-  <v-card class="comment-card border border-surface-light w-100" density="compact" :class="{ 'comment-resolved': comment.resolved }">
+  <v-card 
+    class="comment-card border border-surface-light w-100" 
+    density="compact" 
+    :class="{ 'comment-resolved': comment.resolved, 'comment-clickable': hasEditorPosition }"
+    @click="handleCardClick"
+  >
     <div v-if="editing === false" class="w-full">
         <v-card-subtitle class="text-caption d-flex justify-space-between align-center">
           <div class="d-flex align-center">
@@ -68,6 +73,8 @@
             </v-btn>
           </div>
         </div>
+
+
 
         <v-card-text
           class="text-body-2"
@@ -160,6 +167,7 @@
 import {Comment} from "../../services/firebaseDataService";
 
 export default {
+  emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor'],
   props: {
     comment: {
       type: Object,
@@ -198,6 +206,9 @@ export default {
         return this.originalText.substring(0, this.maxOriginalTextLength) + '...';
       }
       return this.originalText;
+    },
+    hasEditorPosition() {
+      return this.comment?.editorID?.from !== undefined && this.comment?.editorID?.to !== undefined;
     }
   },
   methods:{
@@ -287,6 +298,13 @@ export default {
         console.error('Error adding reply:', error);
       }
     },
+
+    handleCardClick(event) {
+      // Only emit scroll event if comment has editor position and user isn't interacting with buttons
+      if (this.hasEditorPosition && !event.target.closest('button') && !event.target.closest('.v-btn')) {
+        this.$emit('scroll-to-editor', this.comment.id);
+      }
+    },
   }
 }
 </script>
@@ -309,6 +327,15 @@ export default {
   word-break: break-word;
   font-size: 0.85em;
   line-height: 1.3;
+}
+
+.comment-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.comment-clickable:hover {
+  background-color: rgba(var(--v-theme-primary), 0.05);
 }
 
 </style>

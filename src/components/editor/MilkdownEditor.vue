@@ -190,16 +190,11 @@ export default {
 
         // Method to create comment decoration that can be called externally
         createCommentDecoration(from, to, commentData) {
-            if (!this.get || this.loading) {
-                console.error('Editor is not ready yet');
-                return;
-            }
+            if (!this.get || this.loading) return;
 
             try {
                 this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    
-                    // Use the comment functions to add the decoration
                     commentFunctions.addDecoration(view, from, to, commentData);
                 });
             } catch (error) {
@@ -209,17 +204,12 @@ export default {
 
         // Method to create a new comment with decoration
         createComment(from, to, text, documentId, documentVersion) {
-            if (!this.get || this.loading) {
-                console.error('Editor is not ready yet');
-                return null;
-            }
+            if (!this.get || this.loading) return null;
 
             try {
                 let commentData = null;
                 this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    
-                    // Use the comment functions to create the comment
                     commentData = commentFunctions.createComment(view, from, to, text, documentId, documentVersion);
                 });
                 return commentData;
@@ -261,13 +251,10 @@ export default {
                         this.get().action((ctx) => {
                             const view = ctx.get(editorViewCtx);
                         
-                            // Create a function that will get fresh data when called by the plugin
                             const getFreshComments = () => {
-                                // Ensure we get the absolute latest state
                                 return this.$store.state.selected.comments || [];
                             };
                             
-                            // Use the plugin's refreshAllDecorations method with fresh data getter
                             commentFunctions.refreshAllDecorations(view, getFreshComments);
                         });
                     } catch (error) {
@@ -275,6 +262,67 @@ export default {
                     }
                 });
             });
+        },
+
+        // Method to scroll to a specific comment position in the editor
+        scrollToComment(commentId) {
+            if (!this.get || this.loading) {
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const { state } = view;
+                    
+                    // Find the comment in store data
+                    const comment = this.$store.state.selected.comments?.find(c => c.id === commentId);
+                    
+                    if (!comment || !comment.editorID) {
+                        return;
+                    }
+
+                    const { from, to } = comment.editorID;
+                    
+                    // Ensure the position is valid
+                    if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) {
+                        return;
+                    }
+
+                    // Find the comment element in the DOM and scroll to it
+                    this.$nextTick(() => {
+                        const editorDom = view.dom;
+                        const commentElement = editorDom.querySelector(`[data-comment-id="${commentId}"]`);
+                        
+                        if (commentElement) {
+                            commentElement.scrollIntoView({ 
+                                behavior: 'smooth',
+                                block: 'nearest',
+                                inline: 'nearest'
+                            });
+                        }
+                    });
+
+                    // Add visual highlight effect
+                    this.$nextTick(() => {
+                        const editorDom = view.dom;
+                        const commentElements = editorDom.querySelectorAll(`[data-comment-id="${commentId}"]`);
+                        
+                        commentElements.forEach(element => {
+                            // Add highlight effect
+                            element.style.transition = 'background-color 0.5s ease';
+                            element.style.backgroundColor = 'rgba(var(--v-theme-primary), 0.3)';
+                            
+                            // Remove highlight after animation
+                            setTimeout(() => {
+                                element.style.backgroundColor = '';
+                            }, 2000);
+                        });
+                    });
+                });
+            } catch (error) {
+                console.error('Failed to scroll to comment:', error);
+            }
         },
 
         // Method to update comments based on current version
@@ -340,9 +388,7 @@ export default {
         },
 
         updateCommentPositionsOnSave() {
-            if (!this.get || this.loading) {
-                return;
-            }
+            if (!this.get || this.loading) return;
 
             try {
                 const comments = this.$store.state.selected.comments;
@@ -357,9 +403,7 @@ export default {
                     const { state } = view;
                     const commentPluginState = commentPluginKey.getState(state);
                     
-                    if (!commentPluginState) {
-                        return;
-                    }
+                    if (!commentPluginState) return;
                     
                     const positionUpdates = [];
 
@@ -375,7 +419,6 @@ export default {
                                             decoration.attrs?.['data-comment-id'];                       
  
                             if (commentId) {
-                                // Find the corresponding comment in our store
                                 const comment = comments.find(c => c.id === commentId);
    
                                 if (comment && comment.editorID) {
@@ -414,7 +457,7 @@ export default {
 
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations'],
+    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
