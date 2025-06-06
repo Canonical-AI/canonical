@@ -89,8 +89,8 @@ export default {
                 featureConfigs: {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
-                    }
-                    // Completely remove Toolbar feature config to disable it
+                    },
+                    [Crepe.Feature.Toolbar]: false // Explicitly disable toolbar
                 }
             });
 
