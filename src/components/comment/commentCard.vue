@@ -18,7 +18,6 @@
           </div>
           <div>
             <v-btn
-              v-if="!comment.parentId"
               density="compact"
               class="text-none mr-1"
               variant="text"
@@ -61,7 +60,7 @@
         </v-card-text>
 
         <!-- Reply input -->
-        <v-card-text v-if="showReplyInput" class="pt-2">
+        <v-card-text v-if="showReplyInput" class="pt-1">
           <v-textarea
             v-model="replyText"
             label="Reply to comment"
@@ -91,20 +90,52 @@
         </v-card-text>
     </div>
     <div v-if="editing === true">
-      <v-card-subtitle class="text-caption">
-        {{user?.displayName}} {{$dayjs(comment.createDate.seconds*1000).fromNow()}}
-      </v-card-subtitle>
+      <v-card-subtitle class="text-caption d-flex justify-space-between align-center">
+          <div class="d-flex align-center">
+            <span>{{user?.displayName}} {{$dayjs(comment.createDate.seconds*1000).fromNow()}}</span>
+            <v-chip 
+              v-if="comment.documentVersion" 
+              size="x-small" 
+              color="orange" 
+              variant="outlined"
+              class="ml-2"
+            >
+              {{ comment.documentVersion }}
+            </v-chip>
+          </div>
+          <div>
+            <v-btn
+              density="compact"
+              class="text-none mr-1"
+              variant="text"
+              color="error"
+              size="small"
+              @click="deleteComment(comment.id)">delete
+            </v-btn>
+            <v-btn
+              density="compact"
+              class="text-none mr-1"
+              variant="text"
+              color="blue"
+              size="small"
+              @click="resetForm()">cancel
+            </v-btn>
+            <v-btn
+              density="compact"
+              class="text-none"
+              variant="text"
+              color="teal accent-4"
+              size="small"
+              @click="updateComment(comment.id,newComment)">submit
+            </v-btn>
+          </div>
+        </v-card-subtitle>
+
       <v-textarea
               type="text"
               v-model="newComment"
           />
 
-      <v-card-actions>
-        <v-btn class="m-2 text-none" color="error"@click="deleteComment(comment.id)">delete</v-btn>
-        <v-spacer/>
-        <v-btn class="m-2 text-none" @click="resetForm()">cancel</v-btn>
-        <v-btn class="m-2 text-none" color="primary"@click="updateComment(comment.id,newComment)">submit</v-btn>
-        </v-card-actions>
     </div>
   </v-card>
 </template>
@@ -174,6 +205,7 @@ export default {
     async submitReply() {
       if (!this.replyText.trim()) return;
 
+
       try {
         const replyData = {
           comment: this.replyText.trim(),
@@ -181,21 +213,14 @@ export default {
         };
 
         await this.$store.commit('addReply', { 
-          parentId: this.comment.id, 
+          parentId: this.comment.parentId || this.comment.id, 
           comment: replyData 
         });
 
-        // Reset reply input
         this.replyText = '';
         this.showReplyInput = false;
       } catch (error) {
         console.error('Error adding reply:', error);
-        // You could add an alert here to show the error to the user
-        if (error.message.includes('single-level nesting')) {
-          alert('Cannot reply to this comment: only one level of replies is allowed.');
-        } else {
-          alert('Error adding reply. Please try again.');
-        }
       }
     },
   }

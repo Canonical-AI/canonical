@@ -1,38 +1,39 @@
 <template>
   <div class="">
 
-    <v-timeline side="end" density="compact" class="mx-2 w-100" line-thickness="1">
-      <v-timeline-item
-        class="w-100"
-        density="compact"
-        size="15"
+    <v-list class="mx-2 w-100">
+      <v-list-item
         v-for="event in timeline"
         :key="event.value.id"
-        :dot-color="event.value.createdBy === $store.state.user.uid ? 'teal' : 'grey'"
+        class="px-0"
       >
-
-        <div v-if="event.type === 'comment'" class="w-100">
-          <commentCard 
-            :comment="event.value"
-            :ref="`comment-${event.value.id}`"
-          />
-          <!-- Render child comments with indentation -->
-          <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
+        <template v-if="event.type === 'comment'">
+          <div class="w-100">
             <commentCard 
-              v-for="child in event.value.children"
-              :key="child.id"
-              :comment="child"
-              :ref="`comment-${child.id}`"
-              class="mb-2"
+              :comment="event.value"
+              :ref="`comment-${event.value.id}`"
             />
+            <!-- Render child comments with indentation -->
+            <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
+              <commentCard 
+                v-for="child in event.value.children"
+                :key="child.id"
+                :comment="child"
+                :ref="`comment-${child.id}`"
+                class="mb-2"
+              />
+            </div>
           </div>
-        </div>
-        <v-card v-if="event.type === 'version'">
-          <v-card-subtitle class="text-caption"> {{$dayjs(event?.value?.createDate?.seconds*1000).fromNow() || ''}}  </v-card-subtitle>
-          <v-chip v-if="event.type === 'version'" @click="$router.push({ query: { v: event.value.versionNumber }})">{{ event.value.versionNumber }}</v-chip>
-        </v-card>
-      </v-timeline-item>
-    </v-timeline>
+        </template>
+        
+        <template v-if="event.type === 'version'">
+          <div class="w-100">
+            <div class="text-caption"> {{$dayjs(event?.value?.createDate?.seconds*1000).fromNow() || ''}}  </div>
+            <v-chip @click="$router.push({ query: { v: event.value.versionNumber }})">{{ event.value.versionNumber }}</v-chip>
+          </div>
+        </template>
+      </v-list-item>
+    </v-list>
 
     <v-form
       ref="form"
@@ -69,11 +70,8 @@ import {Comment} from "../../services/firebaseDataService";
 import commentCard from "./commentCard.vue"
 
 //TODO: 
-// - need a way to filter comments
-// - need a way to "scroll" to comment in the side bar but also scroll to comments in the editor
-// - need a way to show the original text of the comment in the editor
 // - need a way to resolve comments (i.e. stop showing them inline but show in sidebar unless filtered)
-// - need a way to have comment threads ( start a thread from one comment and keep adding to it)
+
 
 export default {
   components: {
@@ -191,20 +189,24 @@ export default {
 
 <style scoped>
 /* Prevent horizontal scrolling and ensure proper container behavior */
-.v-timeline {
+.v-list {
   overflow-x: hidden !important;
   overflow-y: visible;
   width: 100%;
   max-width: 100%;
 }
 
-/* Ensure timeline items don't overflow horizontally */
-:deep(.v-timeline-item) {
+/* Ensure list items don't overflow horizontally */
+:deep(.v-list-item) {
   max-width: 100%;
   overflow-x: hidden;
 }
 
-/* Ensure cards within timeline don't cause horizontal overflow */
+:deep(.v-list-item__content) {
+  padding: 0.5rem !important;
+}
+
+/* Ensure cards within list don't cause horizontal overflow */
 :deep(.v-card) {
   max-width: 100%;
   word-wrap: break-word;
