@@ -92,7 +92,7 @@
                             v-if="el.isOpen || hasSelectedChild(el)"
                             v-for="child in  el.children" 
                             class=""
-                            :key="el.id"
+                            :key="child.id || `temp-${child.data?.name || 'unnamed'}`"
                             :style="{ paddingLeft: '24px' }"
                             @click="handleItemClick(child)"
                             >
@@ -126,7 +126,7 @@
                     :class="{'selected-item': isSelected(el)}"
                     v-for="el in documents" 
                     class="pr-1 pl-6 list-item text-body-2"
-                    :key="el.id"
+                    :key="el.id || `temp-${el.data?.name || 'unnamed'}`"
                     @click="handleItemClick(el)"
                     >
 
@@ -168,16 +168,19 @@ export default {
             return this.$store.getters.projectFolderTree; 
         },
         filteredItems() {
-        // If filter is empty, return all items
-        if (!this.filter) return this.items; 
+        // Filter out items without proper IDs first to prevent dragging issues
+        const validItems = this.items.filter(item => item.id);
+        
+        // If filter is empty, return all valid items
+        if (!this.filter) return validItems; 
         
         const search = this.filter.toLowerCase(); // Convert search to lowercase
-        return this.items.map(item => {
+        return validItems.map(item => {
             const itemString = JSON.stringify(item).toLowerCase(); // Convert item to string and lowercase
             const matchesFilter = itemString.indexOf(search) > -1; // Check if search is in the item string
 
             const filteredChildren = item.children ? item.children.filter(child => 
-                JSON.stringify(child).toLowerCase().indexOf(search) > -1 // Check children as well
+                child.id && JSON.stringify(child).toLowerCase().indexOf(search) > -1 // Check children as well, but only if they have IDs
             ) : [];
 
             // Return item if it matches the filter or if it has matching children
@@ -257,6 +260,8 @@ export default {
 
         onAdd(event,folder) {
             if(!folder) return;
+            // Don't allow moving documents without proper IDs
+            if(!event.data || !event.data.id) return;
 
             this.$store.commit('updateFolder', { 
                 docId: event.data.id, 
@@ -267,6 +272,8 @@ export default {
 
         remove(event,folder) {
             if(!folder) return;
+            // Don't allow moving documents without proper IDs
+            if(!event.data || !event.data.id) return;
 
             this.$store.commit('updateFolder', { 
                 docId: event.data.id, 
