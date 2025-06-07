@@ -63,6 +63,42 @@
             ></p>
           </v-expansion-panel-text>
         </v-expansion-panel>
+        
+        <!-- AI Document Review Panel -->
+        <v-expansion-panel>
+          <v-expansion-panel-title>
+            <v-btn
+              :disabled="isDisabled || isReviewLoading"
+              class="text-none gen-btn"
+              @click="startAiReview()"
+              density="compact"
+              >
+              <v-progress-circular
+                v-if="isReviewLoading"
+                indeterminate
+                size="16"
+                width="2"
+                class="mr-2"
+              ></v-progress-circular>
+              AI Document Review
+            </v-btn>
+          </v-expansion-panel-title>
+          <v-expansion-panel-text>
+            <div v-if="reviewResults">
+              <div v-if="reviewResults.success" class="text-sm ma-1 pa-1">
+                <p class="text-success mb-2">
+                  ✓ Review completed: {{ reviewResults.commentsCreated }} inline comments added
+                </p>
+                <div v-if="reviewResults.failedComments > 0" class="text-warning">
+                  {{ reviewResults.failedComments }} issues could not be located precisely
+                </div>
+              </div>
+              <div v-else class="text-error text-sm ma-1 pa-1">
+                Review failed: {{ reviewResults.error }}
+              </div>
+            </div>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
       </v-expansion-panels>
     </div>
 
@@ -133,6 +169,19 @@
           v-bind="props"
           @click="sendPromptToVertexAI()"
           icon="mdi-comment-quote"
+        />
+      </template>
+    </v-tooltip>
+    <v-tooltip text="AI Document Review - Find grammar, logic, and tone issues" location="bottom">
+      <template v-slot:activator="{ props }">
+        <v-icon
+          :disabled="isDisabled || isReviewLoading"
+          v-if="$store.getters.canAccessAi"
+          class="mx-1"
+          v-bind="props"
+          @click="startAiReview()"
+          icon="mdi-spellcheck"
+          :class="{ 'rotating': isReviewLoading }"
         />
       </template>
     </v-tooltip>
@@ -208,7 +257,7 @@
 import { ProsemirrorAdapterProvider } from "@prosemirror-adapter/vue";
 import { marked } from "marked";
 import comment from "../comment/comment.vue";
-import { Feedback } from "../../services/vertexAiService";
+import { Feedback, DocumentReview } from "../../services/vertexAiService";
 import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
@@ -296,6 +345,8 @@ export default {
     isGenPanelExpanded: null,
     editorMounted: false,
     showEditor: true,
+    isReviewLoading: false,
+    reviewResults: null,
   }),
   async created() {
     this.isLoading = true;
@@ -521,6 +572,71 @@ export default {
         this.generativeFeedback += chunkText;
       }
       return;
+    },
+
+    async startAiReview() {
+      if (!this.document.data.content || !this.$refs.milkdownEditor) {
+        this.$store.commit('alert', { 
+          type: 'warning', 
+          message: 'No content to review or editor not ready', 
+          autoClear: true 
+        });
+        return;
+      }
+
+      this.isReviewLoading = true;
+      this.reviewResults = null;
+
+      try {
+        const editorRef = this.$refs.milkdownEditor;
+        const documentContent = this.document.data.content;
+
+        // Create inline comments based on AI analysis
+        const results = await DocumentReview.createInlineComments(documentContent, editorRef);
+        
+        this.reviewResults = results;
+
+        // Refresh editor decorations to show new comments
+        this.$nextTick(() => {
+          if (this.$refs.milkdownEditor) {
+            this.$refs.milkdownEditor.refreshCommentDecorations();
+          }
+        });
+
+        // Show success message
+        if (results.success && results.commentsCreated > 0) {
+          let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
+          if (results.failedComments > 0) {
+            message += ` (${results.failedComments} comments could not be positioned)`;
+          }
+          this.$store.commit('alert', { 
+            type: 'success', 
+            message: message, 
+            autoClear: true 
+          });
+        } else if (results.success && results.commentsCreated === 0) {
+          this.$store.commit('alert', { 
+            type: 'info', 
+            message: 'Great! No issues found in your document.', 
+            autoClear: true 
+          });
+        }
+
+      } catch (error) {
+        console.error('AI review failed:', error);
+        this.reviewResults = {
+          success: false,
+          error: error.message || 'An unexpected error occurred'
+        };
+        
+        this.$store.commit('alert', { 
+          type: 'error', 
+          message: `AI review failed: ${error.message || 'Please try again'}`, 
+          autoClear: true 
+        });
+      } finally {
+        this.isReviewLoading = false;
+      }
     },
 
     toggleFavorite() {
@@ -1131,5 +1247,14 @@ input.h1 {
   background: rgba(var(--v-theme-outline), 0.5);
 }
 
+/* AI Review loading animation */
+.rotating {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 </style>

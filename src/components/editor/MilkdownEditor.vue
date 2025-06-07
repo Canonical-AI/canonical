@@ -334,9 +334,37 @@ export default {
             });
         },
 
+        findTextPosition(text) {
+            if (!this.get || this.loading) return { start: -1, end: -1 };
+
+            let result = { start: -1, end: -1 };
+
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                const doc = view.state.doc;
+
+                doc.descendants((node, posInDoc) => {
+                    // If we already found a match, stop searching
+                    if (result.start !== -1) return false;
+                    
+                    if (!node.isTextblock) return true;
+                    const nodeText = node.textContent;
+                    const index = nodeText.indexOf(text);
+                    if (index !== -1) {
+                        result.start = posInDoc + index + 1; // ProseMirror positions are 1-based
+                        result.end = result.start + text.length;
+                        return false; // Found, stop traversal
+                    }
+                    return true;
+                });
+            });
+
+            return result;
+        },
+
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment'],
+    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
@@ -385,6 +413,7 @@ export default {
                 if (newVal.includes('<br') || newVal.includes('&lt;br')) {
                     this.processContentBeforeRender(newVal);
                 }
+
             }
         }
     },

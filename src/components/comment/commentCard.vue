@@ -27,6 +27,25 @@
             >
               resolved
             </v-chip>
+            <v-chip
+              v-if="comment.aiGenerated"
+              size="x-small"
+              color="purple"
+              variant="outlined"
+              class="ml-2"
+            >
+              <v-icon size="12" class="mr-1">mdi-robot</v-icon>
+              AI
+            </v-chip>
+            <v-chip
+              v-if="comment.severity"
+              size="x-small"
+              :color="getSeverityColor(comment.severity)"
+              variant="outlined"
+              class="ml-2"
+            >
+              {{ comment.severity }}
+            </v-chip>
           </div>
           <div>
             <v-btn
@@ -303,6 +322,19 @@ export default {
       // Only emit scroll event if comment has editor position and user isn't interacting with buttons
       if (this.hasEditorPosition && !event.target.closest('button') && !event.target.closest('.v-btn')) {
         this.$emit('scroll-to-editor', this.comment.id);
+      }
+    },
+
+    getSeverityColor(severity) {
+      switch (severity) {
+        case 'high':
+          return 'error';
+        case 'medium':
+          return 'warning';
+        case 'low':
+          return 'info';
+        default:
+          return 'grey';
       }
     },
   }
