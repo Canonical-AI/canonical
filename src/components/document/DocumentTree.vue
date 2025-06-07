@@ -1,36 +1,45 @@
 <template>
-    <v-list-item :title="$store.state.project.name" subtitle="project" ></v-list-item>
-    
-    <v-divider></v-divider>
-    <v-list-item>
-      <v-btn 
-        :disabled="!$store.getters.isUserLoggedIn"
-        class="text-none" 
-        block 
-        @click="$router.push({ path: '/document/create-document' })" 
-        color="primary" 
-        density="compact">
-            Create Doc
-        </v-btn>
-    </v-list-item>
-    <v-divider></v-divider>
-    <div>
-        <v-text-field
-          v-model="filter"
-          label="Filter Documents"
-          append-inner-icon="mdi-magnify"
-          single-line
-          density="compact"
-          hide-details
-        />
+  <div class="document-tree-container">
+    <!-- Fixed header section -->
+    <div class="tree-header">
+      <v-list-item :title="$store.state.project.name" subtitle="project" ></v-list-item>
+      
+      <v-divider></v-divider>
+      <v-list-item>
+        <v-btn 
+          :disabled="!$store.getters.isUserLoggedIn"
+          class="text-none" 
+          block 
+          @click="$router.push({ path: '/document/create-document' })" 
+          color="primary" 
+          density="compact">
+              Create Doc
+          </v-btn>
+      </v-list-item>
+      <v-divider></v-divider>
+      
+      <div class="pa-2">
+          <v-text-field
+            v-model="filter"
+            label="Filter Documents"
+            append-inner-icon="mdi-magnify"
+            single-line
+            density="compact"
+            hide-details
+          />
 
-        <v-btn :disabled="!$store.getters.isUserLoggedIn" 
-            class="text-none" @click="addFolder()" 
-            variant="text" 
-            density="compact" 
-            size="small">Add Folder 
-            <v-icon icon="mdi-plus"></v-icon>
-        </v-btn>
+          <v-btn :disabled="!$store.getters.isUserLoggedIn" 
+              class="text-none" @click="addFolder()" 
+              variant="text" 
+              density="compact" 
+              size="small">Add Folder 
+              <v-icon icon="mdi-plus"></v-icon>
+          </v-btn>
+      </div>
+    </div>
+
+    <!-- Scrollable content section -->
+    <div class="tree-content">
 
         <div ref="Folders">
             <v-list density="compact">
@@ -58,9 +67,17 @@
                                 @blur="cancelRenameFolder(el)" 
                                 />
                         </span>
-                        <span v-else class="text-ellipsis overflow-hidden whitespace-nowrap" @click="!el.data.folder && handleItemClick(el)">
-                            {{ el.data?.name }}
-                        </span>
+                        <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
+                          <template v-slot:activator="{ props }">
+                            <span 
+                              v-bind="props"
+                              class="folder-name" 
+                              @click="!el.data.folder && handleItemClick(el)"
+                            >
+                              {{ el.data?.name }}
+                            </span>
+                          </template>
+                        </v-tooltip>
 
                         <v-spacer/>
 
@@ -99,7 +116,11 @@
 
                             <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
                             <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="child.data?.draft" color="warning"></v-icon>
-                            <span class="" > {{ child.data?.name }} </span>
+                            <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
+                              <template v-slot:activator="{ props }">
+                                <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
+                              </template>
+                            </v-tooltip>
 
                         </li>
                 </VueDraggable>
@@ -133,12 +154,16 @@
                     <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
                     <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data?.draft" color="warning"></v-icon>
                     
-                    <span class="" >{{ el.data?.name }}</span>
+                    <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
+                      <template v-slot:activator="{ props }">
+                        <span v-bind="props" class="document-name">{{ el.data?.name }}</span>
+                      </template>
+                    </v-tooltip>
                 </li>
             </VueDraggable>
-            </div>
+        </div>
+      </div>
     </div>
-
 </template>
 
 <script>
@@ -311,13 +336,55 @@ export default {
 
 <style scoped>
 
+.document-tree-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Fill the navigation drawer */
+  max-height: calc(100vh - 64px); /* Account for app bar */
+}
 
+.tree-header {
+  flex-shrink: 0; /* Don't shrink the header */
+  border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
+}
 
+.tree-content {
+  flex: 1; /* Take up remaining space */
+  overflow-y: auto; /* Enable scrolling */
+  overflow-x: hidden; /* Prevent horizontal scroll */
+  min-height: 0; /* Important for flexbox scrolling */
+}
+
+/* Custom scrollbar styling - make it more visible */
+.tree-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tree-content::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-outline), 0.2);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.tree-content::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-outline), 0.5);
+  border-radius: 4px;
+  border: 1px solid rgba(var(--v-theme-outline), 0.1);
+}
+
+.tree-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-outline), 0.7);
+}
+
+/* Ensure scrollbar is always visible when content overflows */
+.tree-content {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(var(--v-theme-outline), 0.5) rgba(var(--v-theme-outline), 0.1); /* Firefox */
+}
 
 .selected-item {
   background-color: rgb(var(--v-theme-surface-light)); /* Add your desired style for selected item */
 }
-
 
 .overlay-icon{
     left: -15px;
@@ -325,5 +392,48 @@ export default {
     scale: 75%;
 }
 
+/* Text truncation with custom dash ellipsis */
+.folder-name,
+.document-name {
+  max-width: 180px; /* Adjust based on sidebar width */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle; /* Ensure proper alignment with icons */
+}
+
+/* Ensure tooltip wrappers don't break inline alignment */
+:deep(.v-tooltip) {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+:deep(.v-tooltip .v-overlay__content) {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Override default ellipsis with dash */
+.folder-name {
+  text-overflow: '-';
+}
+
+.document-name {
+  text-overflow: '-';
+}
+
+/* Fallback for browsers that don't support custom text-overflow */
+@supports not (text-overflow: '-') {
+  .folder-name,
+  .document-name {
+    text-overflow: ellipsis;
+  }
+  
+  .folder-name::after,
+  .document-name::after {
+    content: '';
+  }
+}
 
 </style>
