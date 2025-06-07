@@ -1,5 +1,5 @@
 import {firebaseApp} from "../firebase";
-import { getFirestore, collection, query, where, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
+import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
 import store from "../store";
@@ -310,6 +310,10 @@ export class Project {
 export class Comment {
   constructor(value) {
     this.comment = value.comment; 
+    this.documentVersion = value.documentVersion || null;
+    this.editorID = value.editorID || null;
+    this.resolved = value.resolved || false;
+    this.parentId = value.parentId || null; // For thread support
     Object.assign(this, addInDefaults(this));
   }
 }
@@ -483,6 +487,17 @@ export class Document {
     checkUserLoggedIn();
     const documentRef = doc(db, "documents", docID);
     
+    // If this is a child comment (has parentId), enforce single-level nesting
+    if (comment.parentId) {
+      // Get parent comment to check if it's already a child
+      const parentCommentRef = doc(documentRef, "comments", comment.parentId);
+      const parentCommentSnap = await getDoc(parentCommentRef);
+      
+      if (parentCommentSnap.exists() && parentCommentSnap.data().parentId) {
+        throw new Error("Child comments cannot have children (single-level nesting only)");
+      }
+    }
+    
     const commentInstance = new Comment(comment);
     
     const commentRef = await addDoc(collection(documentRef, "comments"), {...commentInstance});
@@ -496,6 +511,15 @@ export class Document {
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {updatedDate: serverTimestamp(), comment: comment});
     console.log('comment updated')
+  } 
+
+  static async updateCommentData(docID, id, values) {
+    checkUserLoggedIn();
+    const documentRef = doc(db, "documents", docID);
+    const commentRef = doc(documentRef, "comments", id);
+    await updateDoc(commentRef, {updatedDate: serverTimestamp(), ...values});
+    console.log('comment updated')
+    return
   } 
 
   static async archiveComment(docID, id) {
@@ -512,6 +536,8 @@ export class Document {
     await deleteDoc(commentRef);
     console.log('comment deleted')
   }
+
+
 
   ///-----------------------------------
   /// DOC VERSIONS

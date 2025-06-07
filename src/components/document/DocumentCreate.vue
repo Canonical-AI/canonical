@@ -4,71 +4,80 @@
     location="right"
     width="400"
     :temporary="!drawer"
-    class="h-100"
+    class="h-100 d-flex flex-column"
   >
-    <v-card-actions>
-      <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
-      <v-spacer></v-spacer>
-      <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
-        last update:
-        {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
-      </div>
-      <v-menu class="border border-surface-light">
-        <template v-slot:activator="{ props }">
-          <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
-            <v-icon>mdi-dots-vertical</v-icon>
-          </v-btn>
-        </template>
-        <v-list class="border border-surface-light" density="compact">
-          <v-list-item
-            @click="toggleDraft()"
-            prepend-icon="mdi-file-edit"
-            :class="document.data.draft ? 'text-orange' : ''"
-          >
-            {{ document.data.draft ? "Release doc" : "Stage doc" }}
-          </v-list-item>
-          <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
-            Archive doc
-          </v-list-item>
-          <v-list-item
-            class="text-error"
-            @click="deleteDocument"
-            prepend-icon="mdi-trash-can"
-          >
-            Permanently delete doc
-          </v-list-item>
-        </v-list>
-      </v-menu>
-    </v-card-actions>
-    <v-divider></v-divider>
+    <!-- Fixed header section -->
+    <div class="drawer-header flex-shrink-0">
+      <v-card-actions>
+        <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
+        <v-spacer></v-spacer>
+        <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
+          last update:
+          {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
+        </div>
+        <v-menu class="border border-surface-light">
+          <template v-slot:activator="{ props }">
+            <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
+              <v-icon>mdi-dots-vertical</v-icon>
+            </v-btn>
+          </template>
+          <v-list class="border border-surface-light" density="compact">
+            <v-list-item
+              @click="toggleDraft()"
+              prepend-icon="mdi-file-edit"
+              :class="document.data.draft ? 'text-orange' : ''"
+            >
+              {{ document.data.draft ? "Release doc" : "Stage doc" }}
+            </v-list-item>
+            <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
+              Archive doc
+            </v-list-item>
+            <v-list-item
+              class="text-error"
+              @click="deleteDocument"
+              prepend-icon="mdi-trash-can"
+            >
+              Permanently delete doc
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </v-card-actions>
+      <v-divider></v-divider>
 
-    <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
-      <v-expansion-panel>
-        <v-expansion-panel-title>
-          <v-btn
-            :disabled="isDisabled"
-            class="text-none gen-btn"
-            @click="sendPromptToVertexAI()"
-            density="compact"
-            >Generate Feedback
-          </v-btn>
-        </v-expansion-panel-title>
-        <v-expansion-panel-text>
-          <p
-            class="generative-feedback text-sm ma-1 pa-1"
-            v-if="generativeFeedback !== null"
-            v-html="renderMarkdown(generativeFeedback)"
-          ></p>
-        </v-expansion-panel-text>
-      </v-expansion-panel>
-    </v-expansion-panels>
+      <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
+        <v-expansion-panel>
+          <v-expansion-panel-title>
+            <v-btn
+              :disabled="isDisabled"
+              class="text-none gen-btn"
+              @click="sendPromptToVertexAI()"
+              density="compact"
+              >Generate Feedback
+            </v-btn>
+          </v-expansion-panel-title>
+          <v-expansion-panel-text>
+            <p
+              class="generative-feedback text-sm ma-1 pa-1"
+              v-if="generativeFeedback !== null"
+              v-html="renderMarkdown(generativeFeedback)"
+            ></p>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
+    </div>
 
-    <v-spacer />
-    <comment
-      v-if="document.id && $store.getters.isUserLoggedIn"
-      :doc-id="document.id"
-      :doc-type="'document'"
-    />
+    <!-- Scrollable comments section -->
+    <div class="comments-container flex-grow-1 overflow-y-auto">
+      <comment
+        v-if="document.id && $store.getters.isUserLoggedIn"
+        :doc-id="document.id"
+        :doc-type="'document'"
+        ref="commentComponent"
+        @scroll-to-comment="openDrawerAndScrollToComment"
+        @refresh-editor-decorations="refreshEditorDecorations"
+        @scroll-to-editor="scrollToCommentInEditor"
+      />
+    </div>
   </v-navigation-drawer>
 
   <v-app-bar
@@ -168,7 +177,8 @@
           class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
           contenteditable="true"
           :style="{ minHeight: '1em', outline: 'none' }"
-          @input="updateDocumentName"
+          @blur="updateDocumentNameOnBlur"
+          @keydown.enter="finishEditingTitle"
           @focus="ensureContent"
           @click.stop
           ref="editableDiv"
@@ -184,6 +194,7 @@
                 :disabled="isDisabled || !isEditable"
                 ref="milkdownEditor"
                 v-model="editorContent"
+                @comment-clicked="openDrawerAndScrollToComment"
               />
             </ProsemirrorAdapterProvider>
           </MilkdownProvider>
@@ -227,7 +238,9 @@ export default {
     isEditorModified: false,
     isLoading: false,
     isLoadingTimeout: false,
+    isCreatingDocument: false,
     isEditable: true,
+
     document: {
       id: null,
       data: {
@@ -331,13 +344,15 @@ export default {
       // Completely unmount the editor first to prevent state issues
       this.showEditor = false;
       this.isLoading = true;
+
+      while (this.$store.state.loadingUser) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       
       try {
         const result = await this.$store.dispatch("selectDocument", { id, version });
-        // If document selection returned null, it indicates a permission error that was already handled
         if (result === null) {
           this.isLoading = false;
-          // No need to continue processing as the user will be redirected
           return;
         }
         
@@ -370,6 +385,8 @@ export default {
         } else {
           this.isEditable = true;
         }
+        
+
       } catch (error) {
         console.error("Error fetching document:", error);
         this.$store.commit("alert", { 
@@ -399,11 +416,16 @@ export default {
 
     async createDocument() {
       console.log("create-doc");
+      this.isCreatingDocument = true;
       const createdDoc = await this.$store.dispatch("createDocument", {
         data: this.document.data,
       });
       this.document.id = createdDoc.id;
-      this.$router.replace({ path: `/document/${this.document.id}` });
+      this.document.data.id = createdDoc.id;
+      this.$store.commit("setSelectedDocument", this.document);
+      
+      await this.$router.replace({ path: `/document/${this.document.id}` });
+      this.isCreatingDocument = false;
     },
 
     async saveDocument() {
@@ -415,6 +437,7 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
+        this.$refs?.milkdownEditor?.updateCommentPositionsOnSave();
       }
 
       this.isEditorModified = false;
@@ -457,7 +480,7 @@ export default {
         this.previousTitle = newData.data.name;
         this.previousContent = newData.data.content;
         Object.assign(this.document, newData);
-        this.$router.push({ query: { ...this.$route.type, type: type } });
+        this.$router.push({ query: { ...this.$route.query, type: type } });
       }
       this.isEditorModified = false;
       await this.$nextTick();
@@ -532,8 +555,33 @@ export default {
       textarea.style.height = `${textarea.scrollHeight}px`; // Set it to the scroll height
     },
 
-    updateDocumentName(event) {
-      this.document.data.name = event.target.innerText.trim();
+    updateDocumentNameOnBlur(event) {
+      const newName = event.target.innerText.trim();
+      if (newName !== this.document.data.name) {
+        this.document.data.name = newName;
+      }
+    },
+
+    finishEditingTitle(event) {
+      event.preventDefault(); // Prevent adding a new line
+      const newName = event.target.innerText.trim();
+      if (newName !== this.document.data.name) {
+        this.document.data.name = newName;
+      }
+      event.target.blur(); // Remove focus from the title
+    },
+
+    placeCursorAtEnd(element) {
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false); // false means collapse to end
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (error) {
+        console.warn('Could not place cursor at end:', error);
+      }
     },
 
     async toggleDraft() {
@@ -550,17 +598,14 @@ export default {
     },
 
     activateEditor() {
-      // Skip if loading or editor not mounted
       if (this.isLoading || !this.showEditor) return;
       
       try {
-        // Use a timeout to ensure the DOM is fully rendered
         setTimeout(() => {
           const editorElement = document.querySelector('.ProseMirror.editor');
           if (editorElement) {
-            // On mobile, just focus the editor without manipulating selection
+
             if (this.$vuetify.display.mobile) {
-              // Only focus if not already focused to avoid triggering on-screen keyboard unnecessarily
               if (document.activeElement !== editorElement) {
                 editorElement.focus();
               }
@@ -597,8 +642,7 @@ export default {
       if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
         return element;
       }
-      
-      // Otherwise, recursively search for text nodes
+
       for (let i = 0; i < element.childNodes.length; i++) {
         const textNode = this.findFirstTextNode(element.childNodes[i]);
         if (textNode) {
@@ -608,6 +652,40 @@ export default {
       
       return null;
     },
+
+    // Method to open drawer and scroll to specific comment
+    openDrawerAndScrollToComment(commentId) {
+      this.drawer = true;
+
+      this.$nextTick(() => {
+        setTimeout(() => {
+          if (this.$refs.commentComponent) {
+            this.$refs.commentComponent.scrollToComment(commentId);
+          }
+        }, 300); 
+      });
+    },
+
+
+    // Method to refresh editor decorations when comments are resolved/unresolved
+    refreshEditorDecorations() {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
+    },
+
+    // Method to scroll to a comment position in the editor when clicked from sidebar
+    scrollToCommentInEditor(commentId) {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.scrollToComment(commentId);
+        }
+      });
+    },
+
+
   },
   computed: {
     isDisabled() {
@@ -627,9 +705,7 @@ export default {
         return this.document.data.content;
       },
       set(newValue) {
-        if (newValue === this.document.data.content) {
-          return;
-        }
+        if (newValue === this.document.data.content) return;
         this.document.data.content = newValue;
         this.isEditorModified = true;
         return;
@@ -639,6 +715,7 @@ export default {
   watch: {
     "document.data": {
       async handler() {
+
         if (this.isEditable === false) {
           return;
         }
@@ -682,8 +759,21 @@ export default {
 
     $route: {
       async handler(to, from) {
+        if (this.isCreatingDocument) return;
+        
         try {
-          // Save any pending changes
+          // Skip heavy operations if only query params changed (internal update)
+          if (from && to.path === from.path && to.params.id === from.params.id) {
+            console.log('Query-only route change, skipping reload');
+            return;
+          }
+
+          // Skip if navigating to the same document we already have loaded
+          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query.v) {
+            console.log('Navigating to same document, skipping reload');
+            return;
+          }
+
           if (this.isEditorModified) {
             await this.saveDocument();
           }
@@ -692,16 +782,17 @@ export default {
             return;
           }
           
-          // Ensure editor is completely unmounted
-          this.showEditor = false;
-          this.isEditorModified = false;
-          
-          // Wait for the DOM to update
-          await this.$nextTick();
-          
           if (this.$route.params.id && this.$route.query.v) {
+            // Viewing a specific version - always fetch
+            this.showEditor = false;
+            this.isEditorModified = false;
+            await this.$nextTick();
             await this.fetchDocument(this.$route.params.id, this.$route.query.v);
-          } else if (this.$route.params.id) {
+          } else if (this.$route.params.id && this.document.id !== this.$route.params.id) {
+            // Only fetch if it's a different document
+            this.showEditor = false;
+            this.isEditorModified = false;
+            await this.$nextTick();
             await this.fetchDocument(this.$route.params.id);
           } else if (this.$route.path === "/document/create-document") {
             this.isLoading = true;
@@ -712,12 +803,14 @@ export default {
                 content: "Hello **World**",
                 draft: true,
               },
+              comments: [],
             };
             this.editorContent = this.document.data.content;
             this.previousContent = this.document.data.content;
             this.previousTitle = this.document.data.name;
             this.isEditorModified = false;
             this.isLoading = false;
+            this.$store.commit('setSelectedDocument', this.document);
             
             // Ensure DOM is updated
             await this.$nextTick();
@@ -774,8 +867,10 @@ export default {
       this.saveDocument();
     }
     
-    // Ensure editor is unmounted before navigation
-    this.showEditor = false;
+    // Only unmount editor if we're not creating a document
+    if (!this.isCreatingDocument) {
+      this.showEditor = false;
+    }
     
     // Cancel any pending operations
     if (this.debounceSave) {
@@ -862,14 +957,23 @@ export default {
   flex-grow: 1 !important;
   height: 100% !important;
   min-height: 95% !important;
-  padding: 16px 60px !important;
+  padding: 24px !important;
   color: inherit !important;
   max-width: none !important;
   margin-bottom: 0px !important;
 }
 
+/* More specific selector to override Nord theme padding */
+:deep(.milkdown .ProseMirror) {
+  padding: 24px !important;
+}
+
+:deep(.milkdown .ProseMirror.editor) {
+  padding: 24px !important;
+}
+
 .document-title{
-  padding-left: 3.5rem !important;
+  padding-left: 1.5rem !important;
 }
 
 @media (max-width: 640px) {
@@ -880,7 +984,16 @@ export default {
   }
 
   :deep(div.ProseMirror.editor) {
-    padding: 8px 8px !important;
+    padding: 8px !important;
+  }
+  
+  /* More specific selectors for mobile to override Nord theme */
+  :deep(.milkdown .ProseMirror) {
+    padding: 8px !important;
+  }
+  
+  :deep(.milkdown .ProseMirror.editor) {
+    padding: 8px !important;
   }
 }
 
@@ -974,6 +1087,48 @@ input.h1 {
 .generative-feedback :deep(p) {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+}
+
+/* Navigation drawer layout styles */
+.drawer-header {
+  border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
+  overflow-x: hidden; /* Prevent horizontal overflow in header */
+}
+
+/* Ensure the entire drawer doesn't overflow horizontally */
+:deep(.v-navigation-drawer__content) {
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.comments-container {
+  min-height: 0; /* Allow flexbox to shrink this container */
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  overflow-y: auto; /* Allow vertical scrolling */
+  width: 100%;
+  padding-right: 8px; /* Add some padding to prevent content from touching scrollbar */
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar styling for better UX */
+.comments-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.comments-container::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-outline), 0.1);
+  border-radius: 3px;
+}
+
+.comments-container::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-outline), 0.3);
+  border-radius: 3px;
+}
+
+.comments-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-outline), 0.5);
 }
 
 

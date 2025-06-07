@@ -3,6 +3,7 @@
             ref="milkdown"
             class="canonical-editor editor text-body-2 h-auto"
             style="min-height: 95%;"
+            :data-disabled="disabled"
             />
 
 </template>
@@ -10,7 +11,7 @@
 <script>
 import {getCurrentInstance, onMounted, ref} from 'vue';
 
-import { Milkdown, useEditor } from '@milkdown/vue';
+import { Milkdown, useEditor, useInstance } from '@milkdown/vue';
 import { Crepe } from '@milkdown/crepe'
 import { nord } from '@milkdown/theme-nord'
 import { clipboard } from '@milkdown/plugin-clipboard';
@@ -30,11 +31,14 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
+import { createCommentPlugin, commentFunctions, commentPluginKey } from './comment';
+import CustomToolbar from './CustomToolbar.vue';
 
 export default {
     name: "MilkdownEditor",
     components:{
         Milkdown,
+        CustomToolbar,
     },
     props: {
         modelValue: String,
@@ -52,6 +56,7 @@ export default {
         const pluginViewFactory = usePluginViewFactory();
         const referenceLink = useReferenceLink();
         const task = useTask();
+        const [loading, get] = useInstance();
         
         const placeholders = [
             'Write something...',
@@ -67,24 +72,26 @@ export default {
         const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
         
         onMounted(() => {
-            // Update the placeholder text when mounted
             placeholderText.value = placeholders[Math.floor(Math.random() * placeholders.length)];
         });
 
         const isMobile = () => window.innerWidth <= 600;
 
+        // Get reference to current component instance for use in plugins
+        const currentInstance = getCurrentInstance();
+        
         const editor = useEditor((root) => {
+            const isEditable = () => !props.disabled;
+            
             const crepe = new Crepe({
                 defaultValue: props.modelValue,
                 featureConfigs: {
                     [Crepe.Feature.Placeholder]: {
                             text: placeholderText.value
-                    }
- 
+                    },
+                    //[Crepe.Feature.Toolbar]: false // Explicitly disable toolbar
                 }
             });
-
-            const editable = () => !props.disabled;
 
             crepe.editor.config((ctx)=>{
                     ctx.set(rootCtx, root)
@@ -93,9 +100,10 @@ export default {
                             emit("update:modelValue", markdown);
                         }
                     });
+                    
                     ctx.update(editorViewOptionsCtx, (prev) => ({
                         ...prev,
-                        editable,
+                        editable: isEditable,
                         handlePaste: (view, event) => {
                             const parser = ctx.get(parserCtx);
                             let text = event.clipboardData.getData('text/plain')
@@ -134,6 +142,10 @@ export default {
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: ReferenceLinkTooltip, key: 'reference-link-tooltip'}),
                     })))
+                .use($prose((ctx) => new Plugin({
+                        view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
+                    })))
+                .use($prose(() => createCommentPlugin()))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
@@ -148,12 +160,17 @@ export default {
                 
             return crepe
         })
-        return { editor}
+    
+        return { 
+            editor,
+            get,
+            loading
+        }
     },
     data() {
         return {
-            editor: null,
-            lastSelection: null
+            editorElement: null,
+            commentClickHandler: null,
         };
     },
     methods: {
@@ -169,47 +186,157 @@ export default {
                 this.$emit('update:modelValue', cleanedContent);
             }
         },
-        // Preserve editor selection on mobile
-        preserveEditorSelection() {
-            const editorInstance = this.editor?.get();
-            if (!editorInstance) return;
-            
-            // Get editor view
-            const editorView = editorInstance.ctx.get(editorViewCtx);
-            if (!editorView) return;
-            
-            // Create a plugin that prevents jumping to position 0
-            const preserveSelectionPlugin = new Plugin({
-                key: 'preserveSelectionPlugin',
-                view: () => {
-                    return {
-                        update: (view, prevState) => {
-                            // If selection is at position 0 and we had a previous non-zero selection
-                            if (view.state.selection.from === 0 && 
-                                view.state.selection.empty && 
-                                prevState && prevState.selection.from > 0) {
-                                    
-                                // Restore previous valid selection
-                                setTimeout(() => {
-                                    const tr = view.state.tr.setSelection(prevState.selection);
-                                    view.dispatch(tr);
-                                }, 0);
-                            }
-                        }
-                    };
-                }
+
+        // Method to create comment decoration that can be called externally
+        createCommentDecoration(from, to, commentData) {
+            if (!this.get || this.loading) return;
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    commentFunctions.addDecoration(view, from, to, commentData);
+                });
+            } catch (error) {
+                console.error('Failed to create comment decoration:', error);
+            }
+        },
+
+        // Method to create a new comment with decoration
+        createComment(from, to, text, documentId, documentVersion) {
+            if (!this.get || this.loading) return null;
+
+            try {
+                let commentData = null;
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    commentData = commentFunctions.createComment(view, from, to, text, documentId, documentVersion);
+                });
+                return commentData;
+            } catch (error) {
+                console.error('Failed to create comment:', error);
+                return null;
+            }
+        },
+
+        // Method to remove a comment decoration
+        removeComment(commentId) {
+            if (!this.get || this.loading) {
+                console.error('Editor is not ready yet');
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    
+                    // Use the comment functions to remove the comment
+                    commentFunctions.removeComment(view, commentId);
+                });
+            } catch (error) {
+                console.error('Failed to remove comment:', error);
+            }
+        },
+
+        // Method to refresh comment decorations (useful after plugin changes)
+        refreshCommentDecorations() {
+            if (!this.get || this.loading) return;
+
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);      
+                commentFunctions.refreshAllDecorations(view);
             });
-            
-            // Add the plugin directly to the ProseMirror state
-            const plugins = editorView.state.plugins.slice();
-            plugins.push(preserveSelectionPlugin);
-            
-            // Create a new state with our plugin
-            const newState = editorView.state.reconfigure({ plugins });
-            editorView.updateState(newState);
-        }
+        },
+
+        // Method to scroll to a specific comment position in the editor
+        scrollToComment(commentId) {
+            if (!this.get || this.loading) {
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const { state } = view;
+                    
+                    // Find the comment in store data
+                    const comment = this.$store.state.selected.comments?.find(c => c.id === commentId);
+                    
+                    if (!comment || !comment.editorID) return;
+
+                    const { from, to } = comment.editorID;
+                    
+                    // Ensure the position is valid
+                    if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) return;
+
+                    // Find the comment element in the DOM and scroll to it
+                    this.$nextTick(() => {
+                        const editorDom = view.dom;
+                        const commentElement = editorDom.querySelector(`[data-comment-id="${commentId}"]`);
+                        
+                        if (commentElement) {
+                            commentElement.scrollIntoView({ 
+                                behavior: 'smooth',
+                                block: 'nearest',
+                                inline: 'nearest'
+                            });
+                        }
+                    });
+
+                    // Add visual highlight effect
+                    this.$nextTick(() => {
+                        const editorDom = view.dom;
+                        const commentElements = editorDom.querySelectorAll(`[data-comment-id="${commentId}"]`);
+                        
+                        commentElements.forEach(element => {
+                            // Add highlight effect
+                            element.style.transition = 'background-color 0.5s ease';
+                            element.style.backgroundColor = 'rgba(var(--v-theme-primary), 0.3)';
+                            
+                            // Remove highlight after animation
+                            setTimeout(() => {
+                                element.style.backgroundColor = '';
+                            }, 2000);
+                        });
+                    });
+                });
+            } catch (error) {
+                console.error('Failed to scroll to comment:', error);
+            }
+        },
+
+
+        // Method to set up comment click handler
+        setupCommentClickHandler() {
+            setTimeout(() => {
+                const editorElement = this.$el?.querySelector('.ProseMirror');
+                if (editorElement) {
+                    this.editorElement = editorElement;
+                    this.commentClickHandler = this.handleCommentClick.bind(this);
+                    editorElement.addEventListener('comment-clicked', this.commentClickHandler);
+                }
+            }, 1000);
+        },
+
+        // Handle comment clicks
+        handleCommentClick(event) {
+            const commentId = event.detail?.commentId;
+            if (commentId) {
+                this.$emit('comment-clicked', commentId);
+            }
+        },
+
+        updateCommentPositionsOnSave() {
+            if (!this.get || this.loading) return;
+
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                commentFunctions.updateCommentPositions(view);
+            });
+        },
+
     },
-    emits:['update:modelValue'],
+    emits:['update:modelValue', 'comment-clicked'],
+    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
@@ -221,18 +348,41 @@ export default {
     watch: {
         isDarkTheme(newVal) {
             if (newVal) {
-                console.log(this.editor.get().remove(nord))
+                this.editor.get().remove(nord)
             } else {
-                console.log(this.editor.get())
+                this.editor.get()
             }
         },
+        // Watch both comments and version changes to filter comments by version
+        '$store.state.selected.comments': {
+            handler(oldVal, newVal) {
+                if (oldVal === newVal) return;
+                this.refreshCommentDecorations();
+            },
+            immediate: true,
+            deep: true
+        },
+        '$store.state.selected.currentVersion': {
+            handler() {
+                this.refreshCommentDecorations();
+            },
+            immediate: true
+        },
+        loading: {
+            handler() {
+                if (this.loading) return;
+                this.refreshCommentDecorations();
+            },
+            immediate: true
+        },
+
         modelValue: {
             immediate: true,
-            handler(newVal) {
+            handler(newVal, oldVal) {
                 if (!newVal) return;
                 
                 // Process content when it changes
-                if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
+                if (newVal.includes('<br') || newVal.includes('&lt;br')) {
                     this.processContentBeforeRender(newVal);
                 }
             }
@@ -244,17 +394,35 @@ export default {
         }
     },
     mounted() {
-        // Apply selection preservation after editor is mounted
         this.$nextTick(() => {
-            this.preserveEditorSelection();
+            this.setupCommentClickHandler();
         });
+    },
+    beforeUnmount() {
+        if (this.editorElement && this.commentClickHandler) {
+            this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
+        }
     }
 };
 </script>
   
-  <!-- Add "scoped" attribute to limit CSS to this component only -->
+
 <style>
-/* Make editor text smaller on mobile devices */
+
+div.milkdown-toolbar {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.milkdown .milkdown-toolbar {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 @media (max-width: 600px) {
     .canonical-editor {
         font-size: 0.7rem !important;

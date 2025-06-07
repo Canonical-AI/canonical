@@ -60,6 +60,8 @@ const store = createStore({
         version: null,
         comments: [],
         versions: [],
+        isVersion: false,
+        currentVersion: 'live'
       },
       detailClose: 1,
       globalAlerts:[],
@@ -111,6 +113,52 @@ const store = createStore({
         .sort((a, b) => a.date.createDate - b.date.createDate);
     },
     
+    // Filter comments by version - shows all comments for 'live' version, or only version-specific comments
+    filteredCommentsByVersion: (state) => {
+      if (!state.selected.comments) return [];
+      
+      const currentVersion = state.selected.currentVersion;
+      
+      // If viewing 'live' version or no version specified, show ALL comments (from all versions)
+      if (!currentVersion || currentVersion === 'live') {
+        return state.selected.comments
+          .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+      }
+      
+      // If viewing a specific version, show only comments for that version
+      return state.selected.comments
+        .filter(comment => comment.documentVersion === currentVersion)
+        .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
+
+    // Get threaded comments organized as parent-child structure
+    threadedCommentsByVersion: (state, getters) => {
+      const filteredComments = getters.filteredCommentsByVersion;
+      const threaded = [];
+      const commentMap = new Map();
+      
+      // First pass: create map of all comments
+      filteredComments.forEach(comment => {
+        commentMap.set(comment.id, { 
+          ...comment, 
+          children: [] 
+        });
+      });
+      
+      // Second pass: organize into parent-child structure
+      filteredComments.forEach(comment => {
+        if (comment.parentId && commentMap.has(comment.parentId)) {
+          // This is a child comment
+          commentMap.get(comment.parentId).children.push(commentMap.get(comment.id));
+        } else if (!comment.parentId) {
+          // This is a top-level comment
+          threaded.push(commentMap.get(comment.id));
+        }
+      });
+      
+      return threaded.sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
+    
   },
   actions: {
     async enter({ commit , state}) {
@@ -157,13 +205,15 @@ const store = createStore({
           return;
         }
 
+        // Set version information in the selected document
+        selectedData.isVersion = !!version;
+        selectedData.currentVersion = version || 'live';
+
         commit('setSelectedDocument', { ...selectedData, isLoading: false });
         return selectedData; // Return the selected data
       } catch (error) {
         console.error("Error selecting document:", error);
-        // The alert for permission errors is already handled in the Document.getDocById method
         commit('setSelectedDocument', { ...state.selected, isLoading: false });
-        // Push to home page if document access is denied
         if (error.message.includes('Permission denied')) {
           router.push('/');
         }
@@ -207,19 +257,94 @@ const store = createStore({
         }
     },
 
+    async addComment({state, commit}, comment) {
+      const newComment = await Document.createComment(state.selected.id, comment)
+      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
+      commit('addCommentToState', newComment);
+      return newComment;
+    },
+
+    async addReply({state, commit}, { parentId, comment }) {
+      const replyData = {
+        ...comment,
+        parentId: parentId
+      };
+      const newReply = await Document.createComment(state.selected.id, replyData);
+      newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
+      commit('addReplyToState', newReply);
+      return newReply;
+    },
+
+    async updateComment({state, commit}, { id, updatedComment }) {
+      const updatedCommentData = await Document.updateComment(state.selected.id, id, updatedComment)
+      commit('updateCommentInState', {id, updatedComment: updatedCommentData});
+      return updatedCommentData;
+    },
+
+    async deleteComment({state, commit}, id) {
+      await Document.deleteComment(state.selected.id, id)
+      commit('deleteCommentInState', id);
+      return id;
+    },
+
+    // Update comment positions in database (called on document save)
+    async updateCommentPositions({state, commit}, positionUpdates) {
+      if (state.selected.id === null) return;
+
+      const validComments = state.selected.comments.filter(c => c && c.id);
+  
+      for (const update of positionUpdates) {
+        const comment = validComments.find(c => c.id === update.commentId);
+        
+        if (comment && comment.editorID) {
+
+          comment.editorID.from = update.newFrom;
+          comment.editorID.to = update.newTo;
+
+          await Document.updateCommentData(state.selected.id, comment.id, {
+            editorID: {
+              from: update.newFrom,
+              to: update.newTo
+            }
+          });
+
+
+          commit('updateCommentInState', {id: comment.id, values: 
+            {
+              editorID: {
+                from: update.newFrom,
+                to: update.newTo
+              }
+            }
+          });
+
+        } 
+      }
+    },
+
 
         ///--------------------------------------------------------------
     /// Chats
 
     async renameChat({state, commit}, {id, newName}){
-      const chat = state.chats.find(chat => chat.id === id);
-      if (chat) {
-        chat.data.name = newName; // Rename the chat
+      try {
+        await ChatHistory.updateChatField(id, 'name', newName);
+        const updatedChats = state.chats.map(chat => 
+          chat.id === id ? { ...chat, data: { ...chat.data, name: newName } } : chat
+        );
+        commit('setChats', updatedChats);
+      } catch (error) {
+        console.error("Failed to rename chat:", error);
       }
-      await ChatHistory.updateChatField(id, 'name' , newName);
-      state.chats = await ChatHistory.getAll()
-      return
     },
+
+    // Action for updating comment data (replaces the async mutation)
+    async updateCommentData({ state, commit }, { id, data }) {
+      const updatedCommentData = await Document.updateCommentData(state.selected.id, id, data);
+      commit('updateCommentInState', {id, values: data});
+      return updatedCommentData;
+    },
+
 
   },
 
@@ -399,6 +524,7 @@ const store = createStore({
     },
 
     async saveSelectedDocument(state) {
+      if (state.selected.id === null) return;
       await Document.updateDoc(state.selected.id, state.selected.data);
       const newTasks = await Task.updateTasks(state.selected.id, state.selected.data);
       state.tasks = state.tasks.filter(task => task.docID !== state.selected.id).concat(newTasks);
@@ -516,24 +642,32 @@ const store = createStore({
       state.selected.comments = comments;
     },
 
-    async addComment(state, comment) {
-      const newComment = await Document.createComment(state.selected.id, comment)
-      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
-      state.selected.comments.push(newComment);
+    setChats(state, chats) {
+      state.chats = chats;
     },
 
-    async updateComment(state, { id, updatedComment }) {
-      await Document.updateComment(state.selected.id, id, updatedComment)
+    addCommentToState(state, comment) {
+      state.selected.comments.push(comment);
+    },
+
+    addReplyToState(state, reply) {
+      state.selected.comments.push(reply);
+    },
+
+    deleteCommentInState(state, id) {
+      state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
+    },
+
+    updateCommentInState(state, {id, values}) {
       const index = state.selected.comments.findIndex(comment => comment.id === id);
-      if (index !== -1) {
-        state.selected.comments[index].comment = updatedComment;
+      if (index === -1) return;
+      state.selected.comments[index] = {
+        ...state.selected.comments[index],
+        ...values
       }
     },
 
-    async deleteComment(state, id) {
-      await Document.deleteComment(state.selected.id, id)
-      state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
-    },
+
   }
 });
 
