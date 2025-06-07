@@ -238,7 +238,9 @@ export default {
     isEditorModified: false,
     isLoading: false,
     isLoadingTimeout: false,
+    isCreatingDocument: false,
     isEditable: true,
+
     document: {
       id: null,
       data: {
@@ -414,11 +416,16 @@ export default {
 
     async createDocument() {
       console.log("create-doc");
+      this.isCreatingDocument = true;
       const createdDoc = await this.$store.dispatch("createDocument", {
         data: this.document.data,
       });
       this.document.id = createdDoc.id;
-      this.$router.replace({ path: `/document/${this.document.id}` });
+      this.document.data.id = createdDoc.id;
+      this.$store.commit("setSelectedDocument", this.document);
+      
+      await this.$router.replace({ path: `/document/${this.document.id}` });
+      this.isCreatingDocument = false;
     },
 
     async saveDocument() {
@@ -430,9 +437,8 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
-        this.$refs.milkdownEditor.updateCommentPositionsOnSave();
+        this.$refs?.milkdownEditor?.updateCommentPositionsOnSave();
       }
-
 
       this.isEditorModified = false;
     },
@@ -474,7 +480,7 @@ export default {
         this.previousTitle = newData.data.name;
         this.previousContent = newData.data.content;
         Object.assign(this.document, newData);
-        this.$router.push({ query: { ...this.$route.type, type: type } });
+        this.$router.push({ query: { ...this.$route.query, type: type } });
       }
       this.isEditorModified = false;
       await this.$nextTick();
@@ -699,9 +705,7 @@ export default {
         return this.document.data.content;
       },
       set(newValue) {
-        if (newValue === this.document.data.content) {
-          return;
-        }
+        if (newValue === this.document.data.content) return;
         this.document.data.content = newValue;
         this.isEditorModified = true;
         return;
@@ -711,6 +715,7 @@ export default {
   watch: {
     "document.data": {
       async handler() {
+
         if (this.isEditable === false) {
           return;
         }
@@ -754,8 +759,21 @@ export default {
 
     $route: {
       async handler(to, from) {
+        if (this.isCreatingDocument) return;
+        
         try {
-          // Save any pending changes
+          // Skip heavy operations if only query params changed (internal update)
+          if (from && to.path === from.path && to.params.id === from.params.id) {
+            console.log('Query-only route change, skipping reload');
+            return;
+          }
+
+          // Skip if navigating to the same document we already have loaded
+          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query.v) {
+            console.log('Navigating to same document, skipping reload');
+            return;
+          }
+
           if (this.isEditorModified) {
             await this.saveDocument();
           }
@@ -764,16 +782,17 @@ export default {
             return;
           }
           
-          // Ensure editor is completely unmounted
-          this.showEditor = false;
-          this.isEditorModified = false;
-          
-          // Wait for the DOM to update
-          await this.$nextTick();
-          
           if (this.$route.params.id && this.$route.query.v) {
+            // Viewing a specific version - always fetch
+            this.showEditor = false;
+            this.isEditorModified = false;
+            await this.$nextTick();
             await this.fetchDocument(this.$route.params.id, this.$route.query.v);
-          } else if (this.$route.params.id) {
+          } else if (this.$route.params.id && this.document.id !== this.$route.params.id) {
+            // Only fetch if it's a different document
+            this.showEditor = false;
+            this.isEditorModified = false;
+            await this.$nextTick();
             await this.fetchDocument(this.$route.params.id);
           } else if (this.$route.path === "/document/create-document") {
             this.isLoading = true;
@@ -848,8 +867,10 @@ export default {
       this.saveDocument();
     }
     
-    // Ensure editor is unmounted before navigation
-    this.showEditor = false;
+    // Only unmount editor if we're not creating a document
+    if (!this.isCreatingDocument) {
+      this.showEditor = false;
+    }
     
     // Cancel any pending operations
     if (this.debounceSave) {
