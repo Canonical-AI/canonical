@@ -414,6 +414,29 @@ export default {
   vertical-align: middle;
 }
 
+/* Subtle pulse animation for dragging items (less intrusive) */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Apply subtle animation when item is being dragged */
+.sortable-chosen {
+  animation: pulse 0.6s ease-in-out infinite;
+  background-color: rgba(var(--v-theme-primary), 0.1) !important;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+/* Style for the ghost element (placeholder) */
+.ghost {
+  opacity: 0.4;
+  background-color: rgba(var(--v-theme-primary), 0.1);
+  border: 2px dashed rgba(var(--v-theme-primary), 0.3);
+  border-radius: 4px;
+}
+
 /* Override default ellipsis with dash */
 .folder-name {
   text-overflow: '-';
