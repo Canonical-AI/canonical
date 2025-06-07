@@ -430,9 +430,9 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
+        this.$refs.milkdownEditor.updateCommentPositionsOnSave();
       }
 
-      this.$refs.milkdownEditor.updateCommentPositionsOnSave();
 
       this.isEditorModified = false;
     },
@@ -784,12 +784,14 @@ export default {
                 content: "Hello **World**",
                 draft: true,
               },
+              comments: [],
             };
             this.editorContent = this.document.data.content;
             this.previousContent = this.document.data.content;
             this.previousTitle = this.document.data.name;
             this.isEditorModified = false;
             this.isLoading = false;
+            this.$store.commit('setSelectedDocument', this.document);
             
             // Ensure DOM is updated
             await this.$nextTick();

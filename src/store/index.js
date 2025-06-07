@@ -289,6 +289,7 @@ const store = createStore({
 
     // Update comment positions in database (called on document save)
     async updateCommentPositions({state, commit}, positionUpdates) {
+      if (state.selected.id === null) return;
 
       const validComments = state.selected.comments.filter(c => c && c.id);
   
@@ -523,6 +524,7 @@ const store = createStore({
     },
 
     async saveSelectedDocument(state) {
+      if (state.selected.id === null) return;
       await Document.updateDoc(state.selected.id, state.selected.data);
       const newTasks = await Task.updateTasks(state.selected.id, state.selected.data);
       state.tasks = state.tasks.filter(task => task.docID !== state.selected.id).concat(newTasks);
