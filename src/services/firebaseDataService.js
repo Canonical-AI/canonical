@@ -519,6 +519,7 @@ export class Document {
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {updatedDate: serverTimestamp(), ...values});
     console.log('comment updated')
+    return
   } 
 
   static async archiveComment(docID, id) {

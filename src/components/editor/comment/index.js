@@ -1,12 +1,13 @@
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { DecorationSet, Decoration } from 'prosemirror-view';
 import { customAlphabet } from 'nanoid';
+import store from '../../../store';
+
 
 const nanoid = customAlphabet('abcdefg', 8);
 
 // Store comments in memory for quick access
 const commentStore = new Map();
-
 
 // Plugin key for accessing the plugin state
 export const commentPluginKey = new PluginKey('commentPlugin');
@@ -23,35 +24,43 @@ export const createCommentDecoration = (from, to, id) => {
     });
 };
 
-// Comment functions that will be accessible via the plugin key
-export const commentFunctions = {
-    createComment: (view, from, to, comment, documentId, documentVersion) => {
-        const id = nanoid();
+
+export const commentFunctions =  {
+   createComment: async (view, from, to, comment, originalText) => {
+
+        const documentId = store?.state?.selected?.id || 'unknown';
+        const currentVersion = store?.state?.selected?.currentVersion || 'live';
+        const documentVersion = currentVersion === 'live' ? null : currentVersion;
+
         const commentData = {
-            id,
             comment,
-            from,
-            to,
             documentId,
             documentVersion,
             createdAt: new Date().toISOString(),
-            resolved: false
+            resolved: false,
+            editorID: {
+                from,
+                to,
+                selectedText: originalText
+            }
         };
 
+        const commentObject = await store.dispatch('addComment', commentData);
+
         // Store comment data
-        commentStore.set(id, commentData);
+        commentStore.set(commentObject.id, commentObject);
 
         // Create transaction to add decoration
         const tr = view.state.tr;
         tr.setMeta(commentPluginKey, {
             type: 'ADD_DECORATION',
-            id,
+            id: commentObject.id,
             from,
             to
         });
 
         view.dispatch(tr);
-        return commentData;
+        return ;
     },
 
     addDecoration: (view, from, to, commentData) => {
@@ -87,9 +96,11 @@ export const commentFunctions = {
     },
 
     // Clear all decorations and rebuild from store data
-    refreshAllDecorations: (view, storeGetterFn) => {
+    refreshAllDecorations: (view ) => {
         // Get fresh data from store
-        const allComments = storeGetterFn ? storeGetterFn() : [];
+
+
+        const allComments = store.state.selected.comments;
         const activeComments = allComments.filter(comment => 
             comment.editorID && 
             comment.resolved !== true &&
@@ -112,6 +123,51 @@ export const commentFunctions = {
         });
 
         view.dispatch(tr);
+    },
+
+    updateCommentPositions: (view) => {
+        const comments = store.state.selected.comments;
+
+        const { state } = view;
+        const commentPluginState = commentPluginKey.getState(state);
+                    
+        if (!commentPluginState) return;
+        const positionUpdates = [];
+
+                    // Try different ways to access decorations
+        if (commentPluginState.find) {
+        const decorations = commentPluginState.find();
+                        
+        decorations.forEach((decoration, index) => {
+                            
+                            // Get the comment ID from the spec (now properly stored there)
+        const commentId = decoration.spec.commentId || 
+                                decoration.spec['data-comment-id'] || 
+                                decoration.attrs?.['data-comment-id'];                       
+
+                if (commentId) {
+                    const comment = comments.find(c => c.id === commentId);
+
+                    if (comment && comment.editorID) {
+                        const currentFrom = decoration.from;
+                        const currentTo = decoration.to;
+                        if (currentFrom === comment.editorID.from && currentTo === comment.editorID.to) return;
+                        
+                        // Always add to updates for now to test saving
+                        positionUpdates.push({
+                            commentId: commentId,
+                            newFrom: currentFrom,
+                            newTo: currentTo,
+                            oldFrom: comment.editorID.from,
+                            oldTo: comment.editorID.to
+                        });
+                    }
+                } 
+            });
+        } 
+
+        store.dispatch('updateCommentPositions', positionUpdates);  
+
     }
 };
 
@@ -134,13 +190,11 @@ export const createCommentPlugin = () => {
                 if (meta) {
                     switch (meta.type) {
                         case 'ADD_DECORATION':
-   
                             const decoration = createCommentDecoration(meta.from, meta.to, meta.id);
                             decorationSet = decorationSet.add(tr.doc, [decoration]);
                             break;
                             
                         case 'REMOVE_DECORATION':
-                            // Find decorations that match the comment ID (check both spec fields)
                             const decorationsToRemove = decorationSet.find(null, null, spec => 
                                 spec.commentId === meta.id || spec['data-comment-id'] === meta.id
                             );
@@ -154,7 +208,6 @@ export const createCommentPlugin = () => {
                             break;
                             
                         case 'REFRESH_DECORATIONS':
-                            // Clear all decorations and rebuild with active comments
                             decorationSet = DecorationSet.empty;
                             const activeComments = meta.activeComments || [];
                             const newDecorations = activeComments.map(comment => 
@@ -166,7 +219,6 @@ export const createCommentPlugin = () => {
                             break;
                     }
                 }
-                
                 return decorationSet;
             }
         },

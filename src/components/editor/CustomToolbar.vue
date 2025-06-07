@@ -402,49 +402,14 @@ export default {
             if (!this.commentText.trim() || !this.currentSelection) return;
 
             const { from, to } = this.currentSelection;
-            
-            // Get the selected text
             const selectedText = this.view.state.doc.textBetween(from, to);
-            
-            // Get documentId and documentVersion from store
-            const documentId = this.$store?.state?.selected?.id || 'unknown';
-            const currentVersion = this.$store?.state?.selected?.currentVersion || 'live';
-            const documentVersion = currentVersion === 'live' ? null : currentVersion;
-            
-            // Create comment with plugin (for decoration)
-            const commentData = commentFunctions.createComment(this.view, from, to, this.commentText.trim(), documentId, documentVersion);
-            
-            // Enhance comment data with editor position info for database
-            const enhancedCommentData = {
-                ...commentData,
-                editorID: {
-                    from,
-                    to,
-                    selectedText
-                },
-                documentVersion: documentVersion === 'live' ? null : documentVersion
-            };
-            
-            // Save to database
-            this.saveCommentToDatabase(enhancedCommentData);
-            
-            // Reset state
+
+            commentFunctions.createComment(this.view, from, to, this.commentText.trim(), selectedText);
+
             this.isAddingComment = false;
             this.commentText = '';
         },
 
-        async saveCommentToDatabase(commentData) {
-            try {
-                await this.$store.commit('addComment', commentData);
-            } catch (error) {
-                console.error('Failed to save comment:', error);
-                this.$store.commit('alert', {
-                    type: 'error',
-                    message: 'Failed to save comment. Please try again.',
-                    autoClear: true
-                });
-            }
-        },
 
         startAddingLink() {
             if (!this.hasSelection || this.disabled) return;

@@ -196,19 +196,19 @@ export default {
             comment: this.newComment,
             documentVersion: this.currentVersion === 'live' ? null : this.currentVersion
           };
-          this.$store.commit('addComment', commentData);
+          this.$store.dispatch('addComment', commentData);
           this.newComment = '';
         }
       },
       async editComment (id,updatedComment) {
         await this.$refs.form.validate();
         if (this.valid) {
-          await this.$store.commit('updateComment', {id, updatedComment});
+          await this.$store.dispatch('updateComment', {id, updatedComment});
         }
         this.$refs.form.resetValidation();
       },
       async deleteComment (id) {
-        await this.$store.commit('deleteComment', id)
+        await this.$store.dispatch('deleteComment', id)
         this.$refs.form.resetValidation();
       },
       resetForm () {

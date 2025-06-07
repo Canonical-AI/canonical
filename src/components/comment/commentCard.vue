@@ -226,12 +226,12 @@ export default {
     },
 
     async updateComment (id,updatedComment) {
-      await this.$store.commit('updateComment',{id,updatedComment})
+      await this.$store.dispatch('updateComment',{id,updatedComment})
       this.resetForm()
     },
     
     async deleteComment (id) {
-      await this.$store.commit('deleteComment',id)
+      await this.$store.dispatch('deleteComment',id)
     },
 
     async resolveComment() {
@@ -287,7 +287,7 @@ export default {
           documentVersion: this.comment.documentVersion
         };
 
-        await this.$store.commit('addReply', { 
+        await this.$store.dispatch('addReply', { 
           parentId: this.comment.parentId || this.comment.id, 
           comment: replyData 
         });

@@ -257,6 +257,70 @@ const store = createStore({
         }
     },
 
+    async addComment({state, commit}, comment) {
+      const newComment = await Document.createComment(state.selected.id, comment)
+      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
+      commit('addCommentToState', newComment);
+      return newComment;
+    },
+
+    async addReply({state, commit}, { parentId, comment }) {
+      const replyData = {
+        ...comment,
+        parentId: parentId
+      };
+      const newReply = await Document.createComment(state.selected.id, replyData);
+      newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
+      commit('addReplyToState', newReply);
+      return newReply;
+    },
+
+    async updateComment({state, commit}, { id, updatedComment }) {
+      const updatedCommentData = await Document.updateComment(state.selected.id, id, updatedComment)
+      commit('updateCommentInState', {id, updatedComment: updatedCommentData});
+      return updatedCommentData;
+    },
+
+    async deleteComment({state, commit}, id) {
+      await Document.deleteComment(state.selected.id, id)
+      commit('deleteCommentInState', id);
+      return id;
+    },
+
+    // Update comment positions in database (called on document save)
+    async updateCommentPositions({state, commit}, positionUpdates) {
+
+      const validComments = state.selected.comments.filter(c => c && c.id);
+  
+      for (const update of positionUpdates) {
+        const comment = validComments.find(c => c.id === update.commentId);
+        
+        if (comment && comment.editorID) {
+
+          comment.editorID.from = update.newFrom;
+          comment.editorID.to = update.newTo;
+
+          await Document.updateCommentData(state.selected.id, comment.id, {
+            editorID: {
+              from: update.newFrom,
+              to: update.newTo
+            }
+          });
+
+
+          commit('updateCommentInState', {id: comment.id, values: 
+            {
+              editorID: {
+                from: update.newFrom,
+                to: update.newTo
+              }
+            }
+          });
+
+        } 
+      }
+    },
+
 
         ///--------------------------------------------------------------
     /// Chats
@@ -275,18 +339,11 @@ const store = createStore({
 
     // Action for updating comment data (replaces the async mutation)
     async updateCommentData({ state, commit }, { id, data }) {
-      await Document.updateCommentData(state.selected.id, id, data);
-      const index = state.selected.comments.findIndex(comment => comment.id === id);
-      if (index !== -1) {
-        // Create a new comments array with the updated comment
-        const updatedComments = [...state.selected.comments];
-        updatedComments[index] = {
-          ...updatedComments[index],
-          ...data
-        };
-        commit('setComments', updatedComments);
-      }
+      const updatedCommentData = await Document.updateCommentData(state.selected.id, id, data);
+      commit('updateCommentInState', {id, values: data});
+      return updatedCommentData;
     },
+
 
   },
 
@@ -587,66 +644,26 @@ const store = createStore({
       state.chats = chats;
     },
 
-    async addComment(state, comment) {
-      const newComment = await Document.createComment(state.selected.id, comment)
-      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
-      state.selected.comments.push(newComment);
+    addCommentToState(state, comment) {
+      state.selected.comments.push(comment);
     },
 
-    async addReply(state, { parentId, comment }) {
-      const replyData = {
-        ...comment,
-        parentId: parentId
-      };
-      const newReply = await Document.createComment(state.selected.id, replyData);
-      newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
-      state.selected.comments.push(newReply);
+    addReplyToState(state, reply) {
+      state.selected.comments.push(reply);
     },
 
-    async updateComment(state, { id, updatedComment }) {
-      await Document.updateComment(state.selected.id, id, updatedComment)
-      const index = state.selected.comments.findIndex(comment => comment.id === id);
-      if (index !== -1) {
-        state.selected.comments[index].comment = updatedComment;
-      }
-    },
-
-
-
-    async deleteComment(state, id) {
-      await Document.deleteComment(state.selected.id, id)
+    deleteCommentInState(state, id) {
       state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
     },
 
-
-    // Update comment positions in database (called on document save)
-    async updateCommentPositions(state, positionUpdates) {
-      // positionUpdates is an array of { commentId, newFrom, newTo }
-      
-      for (const update of positionUpdates) {
-        const comment = state.selected.comments.find(c => c.id === update.commentId);
-        
-        if (comment && comment.editorID) {
-
-          // Update local state
-          comment.editorID.from = update.newFrom;
-          comment.editorID.to = update.newTo;
-
-          // Update in database - only update the editorID field
-          try {
-
-            const result = await Document.updateCommentData(state.selected.id, comment.id, {
-              editorID: {
-                from: update.newFrom,
-                to: update.newTo
-              }
-            });
-          } catch (error) {
-            console.error(`STORE MUTATION: Failed to save comment ${comment.id} position to database:`, error);
-          }
-        } 
+    updateCommentInState(state, {id, values}) {
+      const index = state.selected.comments.findIndex(comment => comment.id === id);
+      if (index === -1) return;
+      state.selected.comments[index] = {
+        ...state.selected.comments[index],
+        ...values
       }
-    }
+    },
 
 
   }

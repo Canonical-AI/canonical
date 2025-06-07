@@ -72,7 +72,6 @@ export default {
         const placeholderText = ref(placeholders[Math.floor(Math.random() * placeholders.length)]);
         
         onMounted(() => {
-            // Update the placeholder text when mounted
             placeholderText.value = placeholders[Math.floor(Math.random() * placeholders.length)];
         });
 
@@ -161,7 +160,7 @@ export default {
                 
             return crepe
         })
-        
+    
         return { 
             editor,
             get,
@@ -240,27 +239,11 @@ export default {
 
         // Method to refresh comment decorations (useful after plugin changes)
         refreshCommentDecorations() {
-            if (!this.get || this.loading) {
-                return;
-            }
+            if (!this.get || this.loading) return;
 
-            // Use $nextTick twice to ensure all updates have propagated
-            this.$nextTick(() => {
-                this.$nextTick(() => {
-                    try {
-                        this.get().action((ctx) => {
-                            const view = ctx.get(editorViewCtx);
-                        
-                            const getFreshComments = () => {
-                                return this.$store.state.selected.comments || [];
-                            };
-                            
-                            commentFunctions.refreshAllDecorations(view, getFreshComments);
-                        });
-                    } catch (error) {
-                        console.error('Failed to refresh comment decorations:', error);
-                    }
-                });
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);      
+                commentFunctions.refreshAllDecorations(view);
             });
         },
 
@@ -278,16 +261,12 @@ export default {
                     // Find the comment in store data
                     const comment = this.$store.state.selected.comments?.find(c => c.id === commentId);
                     
-                    if (!comment || !comment.editorID) {
-                        return;
-                    }
+                    if (!comment || !comment.editorID) return;
 
                     const { from, to } = comment.editorID;
                     
                     // Ensure the position is valid
-                    if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) {
-                        return;
-                    }
+                    if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) return;
 
                     // Find the comment element in the DOM and scroll to it
                     this.$nextTick(() => {
@@ -325,47 +304,6 @@ export default {
             }
         },
 
-        // Method to update comments based on current version
-        updateCommentsForCurrentVersion() {
-
-            if (this.commentsApplied)  return;
-            
-            const currentVersion = this.$store.state.selected.currentVersion;
-            if (!this.get || this.loading) {
-                setTimeout(() => this.updateCommentsForCurrentVersion(), 500);
-                return;
-            }
-
-            // Get filtered comments for current version
-            const filteredComments = this.$store.getters.filteredCommentsByVersion;
-            if (!filteredComments?.length)  return;
-
-            // Filter out resolved comments and apply active ones
-            const activeComments = filteredComments.filter(comment => 
-                !comment.resolved && 
-                comment.editorID?.from >= 0 && 
-                comment.editorID?.to >= 0
-            );
-            
-            if (!activeComments.length) {return}
- 
-            // Apply each comment decoration
-            activeComments.forEach(comment => {
-                if (comment.editorID.from === comment.editorID.to) return;
-                
-                try {
-                    this.createCommentDecoration(
-                        comment.editorID.from, 
-                        comment.editorID.to, 
-                        comment
-                    );
-                } catch (error) {
-                    console.error('Failed to apply comment decoration:', comment.id, error);
-                }
-            });
-
-            this.commentsApplied = true;
-        },
 
         // Method to set up comment click handler
         setupCommentClickHandler() {
@@ -390,69 +328,10 @@ export default {
         updateCommentPositionsOnSave() {
             if (!this.get || this.loading) return;
 
-            try {
-                const comments = this.$store.state.selected.comments;
-                
-                if (!comments?.length) {
-                    return;
-                }
-
-                // Get actual current positions from comment plugin decorations
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    const { state } = view;
-                    const commentPluginState = commentPluginKey.getState(state);
-                    
-                    if (!commentPluginState) return;
-                    
-                    const positionUpdates = [];
-
-                    // Try different ways to access decorations
-                    if (commentPluginState.find) {
-                        const decorations = commentPluginState.find();
-                        
-                        decorations.forEach((decoration, index) => {
-                            
-                            // Get the comment ID from the spec (now properly stored there)
-                            const commentId = decoration.spec.commentId || 
-                                            decoration.spec['data-comment-id'] || 
-                                            decoration.attrs?.['data-comment-id'];                       
- 
-                            if (commentId) {
-                                const comment = comments.find(c => c.id === commentId);
-   
-                                if (comment && comment.editorID) {
-                                    const currentFrom = decoration.from;
-                                    const currentTo = decoration.to;
-                                    
-                                    // Always add to updates for now to test saving
-                                    positionUpdates.push({
-                                        commentId: commentId,
-                                        newFrom: currentFrom,
-                                        newTo: currentTo
-                                    });
-                                }
-                            } 
-                        });
-                    } 
-
-                    if (positionUpdates.length > 0) {
-                        const uniqueUpdates = [];
-                        const seenIds = new Set();
-                        
-                        positionUpdates.forEach(update => {
-                            if (!seenIds.has(update.commentId)) {
-                                seenIds.add(update.commentId);
-                                uniqueUpdates.push(update);
-                            }
-                        });
-
-                        this.$store.commit('updateCommentPositions', uniqueUpdates);
-                    } 
-                });
-            } catch (error) {
-                console.error('Failed to save comment positions:', error);
-            }
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                commentFunctions.updateCommentPositions(view);
+            });
         },
 
     },
@@ -476,29 +355,36 @@ export default {
         },
         // Watch both comments and version changes to filter comments by version
         '$store.state.selected.comments': {
-            handler(newComments, oldComments) {
-                this.updateCommentsForCurrentVersion();
+            handler(oldVal, newVal) {
+                if (oldVal === newVal) return;
+                this.refreshCommentDecorations();
             },
             immediate: true,
             deep: true
         },
         '$store.state.selected.currentVersion': {
             handler() {
-                this.updateCommentsForCurrentVersion();
+                this.refreshCommentDecorations();
             },
             immediate: true
         },
+        loading: {
+            handler() {
+                if (this.loading) return;
+                this.refreshCommentDecorations();
+            },
+            immediate: true
+        },
+
         modelValue: {
             immediate: true,
             handler(newVal, oldVal) {
                 if (!newVal) return;
                 
                 // Process content when it changes
-                if (newVal.includes('<br') || newVal.includes('&lt;br') ) {
+                if (newVal.includes('<br') || newVal.includes('&lt;br')) {
                     this.processContentBeforeRender(newVal);
                 }
-            
-
             }
         }
     },
@@ -512,9 +398,7 @@ export default {
             this.setupCommentClickHandler();
         });
     },
-    
     beforeUnmount() {
-        // Clean up event listener
         if (this.editorElement && this.commentClickHandler) {
             this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
         }
@@ -522,10 +406,9 @@ export default {
 };
 </script>
   
-  <!-- Add "scoped" attribute to limit CSS to this component only -->
+
 <style>
-/* Make editor text smaller on mobile devices */
-/* Disabled state for Crepe toolbar when editing is disabled */
+
 div.milkdown-toolbar {
     display: none !important;
     visibility: hidden !important;
