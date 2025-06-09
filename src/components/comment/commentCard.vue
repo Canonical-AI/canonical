@@ -80,6 +80,7 @@
             <v-tooltip text="Reply to this comment" location="bottom">
               <template v-slot:activator="{ props }">
                 <v-btn
+                  v-if="!comment.resolved"
                   density="compact"
                   class="mr-1"
                   variant="text"
@@ -88,6 +89,21 @@
                   icon="mdi-reply"
                   v-bind="props"
                   @click="showReplyInput = true">
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Accept AI suggestion" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-if="comment.aiGenerated && comment.suggestion && !comment.resolved"
+                  density="compact"
+                  class="mr-1"
+                  variant="text"
+                  color="success"
+                  size="small"
+                  icon="mdi-check-circle"
+                  v-bind="props"
+                  @click="acceptSuggestion">
                 </v-btn>
               </template>
             </v-tooltip>
@@ -109,9 +125,28 @@
               <v-icon size="12">{{ originalTextExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
             </v-btn>
           </div>
+          
+          <!-- Show suggestion button for AI comments -->
+          <div v-if="comment.aiGenerated && comment.suggestion" class="mt-2">
+            <v-btn
+              size="x-small"
+              variant="text"
+              color="success"
+              @click="toggleSuggestionVisible"
+              class="text-none"
+            >
+              <v-icon size="12" class="mr-1">{{ suggestionVisible ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
+              {{ suggestionVisible ? 'Hide' : 'Show' }} suggestion
+            </v-btn>
+          </div>
+          
+          <!-- AI suggestion display -->
+          <div v-if="comment.aiGenerated && comment.suggestion && suggestionVisible" class="mt-2">
+            <div class="suggestion-text pa-2 bg-success-lighten rounded text-success-darken">
+              <span class="font-weight-medium">"{{ comment.suggestion }}"</span>
+            </div>
+          </div>
         </div>
-
-
 
         <v-card-text
           class="text-body-2"
@@ -221,7 +256,7 @@
 import {Comment} from "../../services/firebaseDataService";
 
 export default {
-  emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor'],
+  emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor', 'accept-suggestion'],
   props: {
     comment: {
       type: Object,
@@ -234,6 +269,7 @@ export default {
       showReplyInput: false,
       replyText: "",
       originalTextExpanded: false,
+      suggestionVisible: false,
       maxOriginalTextLength: 100, // Characters to show before truncation
   }),
   mounted(){
@@ -331,6 +367,10 @@ export default {
       this.originalTextExpanded = !this.originalTextExpanded;
     },
 
+    toggleSuggestionVisible() {
+      this.suggestionVisible = !this.suggestionVisible;
+    },
+
     async submitReply() {
       if (!this.replyText.trim()) return;
 
@@ -372,6 +412,20 @@ export default {
           return 'grey';
       }
     },
+
+    acceptSuggestion() {
+      if (!this.comment.suggestion || !this.comment.editorID.selectedText) {
+        console.error('Cannot accept suggestion: missing suggestion or problematic text');
+        return;
+      }
+
+      // Emit event to parent with the suggestion data
+      this.$emit('accept-suggestion', {
+        commentId: this.comment.id,
+        suggestion: this.comment.suggestion,
+        editorPosition: this.comment.editorID
+      });
+    },
   }
 }
 </script>
@@ -403,6 +457,16 @@ export default {
 
 .comment-clickable:hover {
   background-color: rgba(var(--v-theme-primary), 0.05);
+}
+
+.suggestion-text {
+  border-left: 3px solid rgb(var(--v-theme-success));
+  background-color: rgba(var(--v-theme-success), 0.1) !important;
+  color: rgb(var(--v-theme-success)) !important;
+  font-style: italic;
+  word-break: break-word;
+  font-size: 0.85em;
+  line-height: 1.3;
 }
 
 </style>

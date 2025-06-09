@@ -353,7 +353,6 @@ export class DocumentReview {
                                     to: position.end,
                                     selectedText: comment.problematicText
                                 },
-                                problematicText: comment.problematicText,
                                 suggestion: comment.suggestion,
                                 aiGenerated: true,
                                 issueType: comment.issueType,

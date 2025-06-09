@@ -95,6 +95,21 @@
                   </v-btn>
                 </template>
               </v-tooltip>
+              <v-tooltip text="Undo last AI change" location="bottom">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-if="canUndo"
+                    :disabled="isDisabled"
+                    class="text-none"
+                    density="compact"
+                    v-bind="props"
+                    @click="undoLastChange"
+                  >
+                    <v-icon size="16" class="mr-1">mdi-undo</v-icon>
+                    Undo
+                  </v-btn>
+                </template>
+              </v-tooltip>
             </v-btn-toggle>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
@@ -103,16 +118,6 @@
               v-if="generativeFeedback !== null"
               v-html="renderMarkdown(generativeFeedback)"
             ></p>
-            <div v-if="reviewResults">
-              <div v-if="reviewResults.success" class="text-sm ma-1 pa-1">
-                <p class="text-success mb-2">
-                  ✓ Review completed: {{ reviewResults.commentsCreated }} inline comments added
-                </p>
-              </div>
-              <div v-else class="text-error text-sm ma-1 pa-1">
-                Review failed: {{ reviewResults.error }}
-              </div>
-            </div>
           </v-expansion-panel-text>
         </v-expansion-panel>
         
@@ -131,6 +136,7 @@
         @scroll-to-comment="openDrawerAndScrollToComment"
         @refresh-editor-decorations="refreshEditorDecorations"
         @scroll-to-editor="scrollToCommentInEditor"
+        @accept-suggestion="handleAcceptSuggestion"
       />
     </div>
   </v-navigation-drawer>
@@ -304,6 +310,7 @@ export default {
         draft: true,
       },
     },
+    undoStack: [], // Track document states for undo
     previousDocumentValue: {
       name: "[DRAFT] New Doc..",
       content: "Hello **World**",
@@ -581,6 +588,9 @@ export default {
     },
 
     async startAiReview() {
+
+      this.sendPromptToVertexAI()
+
       if (!this.document.data.content || !this.$refs.milkdownEditor) {
         this.$store.commit('alert', { 
           type: 'warning', 
@@ -853,6 +863,142 @@ export default {
       }
     },
 
+    // Method to handle accepting AI suggestions
+    async handleAcceptSuggestion(suggestionData) {
+      try {
+        const { commentId, suggestion, editorPosition } = suggestionData;
+        const selectedText = editorPosition.selectedText;
+        
+        if (!selectedText || !suggestion) {
+          throw new Error('Missing text or suggestion data');
+        }
+
+        // Save current state to undo stack before making changes
+        this.saveUndoState({
+          content: this.document.data.content,
+          commentId: commentId,
+          action: 'accept-suggestion',
+          originalText: selectedText,
+          newText: suggestion
+        });
+
+        // Replace the text in the document content
+        let currentContent = this.document.data.content;
+        const updatedContent = currentContent.replace(selectedText, suggestion);
+        
+        if (currentContent === updatedContent) {
+          throw new Error('Text not found in document content');
+        }
+
+        // Update the document data
+        this.document.data.content = updatedContent;
+        
+        // Update the store
+        this.$store.commit("updateSelectedDocument", this.document);
+
+        // Force editor refresh by incrementing the key (but not on mobile to avoid cursor issues)
+        if (!this.$vuetify.display.mobile) {
+          this.editorKey++;
+        }
+
+        // Resolve the comment after successful replacement
+        await this.$store.dispatch('updateCommentData', {
+          id: commentId,
+          data: { resolved: true }
+        });
+
+        // Refresh editor decorations
+        this.$nextTick(() => {
+          if (this.$refs.milkdownEditor) {
+            this.$refs.milkdownEditor.refreshCommentDecorations();
+          }
+        });
+
+        this.$store.commit('alert', { 
+          type: 'success', 
+          message: 'AI suggestion accepted and applied', 
+          autoClear: true 
+        });
+
+      } catch (error) {
+        console.error('Error accepting suggestion:', error);
+        this.$store.commit('alert', { 
+          type: 'error', 
+          message: 'Failed to apply suggestion. Please try again.', 
+          autoClear: true 
+        });
+      }
+    },
+
+    // Method to save current state for undo functionality
+    saveUndoState(undoData) {
+      // Limit undo stack to last 10 operations to prevent memory issues
+      if (this.undoStack.length >= 10) {
+        this.undoStack.shift(); // Remove oldest entry
+      }
+      
+      this.undoStack.push({
+        ...undoData,
+        timestamp: Date.now()
+      });
+    },
+
+    // Method to undo the last change
+    async undoLastChange() {
+      try {
+        if (this.undoStack.length === 0) {
+          this.$store.commit('alert', { 
+            type: 'info', 
+            message: 'Nothing to undo', 
+            autoClear: true 
+          });
+          return;
+        }
+
+        const lastChange = this.undoStack.pop();
+        
+        // Restore the document content
+        this.document.data.content = lastChange.content;
+        
+        // Update the store
+        this.$store.commit("updateSelectedDocument", this.document);
+
+        // Force editor refresh (but not on mobile to avoid cursor issues)
+        if (!this.$vuetify.display.mobile) {
+          this.editorKey++;
+        }
+
+        // If this was an accepted suggestion, unresolve the comment
+        if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
+          await this.$store.dispatch('updateCommentData', {
+            id: lastChange.commentId,
+            data: { resolved: false }
+          });
+        }
+
+        // Refresh editor decorations
+        this.$nextTick(() => {
+          if (this.$refs.milkdownEditor) {
+            this.$refs.milkdownEditor.refreshCommentDecorations();
+          }
+        });
+
+        this.$store.commit('alert', { 
+          type: 'success', 
+          message: 'Change undone successfully', 
+          autoClear: true 
+        });
+
+      } catch (error) {
+        console.error('Error undoing change:', error);
+        this.$store.commit('alert', { 
+          type: 'error', 
+          message: 'Failed to undo change. Please try again.', 
+          autoClear: true 
+        });
+      }
+    },
+
 
   },
   computed: {
@@ -871,6 +1017,9 @@ export default {
     hasAiComments() {
       const comments = this.$store.state.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
+    },
+    canUndo() {
+      return this.undoStack.length > 0;
     },
     editorContent: {
       get() {

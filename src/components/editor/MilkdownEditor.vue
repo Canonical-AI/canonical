@@ -362,9 +362,64 @@ export default {
             return result;
         },
 
+        // Method to replace text in the editor
+        async replaceText(originalText, newText, editorPosition) {
+            if (!this.get || this.loading) return false;
+
+            try {
+                let success = false;
+
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const { state } = view;
+                    const { tr } = state;
+
+                    // Use provided position if available, otherwise find the text
+                    let from, to;
+                    if (editorPosition && editorPosition.from && editorPosition.to) {
+                        from = editorPosition.from;
+                        to = editorPosition.to;
+                    } else {
+                        // Fallback: find the text position
+                        const position = this.findTextPosition(originalText);
+                        if (position.start === -1) {
+                            console.error('Could not find text to replace:', originalText);
+                            return;
+                        }
+                        from = position.start;
+                        to = position.end;
+                    }
+
+                    // Verify the text at the position matches what we expect
+                    const currentText = state.doc.textBetween(from, to);
+                    if (currentText !== originalText) {
+                        console.warn('Text mismatch. Expected:', originalText, 'Found:', currentText);
+                        // Try to find the text again
+                        const position = this.findTextPosition(originalText);
+                        if (position.start === -1) {
+                            console.error('Could not find matching text for replacement');
+                            return;
+                        }
+                        from = position.start;
+                        to = position.end;
+                    }
+
+                    // Replace the text
+                    tr.replaceWith(from, to, state.schema.text(newText));
+                    view.dispatch(tr);
+                    success = true;
+                });
+
+                return success;
+            } catch (error) {
+                console.error('Error replacing text:', error);
+                return false;
+            }
+        },
+
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition'],
+    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition', 'replaceText'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;

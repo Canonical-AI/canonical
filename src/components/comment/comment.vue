@@ -34,6 +34,7 @@
               @comment-resolved="refreshEditorDecorations"
               @comment-unresolved="refreshEditorDecorations"
               @scroll-to-editor="$emit('scroll-to-editor', $event)"
+              @accept-suggestion="$emit('accept-suggestion', $event)"
             />
             <!-- Render child comments with indentation -->
             <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
@@ -46,6 +47,7 @@
                 @comment-resolved="refreshEditorDecorations"
                 @comment-unresolved="refreshEditorDecorations"
                 @scroll-to-editor="$emit('scroll-to-editor', $event)"
+                @accept-suggestion="$emit('accept-suggestion', $event)"
               />
             </div>
           </div>
@@ -98,7 +100,7 @@ import commentCard from "./commentCard.vue"
 
 
 export default {
-  emits: ['refresh-editor-decorations', 'scroll-to-editor'],
+  emits: ['refresh-editor-decorations', 'scroll-to-editor', 'accept-suggestion'],
   components: {
     commentCard
   },

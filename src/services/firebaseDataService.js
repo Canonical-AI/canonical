@@ -317,7 +317,6 @@ export class Comment {
     this.aiGenerated = value.aiGenerated || false;
     this.issueType = value.issueType || null;
     this.severity = value.severity || null;
-    this.problematicText = value.problematicText || null;
     this.suggestion = value.suggestion || null;
     Object.assign(this, addInDefaults(this));
   }
