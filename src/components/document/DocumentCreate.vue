@@ -47,29 +47,55 @@
       <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
         <v-expansion-panel>
           <v-expansion-panel-title>
-              <v-btn
-              :disabled="isDisabled"
-              class="text-none gen-btn flex-1"
-              @click="sendPromptToVertexAI()"
-              density="compact"
-              >Feedback
-            </v-btn>
-            <v-btn
-              :disabled="isDisabled || isReviewLoading"
-              class="text-none gen-btn flex-1"
-              @click="startAiReview()"
-              density="compact"
-              >
-              <v-progress-circular
-                v-if="isReviewLoading"
-                indeterminate
-                size="16"
-                width="2"
-                class="mr-2 "
-              ></v-progress-circular>
-              Review
-            </v-btn>
-
+            <v-btn-toggle class="gen-btn" density="compact">
+              <v-tooltip text="Get AI feedback on your document's overall quality, clarity, and structure" location="bottom">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    :disabled="isDisabled"
+                    class="text-none"
+                    density="compact"
+                    v-bind="props"
+                    @click="sendPromptToVertexAI()"
+                  >Feedback
+                  </v-btn>
+                </template>
+              </v-tooltip>
+              <v-tooltip text="Generate detailed inline comments with specific suggestions for improvement" location="bottom">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    :disabled="isDisabled || isReviewLoading"
+                    class="text-none"
+                    density="compact"
+                    v-bind="props"
+                    @click="startAiReview()"
+                  >
+                    <v-progress-circular
+                      v-if="isReviewLoading"
+                      indeterminate
+                      size="16"
+                      width="2"
+                      class="mr-1"
+                    ></v-progress-circular>
+                    Review
+                  </v-btn>
+                </template>
+              </v-tooltip>
+              <v-tooltip text="Clear AI comments" location="bottom">
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-if="hasAiComments"
+                    :disabled="isDisabled"
+                    class="text-none"
+                    density="compact"
+                    v-bind="props"
+                    @click="clearAiComments"
+                  >
+                    <v-icon size="16" class="mr-1">mdi-broom</v-icon>
+                    Clear
+                  </v-btn>
+                </template>
+              </v-tooltip>
+            </v-btn-toggle>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
             <p
@@ -82,9 +108,6 @@
                 <p class="text-success mb-2">
                   ✓ Review completed: {{ reviewResults.commentsCreated }} inline comments added
                 </p>
-                <div v-if="reviewResults.failedComments > 0" class="text-warning">
-                  {{ reviewResults.failedComments }} issues could not be located precisely
-                </div>
               </div>
               <div v-else class="text-error text-sm ma-1 pa-1">
                 Review failed: {{ reviewResults.error }}
@@ -784,6 +807,52 @@ export default {
       });
     },
 
+    // Method to clear all AI-generated comments
+    async clearAiComments() {
+      try {
+        // Get all AI comments from the store
+        const allComments = this.$store.state.selected?.comments || [];
+        const aiComments = allComments.filter(comment => comment.aiGenerated === true);
+        
+        if (aiComments.length === 0) {
+          this.$store.commit('alert', { 
+            type: 'info', 
+            message: 'No AI comments found to clear', 
+            autoClear: true 
+          });
+          return;
+        }
+
+        // Delete each AI comment
+        const deletePromises = aiComments.map(comment => 
+          this.$store.dispatch('deleteComment', comment.id)
+        );
+
+        await Promise.all(deletePromises);
+
+        // Refresh editor decorations to remove visual indicators
+        this.$nextTick(() => {
+          if (this.$refs.milkdownEditor) {
+            this.$refs.milkdownEditor.refreshCommentDecorations();
+          }
+        });
+
+        this.$store.commit('alert', { 
+          type: 'success', 
+          message: `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`, 
+          autoClear: true 
+        });
+
+      } catch (error) {
+        console.error('Error clearing AI comments:', error);
+        this.$store.commit('alert', { 
+          type: 'error', 
+          message: 'Failed to clear AI comments. Please try again.', 
+          autoClear: true 
+        });
+      }
+    },
+
 
   },
   computed: {
@@ -798,6 +867,10 @@ export default {
         this.isEditable = false;
         return true;
       }
+    },
+    hasAiComments() {
+      const comments = this.$store.state.selected?.comments || [];
+      return comments.some(comment => comment.aiGenerated === true);
     },
     editorContent: {
       get() {

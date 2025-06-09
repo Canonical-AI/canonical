@@ -9,6 +9,7 @@
         <v-card-subtitle class="text-caption d-flex justify-space-between align-center">
           <div class="d-flex align-center">
             <span>{{user?.displayName}} {{$dayjs(comment.createDate.seconds*1000).fromNow()}}</span>
+
             <v-chip 
               v-if="comment.documentVersion" 
               size="x-small" 
@@ -48,31 +49,48 @@
             </v-chip>
           </div>
           <div>
-            <v-btn
-              density="compact"
-              class="text-none"
-              variant="text"
-              color="teal accent-4"
-              size="small"
-              @click="startEditing">edit
-            </v-btn>
-            <v-btn
-              v-if="!comment.resolved"
-              density="compact"
-              class="text-none mr-1"
-              variant="text"
-              color="success"
-              size="small"
-              @click="resolveComment">resolve
-            </v-btn>
-            <v-btn
-              density="compact"
-              class="text-none mr-1"
-              variant="text"
-              color="blue"
-              size="small"
-              @click="showReplyInput = true">reply
-            </v-btn>
+            <v-tooltip text="Edit this comment" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  density="compact"
+                  variant="text"
+                  color="teal accent-4"
+                  size="small"
+                  icon="mdi-pencil"
+                  v-bind="props"
+                  @click="startEditing">
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Mark as resolved" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-if="!comment.resolved"
+                  density="compact"
+                  class="mr-1"
+                  variant="text"
+                  color="success"
+                  size="small"
+                  icon="mdi-check"
+                  v-bind="props"
+                  @click="resolveComment">
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Reply to this comment" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  density="compact"
+                  class="mr-1"
+                  variant="text"
+                  color="blue"
+                  size="small"
+                  icon="mdi-reply"
+                  v-bind="props"
+                  @click="showReplyInput = true">
+                </v-btn>
+              </template>
+            </v-tooltip>
           </div>
         </v-card-subtitle>
 
@@ -146,30 +164,47 @@
             </v-chip>
           </div>
           <div>
-            <v-btn
-              density="compact"
-              class="text-none mr-1"
-              variant="text"
-              color="error"
-              size="small"
-              @click="deleteComment(comment.id)">delete
-            </v-btn>
-            <v-btn
-              density="compact"
-              class="text-none mr-1"
-              variant="text"
-              color="blue"
-              size="small"
-              @click="resetForm()">cancel
-            </v-btn>
-            <v-btn
-              density="compact"
-              class="text-none"
-              variant="text"
-              color="teal accent-4"
-              size="small"
-              @click="updateComment(comment.id,newComment)">submit
-            </v-btn>
+            <v-tooltip text="Delete this comment" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  density="compact"
+                  class="mr-1"
+                  variant="text"
+                  color="error"
+                  size="small"
+                  icon="mdi-delete"
+                  v-bind="props"
+                  @click="deleteComment(comment.id)">
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Cancel editing" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  density="compact"
+                  class="mr-1"
+                  variant="text"
+                  color="blue"
+                  size="small"
+                  icon="mdi-close"
+                  v-bind="props"
+                  @click="resetForm()">
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip text="Save changes" location="bottom">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  density="compact"
+                  variant="text"
+                  color="teal accent-4"
+                  size="small"
+                  icon="mdi-check"
+                  v-bind="props"
+                  @click="updateComment(comment.id,newComment)">
+                </v-btn>
+              </template>
+            </v-tooltip>
           </div>
         </v-card-subtitle>
 

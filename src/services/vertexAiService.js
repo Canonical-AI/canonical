@@ -238,7 +238,7 @@ export class DocumentReview {
         // Define the function that the model can call to create comments
         const createCommentFunction = {
             name: "create_comments",
-            description: "Identify an issue in the document text that needs an inline comment",
+            description: "Identify issues in the document text that needs an inline comment",
             parameters: {
                 type: "object",
                 properties: {
@@ -275,8 +275,6 @@ export class DocumentReview {
                 }
             }
         };
-
-
 
         const reviewModel = getGenerativeModel(vertexAI, { 
             model: model,
@@ -343,15 +341,9 @@ export class DocumentReview {
                                 continue;
                             }
 
-                            // Create the comment text with issue type and suggestion
-                            let commentText = `[${comment.issueType.toUpperCase()}] ${comment.comment}`;
-                            if (comment.suggestion) {
-                                commentText += `\n\nSuggested change: "${comment.suggestion}"`;
-                            }
-
                             // Create the inline comment
                             const commentData = {
-                                comment: commentText,
+                                comment: comment.comment,
                                 documentId: store.state.selected.id,
                                 documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
                                 createdAt: new Date().toISOString(),
@@ -361,24 +353,16 @@ export class DocumentReview {
                                     to: position.end,
                                     selectedText: comment.problematicText
                                 },
+                                problematicText: comment.problematicText,
+                                suggestion: comment.suggestion,
                                 aiGenerated: true,
                                 issueType: comment.issueType,
                                 severity: comment.severity
                             };
 
                             // Add comment through the store
-                            const commentObject = await store.dispatch('addComment', commentData);
+                            await store.dispatch('addComment', commentData);
                             
-                            // Create the visual decoration in the editor
-                            if (editorRef.createCommentDecoration) {
-                                editorRef.createCommentDecoration(position.start, position.end, commentObject);
-                            }
-
-                            commentsCreated.push({
-                                issue: comment.issueType,
-                                text: comment.problematicText,
-                                commentId: commentObject.id
-                            });
 
                         } catch (commentError) {
                             console.error('Failed to create comment:', commentError);
