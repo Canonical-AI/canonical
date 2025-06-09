@@ -122,7 +122,6 @@ export class Generate{
     
         const result = await genModel.generateContent(value.prompt);
         return result
-
     }
 }
 
@@ -135,8 +134,6 @@ export class Chat {
     }
 
     async initChat(history = null) {
-
-
         if (store.state.project.id === null) {
             await store.dispatch('enter');
         }
@@ -152,8 +149,6 @@ export class Chat {
         } else {
             documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
         }
-
-        
 
         this.generativeModel = getGenerativeModel(vertexAI, { 
             model: model,
@@ -198,6 +193,7 @@ export class Chat {
 
         const response = await this.chat.sendMessageStream(newMessage); // Return the response from the chat
 
+        logUsage(store.state.user.uid, 'sentMessage');
         return response
     }
 
@@ -241,46 +237,53 @@ export class DocumentReview {
         
         // Define the function that the model can call to create comments
         const createCommentFunction = {
-            name: "create_inline_comment",
+            name: "create_comments",
             description: "Identify an issue in the document text that needs an inline comment",
             parameters: {
                 type: "object",
                 properties: {
-                    issueType: {
-                        type: "string",
-                        enum: ["grammar", "logic", "accuracy", "tone", "clarity"],
-                        description: "The type of issue identified"
-                    },
-                    severity: {
-                        type: "string", 
-                        enum: ["high", "medium", "low"],
-                        description: "The severity level of the issue"
-                    },
-                    comment: {
-                        type: "string",
-                        description: "A brief explanation of the issue and suggested fix"
-                    },
-                    suggestion: {
-                        type: "string",
-                        description: "Suggested replacement text (optional)"
-                    },
-                    problematicText: {
-                        type: "string",
-                        description: "The exact problematic text from the document that has the issue"
+                    comments: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                issueType: {
+                                    type: "string",
+                                    enum: [ "logic", "grammar","accuracy", "tone", "clarity"],
+                                    description: "The type of issue identified"
+                                },  
+                                severity: {
+                                    type: "string", 
+                                    enum: ["high", "medium", "low"],
+                                    description: "The severity level of the issue"
+                                },
+                                comment: {
+                                    type: "string",
+                                    description: "A brief explanation of the issue and suggested fix"
+                                },
+                                suggestion: {
+                                    type: "string",
+                                    description: "Suggested replacement text (optional)"
+                                }, 
+                                problematicText: {
+                                    type: "string",
+                                    description: "The exact problematic text from the document that has the issue"
+                                }
+                            }
+                        }
                     }
-                },
-                required: ["issueType", "severity", "comment", "problematicText"]
+                }
             }
         };
 
-                const reviewModel = getGenerativeModel(vertexAI, { 
+
+
+        const reviewModel = getGenerativeModel(vertexAI, { 
             model: model,
             tools: [{ functionDeclarations: [createCommentFunction] }],
             systemInstruction: `You are a senior product manager reviewing a document.
 
-            IMPORTANT: You MUST call the create_inline_comment function for each issue you find. Do not provide a text response - only use function calls.
-
-            Your task is to identify specific issues in the text and report them for inline commenting.
+            Your task is to identify specific issues in the text and report them by calling the create_comments function with an array of all the issues you find.
 
             Look for:
             - Clarity of thought and communication
@@ -292,57 +295,58 @@ export class DocumentReview {
             - Unclear or ambiguous phrasing
             - Redundant or wordy expressions
 
-            For each issue you find, you MUST call the create_review_comment function with:
-            - The type and severity of the issue
-            - A clear, actionable explanation and suggestion for improvement
-            - Reference to the affected text (for context)
-
             Rules:
-            - You MUST use the create_review_comment function for each issue
             - Be specific and actionable in your feedback
             - Focus on issues that meaningfully impact document quality
-            - Provide constructive suggestions for improvement`
+            - Provide constructive suggestions for improvement
+            - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
+            - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
+            - If the text is markdown use the exact markdown formatting in the problematicText
+            - Call the create_comments function with ALL issues found in a single call, not multiple separate calls`
         });
 
-        logUsage(store.state.user.uid, 'reviewDocument');
 
-        const prompt = `Please review the following document content and create inline comments for any issues you find: ${documentContent}`;
+        const prompt = `Please review the following document ${documentContent}`;
+
 
         try {
             const result = await reviewModel.generateContent(prompt);
             const response = result.response;
-            
-            console.log('AI Review Response:', response);
+            console.log('Full response:', result.response)
             
             let commentsCreated = [];
             let failedComments = [];
+            
             const functionCalls = response.functionCalls();
+            console.log('Function calls:', functionCalls)
             
             if (functionCalls && functionCalls.length > 0) {
-                console.log('Processing', functionCalls.length, 'inline comments');
-                
-                for (const functionCall of functionCalls) {
-                    if (functionCall.name === 'create_inline_comment') {
+                // Should get one function call with an array of comments
+                const functionCall = functionCalls[0];
+                if (functionCall.name === 'create_comments') {
+                    const comments = functionCall.args.comments;
+                    console.log('Generated comments array:', comments)
+                    
+                    // Process each comment in the array
+                    for (const comment of comments) {
                         try {
-                            const args = functionCall.args;
-                            
                             // Find the exact position of the problematic text in the editor
-                            const position = editorRef.findTextPosition(args.problematicText);
+                            const position = editorRef.findTextPosition(comment.problematicText);
                             
                             if (position.start === -1) {
                                 failedComments.push({
-                                    issue: args.issueType,
-                                    text: args.problematicText,
+                                    issue: comment.issueType,
+                                    text: comment.problematicText,
                                     reason: 'Text not found in document'
                                 });
-                                console.warn('Could not find text:', args.problematicText);
+                                console.warn('Could not find text:', comment.problematicText);
                                 continue;
                             }
 
                             // Create the comment text with issue type and suggestion
-                            let commentText = `[${args.issueType.toUpperCase()}] ${args.comment}`;
-                            if (args.suggestion) {
-                                commentText += `\n\nSuggested change: "${args.suggestion}"`;
+                            let commentText = `[${comment.issueType.toUpperCase()}] ${comment.comment}`;
+                            if (comment.suggestion) {
+                                commentText += `\n\nSuggested change: "${comment.suggestion}"`;
                             }
 
                             // Create the inline comment
@@ -355,11 +359,11 @@ export class DocumentReview {
                                 editorID: {
                                     from: position.start,
                                     to: position.end,
-                                    selectedText: args.problematicText
+                                    selectedText: comment.problematicText
                                 },
                                 aiGenerated: true,
-                                issueType: args.issueType,
-                                severity: args.severity
+                                issueType: comment.issueType,
+                                severity: comment.severity
                             };
 
                             // Add comment through the store
@@ -371,16 +375,16 @@ export class DocumentReview {
                             }
 
                             commentsCreated.push({
-                                issue: args.issueType,
-                                text: args.problematicText,
+                                issue: comment.issueType,
+                                text: comment.problematicText,
                                 commentId: commentObject.id
                             });
 
                         } catch (commentError) {
                             console.error('Failed to create comment:', commentError);
                             failedComments.push({
-                                issue: functionCall.args?.issueType || 'unknown',
-                                text: functionCall.args?.problematicText || 'unknown',
+                                issue: comment.issueType || 'unknown',
+                                text: comment.problematicText || 'unknown',
                                 reason: commentError.message
                             });
                         }
@@ -393,6 +397,8 @@ export class DocumentReview {
                     console.log('Model provided text response instead of function calls:', responseText);
                 }
             }
+
+            logUsage(store.state.user.uid, 'generatedInlineComments');
 
             return {
                 success: true,

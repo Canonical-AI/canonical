@@ -47,29 +47,16 @@
       <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
         <v-expansion-panel>
           <v-expansion-panel-title>
-            <v-btn
+              <v-btn
               :disabled="isDisabled"
-              class="text-none gen-btn"
+              class="text-none gen-btn flex-1"
               @click="sendPromptToVertexAI()"
               density="compact"
-              >Generate Feedback
+              >Feedback
             </v-btn>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text>
-            <p
-              class="generative-feedback text-sm ma-1 pa-1"
-              v-if="generativeFeedback !== null"
-              v-html="renderMarkdown(generativeFeedback)"
-            ></p>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-        
-        <!-- AI Document Review Panel -->
-        <v-expansion-panel>
-          <v-expansion-panel-title>
             <v-btn
               :disabled="isDisabled || isReviewLoading"
-              class="text-none gen-btn"
+              class="text-none gen-btn flex-1"
               @click="startAiReview()"
               density="compact"
               >
@@ -78,12 +65,18 @@
                 indeterminate
                 size="16"
                 width="2"
-                class="mr-2"
+                class="mr-2 "
               ></v-progress-circular>
-              AI Document Review
+              Review
             </v-btn>
+
           </v-expansion-panel-title>
           <v-expansion-panel-text>
+            <p
+              class="generative-feedback text-sm ma-1 pa-1"
+              v-if="generativeFeedback !== null"
+              v-html="renderMarkdown(generativeFeedback)"
+            ></p>
             <div v-if="reviewResults">
               <div v-if="reviewResults.success" class="text-sm ma-1 pa-1">
                 <p class="text-success mb-2">
@@ -99,6 +92,9 @@
             </div>
           </v-expansion-panel-text>
         </v-expansion-panel>
+        
+        <!-- AI Document Review Panel -->
+
       </v-expansion-panels>
     </div>
 
@@ -169,19 +165,6 @@
           v-bind="props"
           @click="sendPromptToVertexAI()"
           icon="mdi-comment-quote"
-        />
-      </template>
-    </v-tooltip>
-    <v-tooltip text="AI Document Review - Find grammar, logic, and tone issues" location="bottom">
-      <template v-slot:activator="{ props }">
-        <v-icon
-          :disabled="isDisabled || isReviewLoading"
-          v-if="$store.getters.canAccessAi"
-          class="mx-1"
-          v-bind="props"
-          @click="startAiReview()"
-          icon="mdi-spellcheck"
-          :class="{ 'rotating': isReviewLoading }"
         />
       </template>
     </v-tooltip>
