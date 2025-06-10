@@ -62,10 +62,13 @@
                 </v-btn>
               </template>
             </v-tooltip>
-            <v-tooltip text="Mark as resolved" location="bottom">
+            <v-tooltip 
+              v-if="!comment.resolved" 
+              text="Mark as resolved" 
+              location="bottom"
+            >
               <template v-slot:activator="{ props }">
                 <v-btn
-                  v-if="!comment.resolved"
                   density="compact"
                   class="mr-1"
                   variant="text"
@@ -77,10 +80,13 @@
                 </v-btn>
               </template>
             </v-tooltip>
-            <v-tooltip text="Reply to this comment" location="bottom">
+            <v-tooltip 
+              v-if="!comment.resolved" 
+              text="Reply to this comment" 
+              location="bottom"
+            >
               <template v-slot:activator="{ props }">
                 <v-btn
-                  v-if="!comment.resolved"
                   density="compact"
                   class="mr-1"
                   variant="text"
@@ -92,10 +98,13 @@
                 </v-btn>
               </template>
             </v-tooltip>
-            <v-tooltip text="Accept AI suggestion" location="bottom">
+            <v-tooltip 
+              v-if="comment.aiGenerated && comment.suggestion && !comment.resolved" 
+              text="Accept AI suggestion" 
+              location="bottom"
+            >
               <template v-slot:activator="{ props }">
                 <v-btn
-                  v-if="comment.aiGenerated && comment.suggestion && !comment.resolved"
                   density="compact"
                   class="mr-1"
                   variant="text"

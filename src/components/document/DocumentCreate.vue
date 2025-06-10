@@ -15,9 +15,9 @@
           last update:
           {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
         </div>
-        <v-menu class="border border-surface-light">
+        <v-menu v-if="document.id" class="border border-surface-light">
           <template v-slot:activator="{ props }">
-            <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
+            <v-btn :disabled="isDisabled" v-bind="props" icon>
               <v-icon>mdi-dots-vertical</v-icon>
             </v-btn>
           </template>
@@ -80,10 +80,13 @@
                   </v-btn>
                 </template>
               </v-tooltip>
-              <v-tooltip text="Clear AI comments" location="bottom">
+              <v-tooltip 
+                v-if="hasAiComments" 
+                text="Clear AI comments" 
+                location="bottom"
+              >
                 <template v-slot:activator="{ props }">
                   <v-btn
-                    v-if="hasAiComments"
                     :disabled="isDisabled"
                     class="text-none"
                     density="compact"
@@ -95,10 +98,13 @@
                   </v-btn>
                 </template>
               </v-tooltip>
-              <v-tooltip text="Undo last AI change" location="bottom">
+              <v-tooltip 
+                v-if="canUndo" 
+                text="Undo last AI change" 
+                location="bottom"
+              >
                 <template v-slot:activator="{ props }">
                   <v-btn
-                    v-if="canUndo"
                     :disabled="isDisabled"
                     class="text-none"
                     density="compact"
@@ -185,11 +191,14 @@
         />
       </template>
     </v-tooltip>
-    <v-tooltip text="Feedback from your AI coach" location="bottom">
+    <v-tooltip 
+      v-if="$store.getters.canAccessAi" 
+      text="Feedback from your AI coach" 
+      location="bottom"
+    >
       <template v-slot:activator="{ props }">
         <v-icon
           :disabled="isDisabled"
-          v-if="$store.getters.canAccessAi"
           class="mx-1 gen-icon"
           v-bind="props"
           @click="sendPromptToVertexAI()"
