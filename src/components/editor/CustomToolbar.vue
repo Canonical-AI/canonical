@@ -274,6 +274,7 @@ export default {
                 // Use ProseMirror commands directly
                 const { state, dispatch } = this.view;
                 const command = this.getCommandByName(commandName);
+                
                 if (command) {
                     command(state, dispatch, this.view, payload);
                 }
@@ -290,17 +291,17 @@ export default {
                 case 'ToggleStrong':
                     return this.toggleMark(schema.marks.strong);
                 case 'ToggleEmphasis':
-                    return this.toggleMark(schema.marks.em);
+                    return this.toggleMark(schema.marks.emphasis);
                 case 'ToggleStrikeThrough':
-                    return this.toggleMark(schema.marks.strikethrough);
+                    return this.toggleMark(schema.marks.strike_through);
                 case 'AddLink':
                     return this.addLinkMark(schema.marks.link);
                 case 'RemoveLink':
                     return this.removeLinkMark(schema.marks.link);
                 case 'WrapInBulletList':
-                    return this.wrapInList(schema.nodes.bullet_list);
+                    return this.wrapInList(schema.nodes.bullet_list, schema.nodes.list_item);
                 case 'WrapInOrderedList':
-                    return this.wrapInList(schema.nodes.ordered_list);
+                    return this.wrapInList(schema.nodes.ordered_list, schema.nodes.list_item);
                 case 'WrapInBlockquote':
                     return this.wrapInNode(schema.nodes.blockquote);
                 case 'TurnIntoCodeBlock':
@@ -344,18 +345,37 @@ export default {
             };
         },
 
-        wrapInList(listType) {
+        wrapInList(listType, itemType) {
             return (state, dispatch) => {
-                if (!listType) return false;
+                if (!listType || !itemType) return false;
+                
                 const { $from, $to } = state.selection;
                 const range = $from.blockRange($to);
                 if (!range) return false;
                 
-                const wrapping = range && listType.spec.group === 'block' ? 
-                    [{ type: listType }, { type: state.schema.nodes.list_item }] : 
-                    [{ type: listType }];
+                // Check if we're already in the same type of list
+                let inList = false;
+                for (let d = range.depth; d >= 0; d--) {
+                    const node = range.$from.node(d);
+                    if (node.type === listType) {
+                        inList = true;
+                        break;
+                    }
+                }
                 
-                const tr = state.tr.wrap(range, wrapping);
+                if (inList) {
+                    // If already in this list type, don't do anything
+                    return false;
+                }
+                
+                // Use ProseMirror's built-in wrap functionality
+                const wrapping = [{ type: listType }, { type: itemType }];
+                
+                // Check if wrapping is possible
+                const canWrap = state.doc.resolve(range.start).blockRange(state.doc.resolve(range.end));
+                if (!canWrap) return false;
+                
+                const tr = state.tr.wrap(canWrap, wrapping);
                 dispatch(tr);
                 return true;
             };
@@ -448,8 +468,8 @@ export default {
             
             // Update active states for formatting buttons
             this.isActive.bold = this.isMarkActive('strong');
-            this.isActive.italic = this.isMarkActive('em');
-            this.isActive.strike = this.isMarkActive('strikethrough');
+            this.isActive.italic = this.isMarkActive('emphasis');
+            this.isActive.strike = this.isMarkActive('strike_through');
             this.isActive.link = this.isMarkActive('link');
             
             // Check if we're in specific node types
