@@ -295,7 +295,7 @@ export class DocumentReview {
             - Provide constructive suggestions for improvement
             - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
             - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
-            - The text is markdown, dont include text that crosses markdown blocks. i.e. highlight just a title, or a single bullet point, etc.
+            - The text is markdown, dont include any markdown formatting in the problematicText, just the text that is problemati and be very specific so we can find it.
             - You MUST call the create_comments function to provide your analysis
             - Call the create_comments function with ALL issues found in a single call, not multiple separate calls`
         });

@@ -168,6 +168,247 @@ export const commentFunctions =  {
 
         store.dispatch('updateCommentPositions', positionUpdates);  
 
+    },
+
+    findTextPosition: (view, parser, text, modelValue) => {
+        if (!view || !parser || !text) return { start: -1, end: -1 };
+
+        let result = { start: -1, end: -1 };
+
+        const { state } = view;
+        const doc = state.doc;
+
+        // Create search targets - original text and markdown-stripped versions
+        let searchTargets = [text];
+        
+        // Try to parse the search text as markdown to get plain text
+        try {
+            const searchSlice = parser(text);
+            if (searchSlice && typeof searchSlice !== 'string') {
+                let searchTextPlain = '';
+                searchSlice.content.descendants((node) => {
+                    if (node.isText) {
+                        searchTextPlain += node.text;
+                    }
+                });
+                if (searchTextPlain && searchTextPlain !== text) {
+                    searchTargets.push(searchTextPlain);
+                }
+            }
+        } catch (error) {
+            // If parsing fails, continue with other methods
+        }
+        
+        // Add stripped versions for common markdown patterns
+        if (text.includes('*') || text.includes('_') || text.includes('`')) {
+            searchTargets.push(
+                text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '').replace(/`/g, ''),
+                text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/_/g, '')
+            );
+        }
+
+        // Method 1: Search through the entire document using textBetween
+        // This is the most reliable method since it uses the same API as replaceText verification
+        const docSize = doc.content.size;
+        for (const searchTarget of searchTargets) {
+            if (!searchTarget || searchTarget.trim() === '') continue;
+            
+            const cleanTarget = searchTarget.trim();
+            
+            // Search through the document progressively
+            for (let pos = 1; pos <= docSize - cleanTarget.length + 1; pos++) {
+                try {
+                    const textAtPos = state.doc.textBetween(pos, pos + cleanTarget.length);
+                    if (textAtPos === cleanTarget) {
+                        result.start = pos;
+                        result.end = pos + cleanTarget.length;
+                        return result; // Found it!
+                    }
+                } catch (error) {
+                    // Position might be invalid, continue
+                }
+            }
+        }
+
+        // Method 2: If textBetween search fails, use node-based search as fallback
+        if (result.start === -1) {
+            doc.descendants((node, posInDoc) => {
+                if (result.start !== -1) return false;
+                
+                if (node.isText) {
+                    const nodeText = node.text || '';
+                    
+                    for (const searchTarget of searchTargets) {
+                        if (!searchTarget || searchTarget.trim() === '') continue;
+                        
+                        const cleanTarget = searchTarget.trim();
+                        const index = nodeText.indexOf(cleanTarget);
+                        
+                        if (index !== -1) {
+                            result.start = posInDoc + index;
+                            result.end = result.start + cleanTarget.length;
+                            return false; // Found, stop traversal
+                        }
+                    }
+                }
+                return true;
+            });
+        }
+
+        // Method 3: If still not found, try a broader text search across block nodes
+        if (result.start === -1) {
+            doc.descendants((node, posInDoc) => {
+                if (result.start !== -1) return false;
+                
+                if (node.isTextblock) {
+                    const nodeText = node.textContent;
+                    
+                    for (const searchTarget of searchTargets) {
+                        if (!searchTarget || searchTarget.trim() === '') continue;
+                        
+                        const cleanTarget = searchTarget.trim();
+                        const index = nodeText.indexOf(cleanTarget);
+                        
+                        if (index !== -1) {
+                            // Find the actual position by walking through the node's content
+                            let currentOffset = 0;
+                            let found = false;
+                            
+                            node.descendants((childNode, childPos) => {
+                                if (found) return false;
+                                
+                                if (childNode.isText) {
+                                    const childText = childNode.text || '';
+                                    const localIndex = childText.indexOf(cleanTarget);
+                                    
+                                    if (localIndex !== -1) {
+                                        result.start = posInDoc + 1 + currentOffset + localIndex;
+                                        result.end = result.start + cleanTarget.length;
+                                        found = true;
+                                        return false;
+                                    }
+                                    currentOffset += childText.length;
+                                }
+                                return true;
+                            });
+                            
+                            if (found) return false;
+                        }
+                    }
+                }
+                return true;
+            });
+        }
+
+        return result;
+    },
+
+    replaceText: (view, parser, originalText, newText, editorPosition, modelValue, findTextPositionFn) => {
+        if (!view) return false;
+
+        try {
+            let success = false;
+
+            const { state } = view;
+            const { tr } = state;
+
+            // Use provided position if available, otherwise find the text
+            let from, to;
+            if (editorPosition && editorPosition.from && editorPosition.to) {
+                from = editorPosition.from;
+                to = editorPosition.to;
+            } else {
+                // Fallback: find the text position using the centralized function
+                const position = findTextPositionFn ? 
+                    findTextPositionFn(view, parser, originalText, modelValue) :
+                    commentFunctions.findTextPosition(view, parser, originalText, modelValue);
+                    
+                if (position.start === -1) {
+                    console.error('Could not find text to replace:', originalText);
+                    return false;
+                }
+                from = position.start;
+                to = position.end;
+            }
+
+            // Verify the text at the position matches what we expect
+            const currentText = state.doc.textBetween(from, to);
+            if (currentText !== originalText) {
+                console.warn('Text mismatch. Expected:', originalText, 'Found:', currentText);
+                // Try to find the text again
+                const position = findTextPositionFn ? 
+                    findTextPositionFn(view, parser, originalText, modelValue) :
+                    commentFunctions.findTextPosition(view, parser, originalText, modelValue);
+                    
+                if (position.start === -1) {
+                    console.error('Could not find matching text for replacement');
+                    return false;
+                }
+                from = position.start;
+                to = position.end;
+            }
+
+            // Replace the text
+            tr.replaceWith(from, to, state.schema.text(newText));
+            view.dispatch(tr);
+            success = true;
+
+            return success;
+        } catch (error) {
+            console.error('Error replacing text:', error);
+            return false;
+        }
+    },
+
+    scrollToComment: (view, commentId, vueNextTick, storeState) => {
+        if (!view) return;
+
+        try {
+            const { state } = view;
+            
+            // Find the comment in store data
+            const comment = storeState.selected.comments?.find(c => c.id === commentId);
+            
+            if (!comment || !comment.editorID) return;
+
+            const { from, to } = comment.editorID;
+            
+            // Ensure the position is valid
+            if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) return;
+
+            // Find the comment element in the DOM and scroll to it
+            vueNextTick(() => {
+                const editorDom = view.dom;
+                const commentElement = editorDom.querySelector(`[data-comment-id="${commentId}"]`);
+                
+                if (commentElement) {
+                    commentElement.scrollIntoView({ 
+                        behavior: 'smooth',
+                        block: 'nearest',
+                        inline: 'nearest'
+                    });
+                }
+            });
+
+            // Add visual highlight effect
+            vueNextTick(() => {
+                const editorDom = view.dom;
+                const commentElements = editorDom.querySelectorAll(`[data-comment-id="${commentId}"]`);
+                
+                commentElements.forEach(element => {
+                    // Add highlight effect
+                    element.style.transition = 'background-color 0.5s ease';
+                    element.style.backgroundColor = 'rgba(var(--v-theme-primary), 0.3)';
+                    
+                    // Remove highlight after animation
+                    setTimeout(() => {
+                        element.style.backgroundColor = '';
+                    }, 2000);
+                });
+            });
+        } catch (error) {
+            console.error('Failed to scroll to comment:', error);
+        }
     }
 };
 

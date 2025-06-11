@@ -928,11 +928,7 @@ export default {
 
         // Replace the text in the document content
         // We're using just the first instance of text to replace because we're getting responses from an LLM which doesnt have a way to get the exact location, instead we've asked it to be very specific in the pompt
-        // TODO: theres issues with this finding markdown
         let currentContent = this.document.data.content;
-        console.log('currentContent', currentContent);
-        console.log('selectedText', selectedText);
-        console.log('suggestion', suggestion);
         const updatedContent = currentContent.replace(selectedText, suggestion);
         
         if (currentContent === updatedContent) {
@@ -942,8 +938,12 @@ export default {
         // Update the document data
         this.document.data.content = updatedContent;
         
-        // Update the store
-        this.$store.commit("updateSelectedDocument", this.document);
+        // Update the store - only pass document data, not comments
+        const documentUpdateData = {
+          id: this.document.id,
+          data: this.document.data
+        };
+        this.$store.commit("updateSelectedDocument", documentUpdateData);
 
         // Force editor refresh by incrementing the key (but not on mobile to avoid cursor issues)
         if (!this.$vuetify.display.mobile) {
@@ -1008,8 +1008,12 @@ export default {
 
       this.document.data.content = lastChange.content;
       
-      // Update the store
-      this.$store.commit("updateSelectedDocument", this.document);
+      // Update the store - only pass document data, not comments
+      const documentUpdateData = {
+        id: this.document.id,
+        data: this.document.data
+      };
+      this.$store.commit("updateSelectedDocument", documentUpdateData);
 
       // If this was an accepted suggestion, unresolve the comment
       if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
@@ -1075,7 +1079,11 @@ export default {
           this.isEditorModified = true;
           // This will make the title change visible in the document tree
           if (this.document.id) {
-            this.$store.commit("updateSelectedDocument", this.document);
+            const documentUpdateData = {
+              id: this.document.id,
+              data: this.document.data
+            };
+            this.$store.commit("updateSelectedDocument", documentUpdateData);
           }
         }
 
@@ -1090,7 +1098,12 @@ export default {
 
         if (this.isEditorModified) {
           console.log("trying to save....");
-          this.$store.commit("updateSelectedDocument", this.document); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          // Only pass document data, not comments, to avoid overwriting store's comment state
+          const documentUpdateData = {
+            id: this.document.id,
+            data: this.document.data
+          };
+          this.$store.commit("updateSelectedDocument", documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();

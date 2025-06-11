@@ -253,55 +253,12 @@ export default {
                 return;
             }
 
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    const { state } = view;
-                    
-                    // Find the comment in store data
-                    const comment = this.$store.state.selected.comments?.find(c => c.id === commentId);
-                    
-                    if (!comment || !comment.editorID) return;
-
-                    const { from, to } = comment.editorID;
-                    
-                    // Ensure the position is valid
-                    if (from < 0 || from > state.doc.content.size || to < 0 || to > state.doc.content.size) return;
-
-                    // Find the comment element in the DOM and scroll to it
-                    this.$nextTick(() => {
-                        const editorDom = view.dom;
-                        const commentElement = editorDom.querySelector(`[data-comment-id="${commentId}"]`);
-                        
-                        if (commentElement) {
-                            commentElement.scrollIntoView({ 
-                                behavior: 'smooth',
-                                block: 'nearest',
-                                inline: 'nearest'
-                            });
-                        }
-                    });
-
-                    // Add visual highlight effect
-                    this.$nextTick(() => {
-                        const editorDom = view.dom;
-                        const commentElements = editorDom.querySelectorAll(`[data-comment-id="${commentId}"]`);
-                        
-                        commentElements.forEach(element => {
-                            // Add highlight effect
-                            element.style.transition = 'background-color 0.5s ease';
-                            element.style.backgroundColor = 'rgba(var(--v-theme-primary), 0.3)';
-                            
-                            // Remove highlight after animation
-                            setTimeout(() => {
-                                element.style.backgroundColor = '';
-                            }, 2000);
-                        });
-                    });
-                });
-            } catch (error) {
-                console.error('Failed to scroll to comment:', error);
-            }
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                
+                // Use the centralized function from commentFunctions
+                commentFunctions.scrollToComment(view, commentId, this.$nextTick, this.$store.state);
+            });
         },
 
 
@@ -341,23 +298,10 @@ export default {
 
             this.get().action((ctx) => {
                 const view = ctx.get(editorViewCtx);
-                const doc = view.state.doc;
-
-                doc.descendants((node, posInDoc) => {
-                    if (result.start !== -1) return false;
-                    
-                    if (!node.isTextblock) {
-                        return true;
-                    }
-                    const nodeText = node.textContent;
-                    const index = nodeText.indexOf(text);
-                    if (index !== -1) {
-                        result.start = posInDoc + index + 1; // ProseMirror positions are 1-based
-                        result.end = result.start + text.length;
-                        return false; // Found, stop traversal
-                    }
-                    return true;
-                });
+                const parser = ctx.get(parserCtx);
+                
+                // Use the centralized function from commentFunctions
+                result = commentFunctions.findTextPosition(view, parser, text, this.modelValue);
             });
 
             return result;
@@ -367,55 +311,24 @@ export default {
         async replaceText(originalText, newText, editorPosition) {
             if (!this.get || this.loading) return false;
 
-            try {
-                let success = false;
+            let success = false;
 
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    const { state } = view;
-                    const { tr } = state;
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                const parser = ctx.get(parserCtx);
+                
+                // Use the centralized function from commentFunctions
+                success = commentFunctions.replaceText(
+                    view, 
+                    parser, 
+                    originalText, 
+                    newText, 
+                    editorPosition, 
+                    this.modelValue
+                );
+            });
 
-                    // Use provided position if available, otherwise find the text
-                    let from, to;
-                    if (editorPosition && editorPosition.from && editorPosition.to) {
-                        from = editorPosition.from;
-                        to = editorPosition.to;
-                    } else {
-                        // Fallback: find the text position
-                        const position = this.findTextPosition(originalText);
-                        if (position.start === -1) {
-                            console.error('Could not find text to replace:', originalText);
-                            return;
-                        }
-                        from = position.start;
-                        to = position.end;
-                    }
-
-                    // Verify the text at the position matches what we expect
-                    const currentText = state.doc.textBetween(from, to);
-                    if (currentText !== originalText) {
-                        console.warn('Text mismatch. Expected:', originalText, 'Found:', currentText);
-                        // Try to find the text again
-                        const position = this.findTextPosition(originalText);
-                        if (position.start === -1) {
-                            console.error('Could not find matching text for replacement');
-                            return;
-                        }
-                        from = position.start;
-                        to = position.end;
-                    }
-
-                    // Replace the text
-                    tr.replaceWith(from, to, state.schema.text(newText));
-                    view.dispatch(tr);
-                    success = true;
-                });
-
-                return success;
-            } catch (error) {
-                console.error('Error replacing text:', error);
-                return false;
-            }
+            return success;
         },
 
     },
