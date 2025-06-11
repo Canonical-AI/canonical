@@ -48,74 +48,44 @@
         <v-expansion-panel>
           <v-expansion-panel-title>
             <v-btn-toggle class="gen-btn" density="compact">
-              <v-tooltip text="Get AI feedback on your document's overall quality, clarity, and structure" location="bottom">
-                <template v-slot:activator="{ props }">
-                  <v-btn
-                    :disabled="isDisabled"
-                    class="text-none"
-                    density="compact"
-                    v-bind="props"
-                    @click="sendPromptToVertexAI()"
-                  >Feedback
-                  </v-btn>
-                </template>
-              </v-tooltip>
-              <v-tooltip text="Generate detailed inline comments with specific suggestions for improvement" location="bottom">
-                <template v-slot:activator="{ props }">
-                  <v-btn
-                    :disabled="isDisabled || isReviewLoading"
-                    class="text-none"
-                    density="compact"
-                    v-bind="props"
-                    @click="startAiReview()"
-                  >
-                    <v-progress-circular
-                      v-if="isReviewLoading"
-                      indeterminate
-                      size="16"
-                      width="2"
-                      class="mr-1"
-                    ></v-progress-circular>
-                    Review
-                  </v-btn>
-                </template>
-              </v-tooltip>
-              <v-tooltip 
-                v-if="hasAiComments" 
-                text="Clear AI comments" 
-                location="bottom"
-              >
-                <template v-slot:activator="{ props }">
-                  <v-btn
-                    :disabled="isDisabled"
-                    class="text-none"
-                    density="compact"
-                    v-bind="props"
-                    @click="clearAiComments"
-                  >
-                    <v-icon size="16" class="mr-1">mdi-broom</v-icon>
-                    Clear
-                  </v-btn>
-                </template>
-              </v-tooltip>
-              <v-tooltip 
-                v-if="canUndo" 
-                text="Undo last AI change" 
-                location="bottom"
-              >
-                <template v-slot:activator="{ props }">
-                  <v-btn
-                    :disabled="isDisabled"
-                    class="text-none"
-                    density="compact"
-                    v-bind="props"
-                    @click="undoLastChange"
-                  >
-                    <v-icon size="16" class="mr-1">mdi-undo</v-icon>
-                    Undo
-                  </v-btn>
-                </template>
-              </v-tooltip>
+              <ai-action-button
+                :tooltip="isViewingVersion ? 
+                  'Get AI feedback on this document version' : 
+                  'Get AI feedback on your document\'s overall quality, clarity, and structure'"
+                label="Feedback"
+                :disabled="isDisabled"
+                @click="sendPromptToVertexAI()"
+              />
+              
+              <ai-action-button
+                :tooltip="isViewingVersion ? 
+                  'Review this document version with AI - suggestions will be applied to the live version' : 
+                  'Generate detailed inline comments with specific suggestions for improvement'"
+                label="Review"
+                :disabled="isDisabled || isReviewLoading"
+                :loading="isReviewLoading"
+                @click="startAiReview()"
+              />
+              
+              <ai-action-button
+                v-if="hasAiComments"
+                tooltip="Clear AI comments"
+                label="Clear"
+                icon="mdi-broom"
+                :disabled="isDisabled"
+                @click="clearAiComments"
+              />
+              
+              <ai-action-button
+                v-if="canUndo"
+                :tooltip="isViewingVersion ? 
+                  'Undo last AI change (will navigate to live version)' : 
+                  'Undo last AI change'"
+                label="Undo"
+                icon="mdi-undo"
+                :disabled="isDisabled"
+                @click="undoLastChange"
+              />
             </v-btn-toggle>
           </v-expansion-panel-title>
           <v-expansion-panel-text>
@@ -278,11 +248,13 @@
 import { ProsemirrorAdapterProvider } from "@prosemirror-adapter/vue";
 import { marked } from "marked";
 import comment from "../comment/comment.vue";
-import { Feedback, DocumentReview } from "../../services/vertexAiService";
 import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
+import AiActionButton from "../ui/AiActionButton.vue";
+import aiReviewService from "../../services/aiReviewService";
+import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
 
 export default {
   components: {
@@ -291,6 +263,7 @@ export default {
     ProsemirrorAdapterProvider,
     MilkdownProvider,
     VersionModal,
+    AiActionButton,
   },
   emits: ["scrollToBottom"],
   props: {
@@ -319,7 +292,6 @@ export default {
         draft: true,
       },
     },
-    undoStack: [], // Track document states for undo
     previousDocumentValue: {
       name: "[DRAFT] New Doc..",
       content: "Hello **World**",
@@ -345,7 +317,6 @@ export default {
       required: (value) => !!value || "Required.",
     },
     drawer: false,
-    generativeFeedback: null,
     previousType: null,
     previousContent: null,
     previousTitle: null,
@@ -367,8 +338,6 @@ export default {
     isGenPanelExpanded: null,
     editorMounted: false,
     showEditor: true,
-    isReviewLoading: false,
-    reviewResults: null,
   }),
   async created() {
     this.isLoading = true;
@@ -379,7 +348,7 @@ export default {
       this.fetchDocument(this.$route.params.id);
     }
     this.isLoading = false;
-    this.debounceSave = this.debounce(() => this.saveDocument(), 5000);
+    this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
   },
@@ -403,15 +372,7 @@ export default {
       }));
     },
 
-    debounce(func, delay) {
-      let timeout;
-      return function () {
-        clearTimeout(timeout);
-        this._savingTimeout = timeout = setTimeout(() => {
-          func.apply();
-        }, delay);
-      };
-    },
+
 
     async fetchDocument(id, version = null) {
       // Completely unmount the editor first to prevent state issues
@@ -578,207 +539,108 @@ export default {
       this.$router.push({ path: `/document/create-document` });
     },
 
+    /**
+     * Send prompt to AI for feedback generation
+     */
     async sendPromptToVertexAI() {
       this.drawer = true;
-
-      const prompt = `
-            title ${this.document.data.name}
-            type of doc ${this.document.data.type}
-            ${this.document.data.content}
-            `;
-      const result = await Feedback.generateFeedback({ prompt: prompt });
-
-      this.generativeFeedback = "";
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        this.generativeFeedback += chunkText;
-      }
-      return;
+      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+      await aiReviewService.generateFeedback(this.document, showAlertFn);
     },
 
+    /**
+     * Start AI review with inline comments
+     */
     async startAiReview() {
-      this.sendPromptToVertexAI();
-
-      if (!this.document.data.content || !this.$refs.milkdownEditor) {
-        this._showAlert('warning', 'No content to review or editor not ready');
-        return;
-      }
-
-      this.isReviewLoading = true;
-      this.reviewResults = null;
-
-      try {
-        const editorRef = this.$refs.milkdownEditor;
-        const documentContent = this.document.data.content;
-        const maxRetries = 2;
-        let results = null;
-        
-        // Retry loop
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            results = await DocumentReview.createInlineComments(documentContent, editorRef);
-            
-            if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
-              break;
-            }
-            
-            if (results.success && results.commentsCreated === 0 && attempt < maxRetries) {
-              console.log(`AI review attempt ${attempt} generated no comments, retrying...`);
-              continue;
-            }
-            break;
-            
-          } catch (attemptError) {
-            if (attempt === maxRetries) throw attemptError;
-            console.log(`AI review attempt ${attempt} failed, retrying...`, attemptError);
-          }
-        }
-
-        if (!results || !results.success) {
-          throw new Error(results?.error || 'AI review failed to generate results');
-        }
-
-        this.reviewResults = results;
-        this._refreshEditor();
-
-        // Show success message
-        if (results.commentsCreated > 0) {
-          let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
-          if (results.failedComments > 0) {
-            message += ` (${results.failedComments} comments could not be positioned)`;
-          }
-          this._showAlert('success', message);
-        } else {
-          const message = documentContent.trim().length < 100 
-            ? 'Document is too short for meaningful review.' 
-            : 'Great! No issues found in your document.';
-          this._showAlert('info', message);
-        }
-
-      } catch (error) {
-        console.error('AI review failed:', error);
-        this.reviewResults = { success: false, error: error.message || 'An unexpected error occurred' };
-        this._showAlert('error', `AI review failed: ${error.message || 'Please try again'}`);
-      } finally {
-        this.isReviewLoading = false;
+      await this.sendPromptToVertexAI();
+      
+      const editorRef = this.$refs.milkdownEditor;
+      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+      const result = await aiReviewService.startAiReview(
+        this.document, 
+        editorRef, 
+        showAlertFn, 
+        this._refreshEditor
+      );
+      
+      // Handle editor refresh if needed
+      if (result?.needsEditorRefresh && !this.$vuetify.display.mobile) {
+        this.editorKey++;
       }
     },
 
-    // Method to clear all AI-generated comments
+    /**
+     * Clear all AI-generated comments
+     */
     async clearAiComments() {
-      try {
-        const allComments = this.$store.state.selected?.comments || [];
-        const aiComments = allComments.filter(comment => comment.aiGenerated === true);
-        
-        if (aiComments.length === 0) {
-          this._showAlert('info', 'No AI comments found to clear');
-          return;
-        }
-
-        await Promise.all(aiComments.map(comment => 
-          this.$store.dispatch('deleteComment', comment.id)
-        ));
-
-        this._refreshEditor();
-        this._showAlert('success', `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`);
-
-      } catch (error) {
-        console.error('Error clearing AI comments:', error);
-        this._showAlert('error', 'Failed to clear AI comments. Please try again.');
-      }
+      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+      await aiReviewService.clearAiComments(this.$store, showAlertFn, this._refreshEditor);
     },
 
-    // Method to handle accepting AI suggestions
+    /**
+     * Handle accepting AI suggestions
+     */
     async handleAcceptSuggestion(suggestionData) {
-      try {
-        const { commentId, suggestion, editorPosition } = suggestionData;
-        const selectedText = editorPosition.selectedText;
-        
-        if (!selectedText || !suggestion) {
-          throw new Error('Missing text or suggestion data');
-        }
-
-        // Save current state for undo
-        this.saveUndoState({
-          content: this.document.data.content,
-          commentId: commentId,
-          action: 'accept-suggestion',
-          originalText: selectedText,
-          newText: suggestion
+      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+      const result = await aiReviewService.handleAcceptSuggestion(
+        suggestionData,
+        this.document,
+        this.$store,
+        showAlertFn,
+        this._refreshEditor,
+        this.$router,
+        this.$route
+      );
+      
+      // Handle editor refresh if needed (only if we didn't navigate away)
+      if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
+        this.editorKey++;
+      }
+      
+      // Refresh suggestions after successful application to prevent stale references
+      if (result?.shouldRefreshSuggestions && result?.success) {
+        this.$nextTick(async () => {
+          this._refreshEditor();
+          
+          // Clean up any outdated suggestions that might reference old text
+          const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+          await aiReviewService.cleanupOutdatedSuggestions(
+            this.$store, 
+            this.document.data.content, 
+            showAlertFn
+          );
+          
+          // Also refresh comment positions if editor supports it
+          if (this.$refs.milkdownEditor?.updateCommentPositionsOnSave) {
+            this.$refs.milkdownEditor.updateCommentPositionsOnSave();
+          }
         });
-
-        // Replace text in document
-        const currentContent = this.document.data.content;
-        const updatedContent = currentContent.replace(selectedText, suggestion);
-        
-        if (currentContent === updatedContent) {
-          throw new Error('Text not found in document content');
-        }
-
-        // Update document
-        this.document.data.content = updatedContent;
-        this.$store.commit("updateSelectedDocument", {
-          id: this.document.id,
-          data: this.document.data
-        });
-
-        // Force editor refresh on desktop
-        if (!this.$vuetify.display.mobile) {
-          this.editorKey++;
-        }
-
-        // Resolve the comment
-        await this.$store.dispatch('updateCommentData', {
-          id: commentId,
-          data: { resolved: true }
-        });
-
-        this._refreshEditor();
-        this._showAlert('success', 'AI suggestion accepted and applied');
-
-      } catch (error) {
-        console.error('Error accepting suggestion:', error);
-        this._showAlert('error', 'Failed to apply suggestion. Please try again.');
       }
     },
 
-    // Method to undo the last change
+    /**
+     * Undo the last AI change
+     */
     async undoLastChange() {
-      if (this.undoStack.length === 0) {
-        this._showAlert('info', 'Nothing to undo');
-        return;
+      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
+      const result = await aiReviewService.undoLastChange(
+        this.document,
+        this.$store,
+        showAlertFn,
+        this._refreshEditor,
+        this.$router,
+        this.$route
+      );
+      
+      // Handle editor refresh if needed (only if we didn't navigate away)
+      if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
+        this.editorKey++;
       }
-
-      const lastChange = this.undoStack.pop();
-      if (!lastChange) return;
-
-      this.document.data.content = lastChange.content;
-      this.$store.commit("updateSelectedDocument", {
-        id: this.document.id,
-        data: this.document.data
-      });
-
-      // Unresolve comment if it was an accepted suggestion
-      if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
-        await this.$store.dispatch('updateCommentData', {
-          id: lastChange.commentId,
-          data: { resolved: false }
-        });
-      }
-
-      this._refreshEditor();
     },
 
-    // Utility method for consistent alert handling
-    _showAlert(type, message) {
-      this.$store.commit('alert', { 
-        type, 
-        message, 
-        autoClear: true 
-      });
-    },
-
-    // Utility method for refreshing editor decorations
+    /**
+     * Utility method for refreshing editor decorations
+     */
     _refreshEditor() {
       this.$nextTick(() => {
         if (this.$refs.milkdownEditor) {
@@ -793,24 +655,12 @@ export default {
     },
 
     copyToClipboard() {
-      const url = window.location.href; // Get the current URL
-      navigator.clipboard
-        .writeText(url) // Copy the URL to clipboard
-        .then(() => {
-          this.$store.commit("alert", {
-            type: "info",
-            message: "URL copied to clipboard!",
-            autoClear: true,
-          });
-        })
-        .catch((err) => {
-          console.error("Failed to copy: ", err);
-        });
+      const url = window.location.href;
+      copyToClipboard(url, this.$store, "URL copied to clipboard!");
     },
 
     getRandomPlaceholder() {
-      const randomIndex = Math.floor(Math.random() * this.placeholders.length);
-      this.currentPlaceholder = this.placeholders[randomIndex];
+      this.currentPlaceholder = getRandomItem(this.placeholders);
     },
 
     autoGrow(event) {
@@ -836,16 +686,7 @@ export default {
     },
 
     placeCursorAtEnd(element) {
-      try {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        range.collapse(false); // false means collapse to end
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } catch (error) {
-        console.warn('Could not place cursor at end:', error);
-      }
+      placeCursorAtEnd(element);
     },
 
     async toggleDraft() {
@@ -862,59 +703,11 @@ export default {
     },
 
     activateEditor() {
-      if (this.isLoading || !this.showEditor) return;
-      
-      try {
-        setTimeout(() => {
-          const editorElement = document.querySelector('.ProseMirror.editor');
-          if (editorElement) {
-
-            if (this.$vuetify.display.mobile) {
-              if (document.activeElement !== editorElement) {
-                editorElement.focus();
-              }
-            } else {
-              // Desktop behavior: clear focus, then set focus with cursor
-              document.activeElement?.blur();
-              editorElement.focus();
-              
-              // Only set cursor position if there's no existing selection
-              const selection = window.getSelection();
-              if (selection.rangeCount === 0) {
-                // Find a text node to place cursor in rather than at element position 0
-                const textNode = this.findFirstTextNode(editorElement);
-                if (textNode) {
-                  const range = document.createRange();
-                  // Place cursor at end of text rather than beginning
-                  range.setStart(textNode, textNode.textContent.length);
-                  range.collapse(true);
-                  selection.removeAllRanges();
-                  selection.addRange(range);
-                }
-              }
-            }
-          }
-        }, 50);
-      } catch (error) {
-        console.error("Error focusing editor:", error);
-      }
-    },
-    
-    // Helper function to find the first text node in the editor
-    findFirstTextNode(element) {
-      // If this is a text node, return it
-      if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
-        return element;
-      }
-
-      for (let i = 0; i < element.childNodes.length; i++) {
-        const textNode = this.findFirstTextNode(element.childNodes[i]);
-        if (textNode) {
-          return textNode;
-        }
-      }
-      
-      return null;
+      activateEditor({
+        isMobile: this.$vuetify.display.mobile,
+        isLoading: this.isLoading,
+        showEditor: this.showEditor
+      });
     },
 
     // Method to open drawer and scroll to specific comment
@@ -942,18 +735,7 @@ export default {
       });
     },
 
-    // Method to save current state for undo functionality
-    saveUndoState(undoData) {
-      // Limit undo stack to last 10 operations to prevent memory issues
-      if (this.undoStack.length >= 10) {
-        this.undoStack.shift(); // Remove oldest entry
-      }
-      
-      this.undoStack.push({
-        ...undoData,
-        timestamp: Date.now()
-      });
-    },
+
 
   },
   computed: {
@@ -969,12 +751,20 @@ export default {
         return true;
       }
     },
+    isViewingVersion() {
+      return this.$route.query.v && this.$route.query.v !== 'live';
+    },
     hasAiComments() {
-      const comments = this.$store.state.selected?.comments || [];
-      return comments.some(comment => comment.aiGenerated === true);
+      return aiReviewService.hasAiComments(this.$store);
     },
     canUndo() {
-      return this.undoStack.length > 0;
+      return aiReviewService.canUndo();
+    },
+    isReviewLoading() {
+      return aiReviewService.isReviewLoading;
+    },
+    generativeFeedback() {
+      return aiReviewService.generativeFeedback;
     },
     editorContent: {
       get() {
@@ -1181,6 +971,9 @@ export default {
       // Cancel any pending debounced save
       clearTimeout(this._savingTimeout);
     }
+    
+    // Reset AI service state
+    aiReviewService.resetState();
     
     // Force the editor to be unmounted cleanly
     this.editorKey += 1;

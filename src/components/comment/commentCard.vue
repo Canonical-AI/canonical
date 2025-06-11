@@ -38,7 +38,7 @@
               <v-icon size="12" class="mr-1">mdi-robot</v-icon>
               AI
             </v-chip>
-            <v-chip
+            <!-- <v-chip
               v-if="comment.severity"
               size="x-small"
               :color="getSeverityColor(comment.severity)"
@@ -46,7 +46,7 @@
               class="ml-2"
             >
               {{ comment.severity }}
-            </v-chip>
+            </v-chip> -->
           </div>
           <div>
             <v-tooltip text="Edit this comment" location="bottom">
