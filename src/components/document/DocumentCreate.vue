@@ -140,7 +140,7 @@
         :doc-type="'document'"
         ref="commentComponent"
         @scroll-to-comment="openDrawerAndScrollToComment"
-        @refresh-editor-decorations="refreshEditorDecorations"
+        @refresh-editor-decorations="_refreshEditor"
         @scroll-to-editor="scrollToCommentInEditor"
         @accept-suggestion="handleAcceptSuggestion"
       />
@@ -597,51 +597,39 @@ export default {
     },
 
     async startAiReview() {
-      this.sendPromptToVertexAI()
+      this.sendPromptToVertexAI();
 
       if (!this.document.data.content || !this.$refs.milkdownEditor) {
-        this.$store.commit('alert', { 
-          type: 'warning', 
-          message: 'No content to review or editor not ready', 
-          autoClear: true 
-        });
+        this._showAlert('warning', 'No content to review or editor not ready');
         return;
       }
 
       this.isReviewLoading = true;
       this.reviewResults = null;
 
-      const editorRef = this.$refs.milkdownEditor;
-      const documentContent = this.document.data.content;
-      const maxRetries = 2;
-      let attempt = 0;
-      let results = null;
-
       try {
-        // Retry loop - attempt up to maxRetries times
-        while (attempt < maxRetries) {
-          attempt++;
-          
+        const editorRef = this.$refs.milkdownEditor;
+        const documentContent = this.document.data.content;
+        const maxRetries = 2;
+        let results = null;
+        
+        // Retry loop
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             results = await DocumentReview.createInlineComments(documentContent, editorRef);
             
-            // If we got comments or the document is very short, break out of retry loop
             if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
               break;
             }
             
-            // If no comments were generated and we have more attempts, retry
             if (results.success && results.commentsCreated === 0 && attempt < maxRetries) {
               console.log(`AI review attempt ${attempt} generated no comments, retrying...`);
               continue;
             }
-            
-            // If we reach here, either we got comments or we're out of retries
             break;
             
           } catch (attemptError) {
-            // If this was our last attempt, let the error bubble up
-            if (attempt === maxRetries) { throw attemptError; }
+            if (attempt === maxRetries) throw attemptError;
             console.log(`AI review attempt ${attempt} failed, retrying...`, attemptError);
           }
         }
@@ -651,52 +639,152 @@ export default {
         }
 
         this.reviewResults = results;
+        this._refreshEditor();
 
-        // Refresh editor decorations to show new comments
-        this.$nextTick(() => {
-          if (this.$refs.milkdownEditor) {
-            this.$refs.milkdownEditor.refreshCommentDecorations();
-          }
-        });
-
-        // Show appropriate success message
+        // Show success message
         if (results.commentsCreated > 0) {
           let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
           if (results.failedComments > 0) {
             message += ` (${results.failedComments} comments could not be positioned)`;
           }
-          this.$store.commit('alert', { 
-            type: 'success', 
-            message: message, 
-            autoClear: true 
-          });
+          this._showAlert('success', message);
         } else {
-          // Only show "no issues" if document is actually short
           const message = documentContent.trim().length < 100 
             ? 'Document is too short for meaningful review.' 
             : 'Great! No issues found in your document.';
-          this.$store.commit('alert', { 
-            type: 'info', 
-            message: message, 
-            autoClear: true 
-          });
+          this._showAlert('info', message);
         }
 
       } catch (error) {
-        console.error('AI review failed after all attempts:', error);
-        this.reviewResults = {
-          success: false,
-          error: error.message || 'An unexpected error occurred'
-        };
-        
-        this.$store.commit('alert', { 
-          type: 'error', 
-          message: `AI review failed: ${error.message || 'Please try again'}`, 
-          autoClear: true 
-        });
+        console.error('AI review failed:', error);
+        this.reviewResults = { success: false, error: error.message || 'An unexpected error occurred' };
+        this._showAlert('error', `AI review failed: ${error.message || 'Please try again'}`);
       } finally {
         this.isReviewLoading = false;
       }
+    },
+
+    // Method to clear all AI-generated comments
+    async clearAiComments() {
+      try {
+        const allComments = this.$store.state.selected?.comments || [];
+        const aiComments = allComments.filter(comment => comment.aiGenerated === true);
+        
+        if (aiComments.length === 0) {
+          this._showAlert('info', 'No AI comments found to clear');
+          return;
+        }
+
+        await Promise.all(aiComments.map(comment => 
+          this.$store.dispatch('deleteComment', comment.id)
+        ));
+
+        this._refreshEditor();
+        this._showAlert('success', `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`);
+
+      } catch (error) {
+        console.error('Error clearing AI comments:', error);
+        this._showAlert('error', 'Failed to clear AI comments. Please try again.');
+      }
+    },
+
+    // Method to handle accepting AI suggestions
+    async handleAcceptSuggestion(suggestionData) {
+      try {
+        const { commentId, suggestion, editorPosition } = suggestionData;
+        const selectedText = editorPosition.selectedText;
+        
+        if (!selectedText || !suggestion) {
+          throw new Error('Missing text or suggestion data');
+        }
+
+        // Save current state for undo
+        this.saveUndoState({
+          content: this.document.data.content,
+          commentId: commentId,
+          action: 'accept-suggestion',
+          originalText: selectedText,
+          newText: suggestion
+        });
+
+        // Replace text in document
+        const currentContent = this.document.data.content;
+        const updatedContent = currentContent.replace(selectedText, suggestion);
+        
+        if (currentContent === updatedContent) {
+          throw new Error('Text not found in document content');
+        }
+
+        // Update document
+        this.document.data.content = updatedContent;
+        this.$store.commit("updateSelectedDocument", {
+          id: this.document.id,
+          data: this.document.data
+        });
+
+        // Force editor refresh on desktop
+        if (!this.$vuetify.display.mobile) {
+          this.editorKey++;
+        }
+
+        // Resolve the comment
+        await this.$store.dispatch('updateCommentData', {
+          id: commentId,
+          data: { resolved: true }
+        });
+
+        this._refreshEditor();
+        this._showAlert('success', 'AI suggestion accepted and applied');
+
+      } catch (error) {
+        console.error('Error accepting suggestion:', error);
+        this._showAlert('error', 'Failed to apply suggestion. Please try again.');
+      }
+    },
+
+    // Method to undo the last change
+    async undoLastChange() {
+      if (this.undoStack.length === 0) {
+        this._showAlert('info', 'Nothing to undo');
+        return;
+      }
+
+      const lastChange = this.undoStack.pop();
+      if (!lastChange) return;
+
+      this.document.data.content = lastChange.content;
+      this.$store.commit("updateSelectedDocument", {
+        id: this.document.id,
+        data: this.document.data
+      });
+
+      // Unresolve comment if it was an accepted suggestion
+      if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
+        await this.$store.dispatch('updateCommentData', {
+          id: lastChange.commentId,
+          data: { resolved: false }
+        });
+      }
+
+      this._refreshEditor();
+    },
+
+    // Utility method for consistent alert handling
+    _showAlert(type, message) {
+      this.$store.commit('alert', { 
+        type, 
+        message, 
+        autoClear: true 
+      });
+    },
+
+    // Utility method for refreshing editor decorations
+    _refreshEditor() {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
     },
 
     toggleFavorite() {
@@ -843,14 +931,7 @@ export default {
     },
 
 
-    // Method to refresh editor decorations when comments are resolved/unresolved
-    refreshEditorDecorations() {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.refreshCommentDecorations();
-        }
-      });
-    },
+
 
     // Method to scroll to a comment position in the editor when clicked from sidebar
     scrollToCommentInEditor(commentId) {
@@ -859,124 +940,6 @@ export default {
           this.$refs.milkdownEditor.scrollToComment(commentId);
         }
       });
-    },
-
-    // Method to clear all AI-generated comments
-    async clearAiComments() {
-      try {
-        // Get all AI comments from the store
-        const allComments = this.$store.state.selected?.comments || [];
-        const aiComments = allComments.filter(comment => comment.aiGenerated === true);
-        
-        if (aiComments.length === 0) {
-          this.$store.commit('alert', { 
-            type: 'info', 
-            message: 'No AI comments found to clear', 
-            autoClear: true 
-          });
-          return;
-        }
-
-        // Delete each AI comment
-        const deletePromises = aiComments.map(comment => 
-          this.$store.dispatch('deleteComment', comment.id)
-        );
-
-        await Promise.all(deletePromises);
-
-        // Refresh editor decorations to remove visual indicators
-        this.$nextTick(() => {
-          if (this.$refs.milkdownEditor) {
-            this.$refs.milkdownEditor.refreshCommentDecorations();
-          }
-        });
-
-        this.$store.commit('alert', { 
-          type: 'success', 
-          message: `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`, 
-          autoClear: true 
-        });
-
-      } catch (error) {
-        console.error('Error clearing AI comments:', error);
-        this.$store.commit('alert', { 
-          type: 'error', 
-          message: 'Failed to clear AI comments. Please try again.', 
-          autoClear: true 
-        });
-      }
-    },
-
-    // Method to handle accepting AI suggestions
-    async handleAcceptSuggestion(suggestionData) {
-      try {
-        const { commentId, suggestion, editorPosition } = suggestionData;
-        const selectedText = editorPosition.selectedText;
-        
-        if (!selectedText || !suggestion) {
-          throw new Error('Missing text or suggestion data');
-        }
-
-        // Save current state to undo stack before making changes
-        this.saveUndoState({
-          content: this.document.data.content,
-          commentId: commentId,
-          action: 'accept-suggestion',
-          originalText: selectedText,
-          newText: suggestion
-        });
-
-        // Replace the text in the document content
-        // We're using just the first instance of text to replace because we're getting responses from an LLM which doesnt have a way to get the exact location, instead we've asked it to be very specific in the pompt
-        let currentContent = this.document.data.content;
-        const updatedContent = currentContent.replace(selectedText, suggestion);
-        
-        if (currentContent === updatedContent) {
-          throw new Error('Text not found in document content');
-        }
-
-        // Update the document data
-        this.document.data.content = updatedContent;
-        
-        // Update the store - only pass document data, not comments
-        const documentUpdateData = {
-          id: this.document.id,
-          data: this.document.data
-        };
-        this.$store.commit("updateSelectedDocument", documentUpdateData);
-
-        // Force editor refresh by incrementing the key (but not on mobile to avoid cursor issues)
-        if (!this.$vuetify.display.mobile) {
-          this.editorKey++;
-        }
-
-        // Resolve the comment after successful replacement
-        await this.$store.dispatch('updateCommentData', {
-          id: commentId,
-          data: { resolved: true }
-        });
-
-        // Refresh editor decorations
-        this.$nextTick(() => {
-          if (this.$refs.milkdownEditor) {
-            this.$refs.milkdownEditor.refreshCommentDecorations();
-          }
-        });
-
-        this.$store.commit('alert', { 
-          type: 'success', 
-          message: 'AI suggestion accepted and applied', 
-          autoClear: true 
-        });
-
-      } catch (error) {
-        console.error('Error accepting suggestion:', error);
-        this.$store.commit('alert', { 
-          type: 'error', 
-          message: 'Failed to apply suggestion. Please try again.', 
-          autoClear: true 
-        });
-      }
     },
 
     // Method to save current state for undo functionality
@@ -991,47 +954,6 @@ export default {
         timestamp: Date.now()
       });
     },
-
-    // Method to undo the last change
-    async undoLastChange() {
-      if (this.undoStack.length === 0) {
-          this.$store.commit('alert', { 
-            type: 'info', 
-            message: 'Nothing to undo', 
-            autoClear: true 
-          });
-          return;
-      }
-
-      const lastChange = this.undoStack.pop();
-      if (!lastChange) return;
-
-      this.document.data.content = lastChange.content;
-      
-      // Update the store - only pass document data, not comments
-      const documentUpdateData = {
-        id: this.document.id,
-        data: this.document.data
-      };
-      this.$store.commit("updateSelectedDocument", documentUpdateData);
-
-      // If this was an accepted suggestion, unresolve the comment
-      if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
-        await this.$store.dispatch('updateCommentData', {
-          id: lastChange.commentId,
-          data: { resolved: false }
-        });
-      }
-
-      // Refresh editor decorations
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.refreshCommentDecorations();
-        }
-      });
-
-    },
-
 
   },
   computed: {
