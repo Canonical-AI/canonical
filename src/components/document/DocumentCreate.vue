@@ -597,7 +597,6 @@ export default {
     },
 
     async startAiReview() {
-
       this.sendPromptToVertexAI()
 
       if (!this.document.data.content || !this.$refs.milkdownEditor) {
@@ -612,13 +611,45 @@ export default {
       this.isReviewLoading = true;
       this.reviewResults = null;
 
-      try {
-        const editorRef = this.$refs.milkdownEditor;
-        const documentContent = this.document.data.content;
+      const editorRef = this.$refs.milkdownEditor;
+      const documentContent = this.document.data.content;
+      const maxRetries = 2;
+      let attempt = 0;
+      let results = null;
 
-        // Create inline comments based on AI analysis
-        const results = await DocumentReview.createInlineComments(documentContent, editorRef);
-        
+      try {
+        // Retry loop - attempt up to maxRetries times
+        while (attempt < maxRetries) {
+          attempt++;
+          
+          try {
+            results = await DocumentReview.createInlineComments(documentContent, editorRef);
+            
+            // If we got comments or the document is very short, break out of retry loop
+            if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
+              break;
+            }
+            
+            // If no comments were generated and we have more attempts, retry
+            if (results.success && results.commentsCreated === 0 && attempt < maxRetries) {
+              console.log(`AI review attempt ${attempt} generated no comments, retrying...`);
+              continue;
+            }
+            
+            // If we reach here, either we got comments or we're out of retries
+            break;
+            
+          } catch (attemptError) {
+            // If this was our last attempt, let the error bubble up
+            if (attempt === maxRetries) { throw attemptError; }
+            console.log(`AI review attempt ${attempt} failed, retrying...`, attemptError);
+          }
+        }
+
+        if (!results || !results.success) {
+          throw new Error(results?.error || 'AI review failed to generate results');
+        }
+
         this.reviewResults = results;
 
         // Refresh editor decorations to show new comments
@@ -628,8 +659,8 @@ export default {
           }
         });
 
-        // Show success message
-        if (results.success && results.commentsCreated > 0) {
+        // Show appropriate success message
+        if (results.commentsCreated > 0) {
           let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
           if (results.failedComments > 0) {
             message += ` (${results.failedComments} comments could not be positioned)`;
@@ -639,16 +670,20 @@ export default {
             message: message, 
             autoClear: true 
           });
-        } else if (results.success && results.commentsCreated === 0) {
+        } else {
+          // Only show "no issues" if document is actually short
+          const message = documentContent.trim().length < 100 
+            ? 'Document is too short for meaningful review.' 
+            : 'Great! No issues found in your document.';
           this.$store.commit('alert', { 
             type: 'info', 
-            message: 'Great! No issues found in your document.', 
+            message: message, 
             autoClear: true 
           });
         }
 
       } catch (error) {
-        console.error('AI review failed:', error);
+        console.error('AI review failed after all attempts:', error);
         this.reviewResults = {
           success: false,
           error: error.message || 'An unexpected error occurred'
@@ -892,7 +927,12 @@ export default {
         });
 
         // Replace the text in the document content
+        // We're using just the first instance of text to replace because we're getting responses from an LLM which doesnt have a way to get the exact location, instead we've asked it to be very specific in the pompt
+        // TODO: theres issues with this finding markdown
         let currentContent = this.document.data.content;
+        console.log('currentContent', currentContent);
+        console.log('selectedText', selectedText);
+        console.log('suggestion', suggestion);
         const updatedContent = currentContent.replace(selectedText, suggestion);
         
         if (currentContent === updatedContent) {
@@ -954,58 +994,38 @@ export default {
 
     // Method to undo the last change
     async undoLastChange() {
-      try {
-        if (this.undoStack.length === 0) {
+      if (this.undoStack.length === 0) {
           this.$store.commit('alert', { 
             type: 'info', 
             message: 'Nothing to undo', 
             autoClear: true 
           });
           return;
-        }
+      }
 
-        const lastChange = this.undoStack.pop();
-        
-        // Restore the document content
-        this.document.data.content = lastChange.content;
-        
-        // Update the store
-        this.$store.commit("updateSelectedDocument", this.document);
+      const lastChange = this.undoStack.pop();
+      if (!lastChange) return;
 
-        // Force editor refresh (but not on mobile to avoid cursor issues)
-        if (!this.$vuetify.display.mobile) {
-          this.editorKey++;
-        }
+      this.document.data.content = lastChange.content;
+      
+      // Update the store
+      this.$store.commit("updateSelectedDocument", this.document);
 
-        // If this was an accepted suggestion, unresolve the comment
-        if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
-          await this.$store.dispatch('updateCommentData', {
-            id: lastChange.commentId,
-            data: { resolved: false }
-          });
-        }
-
-        // Refresh editor decorations
-        this.$nextTick(() => {
-          if (this.$refs.milkdownEditor) {
-            this.$refs.milkdownEditor.refreshCommentDecorations();
-          }
-        });
-
-        this.$store.commit('alert', { 
-          type: 'success', 
-          message: 'Change undone successfully', 
-          autoClear: true 
-        });
-
-      } catch (error) {
-        console.error('Error undoing change:', error);
-        this.$store.commit('alert', { 
-          type: 'error', 
-          message: 'Failed to undo change. Please try again.', 
-          autoClear: true 
+      // If this was an accepted suggestion, unresolve the comment
+      if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
+        await this.$store.dispatch('updateCommentData', {
+          id: lastChange.commentId,
+          data: { resolved: false }
         });
       }
+
+      // Refresh editor decorations
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
+
     },
 
 

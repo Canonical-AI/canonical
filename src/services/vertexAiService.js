@@ -144,7 +144,6 @@ export class Chat {
 
 
         if (store.state.documents.length === 0) {
-            console.log("loading documents");
             documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
         } else {
             documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
@@ -205,7 +204,7 @@ export class Chat {
         }
 
         const summaryModel = getGenerativeModel(vertexAI, { 
-            model: "gemini-1.5-flash" ,
+            model: model ,
             systemInstruction: 'create atitle no more than 4 or 5 words',
             maxOutputTokens: 25
           });
@@ -228,13 +227,8 @@ export class DocumentReview {
         // Initialize the review model with function calling capabilities
     }
 
-    static async createInlineComments(documentContent, editorRef) {
-        if (!documentContent || !editorRef) {
-            throw new Error('Document content and editor reference are required');
-        }
-
-        checkUserPermission();
-        
+    // Generate AI comments using the model
+    static async GenerateComments(documentContent) {
         // Define the function that the model can call to create comments
         const createCommentFunction = {
             name: "create_comments",
@@ -249,7 +243,7 @@ export class DocumentReview {
                             properties: {
                                 issueType: {
                                     type: "string",
-                                    enum: [ "logic", "grammar","accuracy", "tone", "clarity"],
+                                    enum: ["logic", "grammar", "accuracy", "tone", "clarity"],
                                     description: "The type of issue identified"
                                 },  
                                 severity: {
@@ -269,10 +263,12 @@ export class DocumentReview {
                                     type: "string",
                                     description: "The exact problematic text from the document that has the issue"
                                 }
-                            }
+                            },
+                            required: ["issueType", "severity", "comment", "problematicText"]
                         }
                     }
-                }
+                },
+                required: ["comments"]
             }
         };
 
@@ -299,85 +295,139 @@ export class DocumentReview {
             - Provide constructive suggestions for improvement
             - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
             - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
-            - If the text is markdown use the exact markdown formatting in the problematicText
+            - The text is markdown, dont include text that crosses markdown blocks. i.e. highlight just a title, or a single bullet point, etc.
+            - You MUST call the create_comments function to provide your analysis
             - Call the create_comments function with ALL issues found in a single call, not multiple separate calls`
         });
 
+        const prompt = `Please review the following document and identify issues by calling the create_comments function:
 
-        const prompt = `Please review the following document ${documentContent}`;
-
-
+        ${documentContent}`;
+        
         try {
             const result = await reviewModel.generateContent(prompt);
             const response = result.response;
-            console.log('Full response:', result.response)
+            const functionCalls = response.functionCalls();
+
+            if (functionCalls && functionCalls.length > 0) {
+                const functionCall = functionCalls[0];
+                if (functionCall.name === 'create_comments') {
+                    return functionCall.args.comments;
+                }
+            } else {
+                const responseText = response.text();
+                if (responseText) {
+                    console.warn('Model provided text response instead of function calls:', responseText);
+                }
+            }
+            
+            return [];
+        } catch (error) {
+            console.error('Error generating comments:', error);
+            throw error;
+        }
+    }
+
+    // Find text positions for a comment in the editor
+    static FindTextPositions(comment, editorRef) {
+        try {
+            const position = editorRef.findTextPosition(comment.problematicText);
+            
+            if (position.start === -1) {
+                return {
+                    success: false,
+                    error: {
+                        issue: comment.issueType,
+                        text: comment.problematicText,
+                        reason: 'Text not found in document'
+                    }
+                };
+            }
+
+            return {
+                success: true,
+                position: position
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: {
+                    issue: comment.issueType || 'unknown',
+                    text: comment.problematicText || 'unknown',
+                    reason: error.message
+                }
+            };
+        }
+    }
+
+    // Create and save a comment to the store
+    static async CreateComments(comment, position) {
+        const commentData = {
+            comment: comment.comment,
+            documentId: store.state.selected.id,
+            documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
+            createdAt: new Date().toISOString(),
+            resolved: false,
+            editorID: {
+                from: position.start,
+                to: position.end,
+                selectedText: comment.problematicText
+            },
+            suggestion: comment.suggestion,
+            aiGenerated: true,
+            issueType: comment.issueType,
+            severity: comment.severity
+        };
+
+        await store.dispatch('addComment', commentData);
+        return commentData;
+    }
+
+    // Handle and track comment creation errors
+    static HandleCommentErrors(error, comment = null) {
+        const errorData = {
+            issue: comment?.issueType || 'unknown',
+            text: comment?.problematicText || 'unknown',
+            reason: error.message || error.reason || 'Unknown error'
+        };
+
+        console.error('Failed to create comment:', error);
+        return errorData;
+    }
+
+    static async createInlineComments(documentContent, editorRef) {
+        if (!documentContent || !editorRef) {
+            throw new Error('Document content and editor reference are required');
+        }
+
+        checkUserPermission();
+        
+        try {
+            // Step 1: Generate AI comments
+            const aiComments = await this.GenerateComments(documentContent);
             
             let commentsCreated = [];
             let failedComments = [];
             
-            const functionCalls = response.functionCalls();
-            console.log('Function calls:', functionCalls)
-            
-            if (functionCalls && functionCalls.length > 0) {
-                // Should get one function call with an array of comments
-                const functionCall = functionCalls[0];
-                if (functionCall.name === 'create_comments') {
-                    const comments = functionCall.args.comments;
-                    console.log('Generated comments array:', comments)
+            // Step 2: Process each AI comment
+            for (const comment of aiComments) {
+                try {
+                    // Step 3: Find text positions
+                    const positionResult = this.FindTextPositions(comment, editorRef);
                     
-                    // Process each comment in the array
-                    for (const comment of comments) {
-                        try {
-                            // Find the exact position of the problematic text in the editor
-                            const position = editorRef.findTextPosition(comment.problematicText);
-                            
-                            if (position.start === -1) {
-                                failedComments.push({
-                                    issue: comment.issueType,
-                                    text: comment.problematicText,
-                                    reason: 'Text not found in document'
-                                });
-                                console.warn('Could not find text:', comment.problematicText);
-                                continue;
-                            }
-
-                            // Create the inline comment
-                            const commentData = {
-                                comment: comment.comment,
-                                documentId: store.state.selected.id,
-                                documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
-                                createdAt: new Date().toISOString(),
-                                resolved: false,
-                                editorID: {
-                                    from: position.start,
-                                    to: position.end,
-                                    selectedText: comment.problematicText
-                                },
-                                suggestion: comment.suggestion,
-                                aiGenerated: true,
-                                issueType: comment.issueType,
-                                severity: comment.severity
-                            };
-
-                            // Add comment through the store
-                            await store.dispatch('addComment', commentData);
-                            
-
-                        } catch (commentError) {
-                            console.error('Failed to create comment:', commentError);
-                            failedComments.push({
-                                issue: comment.issueType || 'unknown',
-                                text: comment.problematicText || 'unknown',
-                                reason: commentError.message
-                            });
-                        }
+                    if (!positionResult.success) {
+                        failedComments.push(positionResult.error);
+                        console.warn('Could not find text:', comment.problematicText);
+                        continue;
                     }
-                }
-            } else {
-                console.log('No function calls found in response');
-                const responseText = response.text();
-                if (responseText) {
-                    console.log('Model provided text response instead of function calls:', responseText);
+
+                    // Step 4: Create and save comment
+                    const createdComment = await this.CreateComments(comment, positionResult.position);
+                    commentsCreated.push(createdComment);
+
+                } catch (commentError) {
+                    const errorData = this.HandleCommentErrors(commentError, comment);
+                    failedComments.push(errorData);
                 }
             }
 
@@ -398,12 +448,6 @@ export class DocumentReview {
             throw error;
         }
     }
-
-
-
-
-
-
 }
 
 

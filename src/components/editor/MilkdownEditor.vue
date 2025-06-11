@@ -344,10 +344,11 @@ export default {
                 const doc = view.state.doc;
 
                 doc.descendants((node, posInDoc) => {
-                    // If we already found a match, stop searching
                     if (result.start !== -1) return false;
                     
-                    if (!node.isTextblock) return true;
+                    if (!node.isTextblock) {
+                        return true;
+                    }
                     const nodeText = node.textContent;
                     const index = nodeText.indexOf(text);
                     if (index !== -1) {
