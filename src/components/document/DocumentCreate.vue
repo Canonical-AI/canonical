@@ -420,7 +420,6 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
-        this.$refs?.milkdownEditor?.updateCommentPositionsOnSave();
       }
 
       this.isEditorModified = false;
@@ -520,10 +519,6 @@ export default {
               await this.$refs.reviewPanel.cleanupOutdatedSuggestions(this.document.data.content);
             }
             
-            // Also refresh comment positions if editor supports it
-            if (this.$refs.milkdownEditor?.updateCommentPositionsOnSave) {
-              this.$refs.milkdownEditor.updateCommentPositionsOnSave();
-            }
           });
         }
       }

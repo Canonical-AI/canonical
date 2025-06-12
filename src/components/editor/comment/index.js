@@ -12,6 +12,75 @@ const commentStore = new Map();
 // Plugin key for accessing the plugin state
 export const commentPluginKey = new PluginKey('commentPlugin');
 
+// Utility function to check if selected text is still present in document
+export const isSelectedTextPresent = (view, selectedText, originalFrom, originalTo) => {
+    if (!view || !selectedText) return false;
+    
+    const { state } = view;
+    const doc = state.doc;
+    const docSize = doc.content.size;
+    
+    // Get target words (normalized)
+    const targetWords = selectedText.trim().toLowerCase().split(/\s+/).filter(word => word.length > 0);
+    if (targetWords.length === 0) return false;
+    
+    const targetLength = selectedText.length;
+    
+    // Search through the document with different window sizes
+    const searchSizes = [
+        targetLength,
+        targetLength + 10,
+        targetLength + 20,
+        targetLength - 5
+    ];
+    
+    let bestMatch = { start: -1, end: -1, similarity: 0 };
+    
+    for (const windowSize of searchSizes) {
+        const size = Math.max(5, windowSize);
+        
+        for (let pos = 1; pos <= docSize - size + 1; pos++) {
+            try {
+                const textAtPos = state.doc.textBetween(pos, pos + size);
+                const currentWords = textAtPos.trim().toLowerCase().split(/\s+/).filter(word => word.length > 0);
+                
+                if (currentWords.length === 0) continue;
+                
+                // Calculate word overlap
+                const matchingWords = targetWords.filter(word => currentWords.includes(word));
+                const similarity = matchingWords.length / targetWords.length;
+                
+                // If we have the same similarity and position info, prefer the position closest to the original
+                if (similarity === bestMatch.similarity && similarity > 0 && originalFrom && originalTo) {
+                    const originalCenter = (originalFrom + originalTo) / 2;
+                    const currentCenter = pos + size / 2;
+                    const bestCenter = bestMatch.start + (bestMatch.end - bestMatch.start) / 2;
+                    
+                    const currentDistance = Math.abs(currentCenter - originalCenter);
+                    const bestDistance = Math.abs(bestCenter - originalCenter);
+                    
+                    // Choose the position closer to the original
+                    if (currentDistance < bestDistance) {
+                        bestMatch = { start: pos, end: pos + size, similarity };
+                    }
+                } else if (similarity > bestMatch.similarity) {
+                    bestMatch = { start: pos, end: pos + size, similarity };
+                }
+                
+                // Return true if we find a match with 90%+ similarity
+                if (similarity >= 0.9) {
+                    return true;
+                }
+            } catch (error) {
+                // Position might be invalid, continue
+            }
+        }
+    }
+    
+    // Return true if the best match has 90%+ similarity
+    return bestMatch.similarity >= 0.9;
+};
+
 // Export the decoration creation function for external use
 export const createCommentDecoration = (from, to, id) => {
     return Decoration.inline(from, to, {
@@ -95,23 +164,117 @@ export const commentFunctions =  {
         view.dispatch(tr);
     },
 
-    // Clear all decorations and rebuild from store data
-    refreshAllDecorations: (view ) => {
+
+    
+    findBestTextMatch: function(view, targetText, originalFrom, originalTo) {
+        if (!view || !targetText) return { start: -1, end: -1, similarity: 0 };
+        
+        const { state } = view;
+        const doc = state.doc;
+        const docSize = doc.content.size;
+        
+        // Get target words (normalized)
+        const targetWords = targetText.trim().toLowerCase().split(/\s+/).filter(word => word.length > 0);
+        if (targetWords.length === 0) return { start: -1, end: -1, similarity: 0 };
+        
+        let bestMatch = { start: -1, end: -1, similarity: 0 };
+        const targetLength = targetText.length;
+        
+        // Search through the document with different window sizes
+        const searchSizes = [
+            targetLength,
+            targetLength + 10,
+            targetLength + 20,
+            targetLength - 5
+        ];
+        
+        for (const windowSize of searchSizes) {
+            const size = Math.max(5, windowSize);
+            
+            for (let pos = 1; pos <= docSize - size + 1; pos++) {
+                try {
+                    const textAtPos = state.doc.textBetween(pos, pos + size);
+                    const currentWords = textAtPos.trim().toLowerCase().split(/\s+/).filter(word => word.length > 0);
+                    
+                    if (currentWords.length === 0) continue;
+                    
+                    // Calculate word overlap
+                    const matchingWords = targetWords.filter(word => currentWords.includes(word));
+                    const similarity = matchingWords.length / targetWords.length;
+                    
+                    // If we have the same similarity, prefer the position closest to the original
+                    if (similarity === bestMatch.similarity && similarity > 0) {
+                        const originalCenter = originalFrom && originalTo ? (originalFrom + originalTo) / 2 : 0;
+                        const currentCenter = pos + size / 2;
+                        const bestCenter = bestMatch.start + (bestMatch.end - bestMatch.start) / 2;
+                        
+                        const currentDistance = Math.abs(currentCenter - originalCenter);
+                        const bestDistance = Math.abs(bestCenter - originalCenter);
+                        
+                        // Choose the position closer to the original
+                        if (currentDistance < bestDistance) {
+                            bestMatch = { start: pos, end: pos + size, similarity };
+                        }
+                    } else if (similarity > bestMatch.similarity) {
+                        bestMatch = { start: pos, end: pos + size, similarity };
+                    }
+                    
+                    // If we find a very good match (90%+), use it
+                    if (similarity >= 0.9) {
+                        return bestMatch;
+                    }
+                } catch (error) {
+                    // Position might be invalid, continue
+                }
+            }
+        }
+        
+        return bestMatch;
+    },
+
+    refreshAllDecorations: function(view) {
         // Get fresh data from store
-
-
         const allComments = store.state.selected.comments;
         const activeComments = allComments.filter(comment => 
             comment.editorID && 
             comment.resolved !== true &&
-            comment.editorID.from !== comment.editorID.to
+            comment.editorID.selectedText // Ensure we have text to search for
         );
         
         // Clear the in-memory store
         commentStore.clear();
         
-        // Store active comments data
-        activeComments.forEach(comment => {
+        // Find new positions for each comment using fuzzy matching
+        const updatedComments = activeComments.map(comment => {
+            const { selectedText} = comment.editorID;
+            
+            // Find best match for the text
+            const match = this.findBestTextMatch(view, selectedText, comment.editorID.from, comment.editorID.to);
+            
+            if (match.similarity >= 0.7) { // Only use matches with 70%+ similarity
+                return {
+                    ...comment,
+                    editorID: {
+                        ...comment.editorID,
+                        from: match.start,
+                        to: match.end,
+                        matchSimilarity: match.similarity
+                    }
+                };
+            } else {
+                // If no good match found, keep original position but mark as potentially stale
+                return {
+                    ...comment,
+                    editorID: {
+                        ...comment.editorID,
+                        matchSimilarity: match.similarity
+                    }
+                };
+            }
+        });
+        
+        // Store updated comments data
+        updatedComments.forEach(comment => {
             commentStore.set(comment.id, comment);
         });
         
@@ -119,55 +282,10 @@ export const commentFunctions =  {
         const tr = view.state.tr;
         tr.setMeta(commentPluginKey, {
             type: 'REFRESH_DECORATIONS',
-            activeComments: activeComments
+            activeComments: updatedComments
         });
 
         view.dispatch(tr);
-    },
-
-    updateCommentPositions: (view) => {
-        const comments = store.state.selected.comments;
-
-        const { state } = view;
-        const commentPluginState = commentPluginKey.getState(state);
-                    
-        if (!commentPluginState) return;
-        const positionUpdates = [];
-
-                    // Try different ways to access decorations
-        if (commentPluginState.find) {
-        const decorations = commentPluginState.find();
-                        
-        decorations.forEach((decoration, index) => {
-                            
-                            // Get the comment ID from the spec (now properly stored there)
-        const commentId = decoration.spec.commentId || 
-                                decoration.spec['data-comment-id'] || 
-                                decoration.attrs?.['data-comment-id'];                       
-
-                if (commentId) {
-                    const comment = comments.find(c => c.id === commentId);
-
-                    if (comment && comment.editorID) {
-                        const currentFrom = decoration.from;
-                        const currentTo = decoration.to;
-                        if (currentFrom === comment.editorID.from && currentTo === comment.editorID.to) return;
-                        
-                        // Always add to updates for now to test saving
-                        positionUpdates.push({
-                            commentId: commentId,
-                            newFrom: currentFrom,
-                            newTo: currentTo,
-                            oldFrom: comment.editorID.from,
-                            oldTo: comment.editorID.to
-                        });
-                    }
-                } 
-            });
-        } 
-
-        store.dispatch('updateCommentPositions', positionUpdates);  
-
     },
 
     findTextPosition: (view, parser, text, modelValue) => {
@@ -303,62 +421,6 @@ export const commentFunctions =  {
         return result;
     },
 
-    replaceText: (view, parser, originalText, newText, editorPosition, modelValue, findTextPositionFn) => {
-        if (!view) return false;
-
-        try {
-            let success = false;
-
-            const { state } = view;
-            const { tr } = state;
-
-            // Use provided position if available, otherwise find the text
-            let from, to;
-            if (editorPosition && editorPosition.from && editorPosition.to) {
-                from = editorPosition.from;
-                to = editorPosition.to;
-            } else {
-                // Fallback: find the text position using the centralized function
-                const position = findTextPositionFn ? 
-                    findTextPositionFn(view, parser, originalText, modelValue) :
-                    commentFunctions.findTextPosition(view, parser, originalText, modelValue);
-                    
-                if (position.start === -1) {
-                    console.error('Could not find text to replace:', originalText);
-                    return false;
-                }
-                from = position.start;
-                to = position.end;
-            }
-
-            // Verify the text at the position matches what we expect
-            const currentText = state.doc.textBetween(from, to);
-            if (currentText !== originalText) {
-                console.warn('Text mismatch. Expected:', originalText, 'Found:', currentText);
-                // Try to find the text again
-                const position = findTextPositionFn ? 
-                    findTextPositionFn(view, parser, originalText, modelValue) :
-                    commentFunctions.findTextPosition(view, parser, originalText, modelValue);
-                    
-                if (position.start === -1) {
-                    console.error('Could not find matching text for replacement');
-                    return false;
-                }
-                from = position.start;
-                to = position.end;
-            }
-
-            // Replace the text
-            tr.replaceWith(from, to, state.schema.text(newText));
-            view.dispatch(tr);
-            success = true;
-
-            return success;
-        } catch (error) {
-            console.error('Error replacing text:', error);
-            return false;
-        }
-    },
 
     scrollToComment: (view, commentId, vueNextTick, storeState) => {
         if (!view) return;

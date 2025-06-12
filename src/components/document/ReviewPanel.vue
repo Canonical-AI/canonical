@@ -209,9 +209,6 @@ export default {
         // Show appropriate success message
         if (results.commentsCreated > 0) {
           let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
-          if (results.failedComments > 0) {
-            message += ` (${results.failedComments} comments could not be positioned)`;
-          }
           showAlert(this.$store, 'success', message);
         } else {
           const message = documentContent.trim().length < 100 

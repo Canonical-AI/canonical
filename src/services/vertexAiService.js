@@ -274,7 +274,7 @@ export class DocumentReview {
                                 },
                                 suggestion: {
                                     type: "string",
-                                    description: "Suggested replacement text (optional)"
+                                    description: "(optional) Suggested replacement text "
                                 }, 
                                 problematicText: {
                                     type: "string",
@@ -378,7 +378,7 @@ export class DocumentReview {
     }
 
     // Create and save a comment to the store
-    static async CreateComments(comment, position) {
+    static async CreateComments(comment) {
         const commentData = {
             comment: comment.comment,
             documentId: store.state.selected.id,
@@ -386,14 +386,12 @@ export class DocumentReview {
             createdAt: new Date().toISOString(),
             resolved: false,
             editorID: {
-                from: position.start,
-                to: position.end,
                 selectedText: comment.problematicText
             },
-            suggestion: comment.suggestion,
+            suggestion: comment?.suggestion || null,
             aiGenerated: true,
-            issueType: comment.issueType,
-            severity: comment.severity
+            issueType: comment?.issueType || null,
+            severity: comment?.severity || null
         };
 
         await store.dispatch('addComment', commentData);
@@ -424,28 +422,11 @@ export class DocumentReview {
             const aiComments = await this.GenerateComments(documentContent);
             
             let commentsCreated = [];
-            let failedComments = [];
             
             // Step 2: Process each AI comment
             for (const comment of aiComments) {
-                try {
-                    // Step 3: Find text positions
-                    const positionResult = this.FindTextPositions(comment, editorRef);
-                    
-                    if (!positionResult.success) {
-                        failedComments.push(positionResult.error);
-                        console.warn('Could not find text:', comment.problematicText);
-                        continue;
-                    }
-
-                    // Step 4: Create and save comment
-                    const createdComment = await this.CreateComments(comment, positionResult.position);
-                    commentsCreated.push(createdComment);
-
-                } catch (commentError) {
-                    const errorData = this.HandleCommentErrors(commentError, comment);
-                    failedComments.push(errorData);
-                }
+                const createdComment = await this.CreateComments(comment);
+                commentsCreated.push(createdComment);
             }
 
             logUsage(store.state.user.uid, 'generatedInlineComments');
@@ -453,10 +434,8 @@ export class DocumentReview {
             return {
                 success: true,
                 commentsCreated: commentsCreated.length,
-                failedComments: failedComments.length,
                 details: {
                     created: commentsCreated,
-                    failed: failedComments
                 }
             };
 

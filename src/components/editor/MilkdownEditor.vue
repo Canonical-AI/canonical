@@ -282,14 +282,6 @@ export default {
             }
         },
 
-        updateCommentPositionsOnSave() {
-            if (!this.get || this.loading) return;
-
-            this.get().action((ctx) => {
-                const view = ctx.get(editorViewCtx);
-                commentFunctions.updateCommentPositions(view);
-            });
-        },
 
         findTextPosition(text) {
             if (!this.get || this.loading) return { start: -1, end: -1 };
@@ -307,33 +299,9 @@ export default {
             return result;
         },
 
-        // Method to replace text in the editor
-        async replaceText(originalText, newText, editorPosition) {
-            if (!this.get || this.loading) return false;
-
-            let success = false;
-
-            this.get().action((ctx) => {
-                const view = ctx.get(editorViewCtx);
-                const parser = ctx.get(parserCtx);
-                
-                // Use the centralized function from commentFunctions
-                success = commentFunctions.replaceText(
-                    view, 
-                    parser, 
-                    originalText, 
-                    newText, 
-                    editorPosition, 
-                    this.modelValue
-                );
-            });
-
-            return success;
-        },
-
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['updateCommentPositionsOnSave', 'createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition', 'replaceText'],
+    expose: ['createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;

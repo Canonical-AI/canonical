@@ -287,44 +287,6 @@ const store = createStore({
       return id;
     },
 
-    // Update comment positions in database (called on document save)
-    async updateCommentPositions({state, commit}, positionUpdates) {
-      if (state.selected.id === null) return;
-
-      const validComments = state.selected.comments.filter(c => c && c.id);
-  
-      for (const update of positionUpdates) {
-        const comment = validComments.find(c => c.id === update.commentId);
-        
-        if (comment && comment.editorID) {
-
-          comment.editorID.from = update.newFrom;
-          comment.editorID.to = update.newTo;
-
-          await Document.updateCommentData(state.selected.id, comment.id, {
-            editorID: {
-              from: update.newFrom,
-              to: update.newTo
-            }
-          });
-
-
-          commit('updateCommentInState', {id: comment.id, values: 
-            {
-              editorID: {
-                from: update.newFrom,
-                to: update.newTo
-              }
-            }
-          });
-
-        } 
-      }
-    },
-
-
-        ///--------------------------------------------------------------
-    /// Chats
 
     async renameChat({state, commit}, {id, newName}){
       try {

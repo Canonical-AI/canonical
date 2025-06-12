@@ -263,6 +263,7 @@
 
 <script type="text/javascript">
 import {Comment} from "../../services/firebaseDataService";
+import { isSelectedTextPresent } from "../editor/comment/index.js";
 
 export default {
   emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor', 'accept-suggestion'],
@@ -314,6 +315,11 @@ export default {
       if (!this.originalText || !this.$store.state.selected?.data?.content) {
         return false;
       }
+      
+      // Use the utility function to check if selected text is still present
+      // Note: This would need to be called with the editor view, but for now we'll use a fallback
+      // In a real implementation, you'd want to pass the editor view to this component
+      // For now, we'll use the simple string includes as a fallback
       return this.$store.state.selected.data.content.includes(this.originalText);
     }
   },
