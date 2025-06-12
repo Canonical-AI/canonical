@@ -227,6 +227,23 @@ export class DocumentReview {
         // Initialize the review model with function calling capabilities
     }
 
+    // Generate AI feedback for a document (moved from aiReviewService)
+    static async generateFeedback(document) {
+        if (!document?.data) return null
+
+        const prompt = `
+          title ${document.data.name}
+          type of doc ${document.data.type}
+          ${document.data.content}
+        `
+        
+        checkUserPermission();
+        logUsage(store.state.user.uid, 'generateFeedback');
+        
+        const result = await feedbackModel.generateContentStream({ prompt });
+        return result;
+    }
+
     // Generate AI comments using the model
     static async GenerateComments(documentContent) {
         // Define the function that the model can call to create comments

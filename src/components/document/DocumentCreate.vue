@@ -44,62 +44,15 @@
       </v-card-actions>
       <v-divider></v-divider>
 
-      <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
-        <v-expansion-panel>
-          <v-expansion-panel-title>
-            <v-btn-toggle class="gen-btn" density="compact">
-              <ai-action-button
-                :tooltip="isViewingVersion ? 
-                  'Get AI feedback on this document version' : 
-                  'Get AI feedback on your document\'s overall quality, clarity, and structure'"
-                label="Feedback"
-                :disabled="isDisabled"
-                @click="sendPromptToVertexAI()"
-              />
-              
-              <ai-action-button
-                :tooltip="isViewingVersion ? 
-                  'Review this document version with AI - suggestions will be applied to the live version' : 
-                  'Generate detailed inline comments with specific suggestions for improvement'"
-                label="Review"
-                :disabled="isDisabled || isReviewLoading"
-                :loading="isReviewLoading"
-                @click="startAiReview()"
-              />
-              
-              <ai-action-button
-                v-if="hasAiComments"
-                tooltip="Clear AI comments"
-                label="Clear"
-                icon="mdi-broom"
-                :disabled="isDisabled"
-                @click="clearAiComments"
-              />
-              
-              <ai-action-button
-                v-if="canUndo"
-                :tooltip="isViewingVersion ? 
-                  'Undo last AI change (will navigate to live version)' : 
-                  'Undo last AI change'"
-                label="Undo"
-                icon="mdi-undo"
-                :disabled="isDisabled"
-                @click="undoLastChange"
-              />
-            </v-btn-toggle>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text>
-            <p
-              class="generative-feedback text-sm ma-1 pa-1"
-              v-if="generativeFeedback !== null"
-              v-html="renderMarkdown(generativeFeedback)"
-            ></p>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-        
-        <!-- AI Document Review Panel -->
-
-      </v-expansion-panels>
+      <ReviewPanel
+        ref="reviewPanel"
+        v-model:isExpanded="isGenPanelExpanded"
+        :is-viewing-version="isViewingVersion"
+        :disabled="isDisabled"
+        :document="document"
+        :editor-ref="$refs.milkdownEditor"
+        @refresh-editor="_refreshEditor"
+      />
     </div>
 
     <!-- Scrollable comments section -->
@@ -171,7 +124,7 @@
           :disabled="isDisabled"
           class="mx-1 gen-icon"
           v-bind="props"
-          @click="sendPromptToVertexAI()"
+          @click="triggerFeedbackFromToolbar()"
           icon="mdi-comment-quote"
         />
       </template>
@@ -252,8 +205,7 @@ import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
-import AiActionButton from "../ui/AiActionButton.vue";
-import aiReviewService from "../../services/aiReviewService";
+import ReviewPanel from "./ReviewPanel.vue";
 import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
 
 export default {
@@ -263,7 +215,7 @@ export default {
     ProsemirrorAdapterProvider,
     MilkdownProvider,
     VersionModal,
-    AiActionButton,
+    ReviewPanel,
   },
   emits: ["scrollToBottom"],
   props: {
@@ -361,10 +313,6 @@ export default {
   },
 
   methods: {
-    renderMarkdown(text) {
-      return marked(text); // Convert Markdown to HTML
-    },
-
     getFormattedDocuments() {
       return this.$store.state.documents.map((doc) => ({
         id: doc.id,
@@ -539,108 +487,47 @@ export default {
       this.$router.push({ path: `/document/create-document` });
     },
 
-    /**
-     * Send prompt to AI for feedback generation
-     */
-    async sendPromptToVertexAI() {
+
+    async triggerFeedbackFromToolbar() {
+      // Open the drawer and trigger feedback through the ReviewPanel
       this.drawer = true;
-      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-      await aiReviewService.generateFeedback(this.document, showAlertFn);
-    },
-
-    /**
-     * Start AI review with inline comments
-     */
-    async startAiReview() {
-      await this.sendPromptToVertexAI();
-      
-      const editorRef = this.$refs.milkdownEditor;
-      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-      const result = await aiReviewService.startAiReview(
-        this.document, 
-        editorRef, 
-        showAlertFn, 
-        this._refreshEditor
-      );
-      
-      // Handle editor refresh if needed
-      if (result?.needsEditorRefresh && !this.$vuetify.display.mobile) {
-        this.editorKey++;
+      if (this.$refs.reviewPanel) {
+        await this.$refs.reviewPanel.handleFeedback();
       }
     },
 
-    /**
-     * Clear all AI-generated comments
-     */
-    async clearAiComments() {
-      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-      await aiReviewService.clearAiComments(this.$store, showAlertFn, this._refreshEditor);
-    },
-
-    /**
-     * Handle accepting AI suggestions
-     */
     async handleAcceptSuggestion(suggestionData) {
-      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-      const result = await aiReviewService.handleAcceptSuggestion(
-        suggestionData,
-        this.document,
-        this.$store,
-        showAlertFn,
-        this._refreshEditor,
-        this.$router,
-        this.$route
-      );
-      
-      // Handle editor refresh if needed (only if we didn't navigate away)
-      if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
-        this.editorKey++;
-      }
-      
-      // Refresh suggestions after successful application to prevent stale references
-      if (result?.shouldRefreshSuggestions && result?.success) {
-        this.$nextTick(async () => {
-          this._refreshEditor();
-          
-          // Clean up any outdated suggestions that might reference old text
-          const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-          await aiReviewService.cleanupOutdatedSuggestions(
-            this.$store, 
-            this.document.data.content, 
-            showAlertFn
-          );
-          
-          // Also refresh comment positions if editor supports it
-          if (this.$refs.milkdownEditor?.updateCommentPositionsOnSave) {
-            this.$refs.milkdownEditor.updateCommentPositionsOnSave();
-          }
-        });
+      if (this.$refs.reviewPanel) {
+        const result = await this.$refs.reviewPanel.handleAcceptSuggestion(suggestionData);
+        
+        // Handle editor refresh if needed (only if we didn't navigate away)
+        if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
+          this.editorKey++;
+        }
+        
+        // Refresh suggestions after successful application to prevent stale references
+        if (result?.shouldRefreshSuggestions && result?.success) {
+          this.$nextTick(async () => {
+            this._refreshEditor();
+            
+            // Clean up any outdated suggestions that might reference old text
+            if (this.$refs.reviewPanel) {
+              await this.$refs.reviewPanel.cleanupOutdatedSuggestions(this.document.data.content);
+            }
+            
+            // Also refresh comment positions if editor supports it
+            if (this.$refs.milkdownEditor?.updateCommentPositionsOnSave) {
+              this.$refs.milkdownEditor.updateCommentPositionsOnSave();
+            }
+          });
+        }
       }
     },
 
-    /**
-     * Undo the last AI change
-     */
-    async undoLastChange() {
-      const showAlertFn = (type, message) => showAlert(this.$store, type, message);
-      const result = await aiReviewService.undoLastChange(
-        this.document,
-        this.$store,
-        showAlertFn,
-        this._refreshEditor,
-        this.$router,
-        this.$route
-      );
-      
-      // Handle editor refresh if needed (only if we didn't navigate away)
-      if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
-        this.editorKey++;
-      }
-    },
 
-    /**
-     * Utility method for refreshing editor decorations
-     */
+
+
+
     _refreshEditor() {
       this.$nextTick(() => {
         if (this.$refs.milkdownEditor) {
@@ -723,9 +610,6 @@ export default {
       });
     },
 
-
-
-
     // Method to scroll to a comment position in the editor when clicked from sidebar
     scrollToCommentInEditor(commentId) {
       this.$nextTick(() => {
@@ -754,18 +638,7 @@ export default {
     isViewingVersion() {
       return this.$route.query.v && this.$route.query.v !== 'live';
     },
-    hasAiComments() {
-      return aiReviewService.hasAiComments(this.$store);
-    },
-    canUndo() {
-      return aiReviewService.canUndo();
-    },
-    isReviewLoading() {
-      return aiReviewService.isReviewLoading;
-    },
-    generativeFeedback() {
-      return aiReviewService.generativeFeedback;
-    },
+
     editorContent: {
       get() {
         return this.document.data.content;
@@ -922,11 +795,7 @@ export default {
       }
     },
 
-    generativeFeedback(newValue) {
-      if (newValue !== null) {
-        this.isGenPanelExpanded = 0;
-      }
-    },
+
 
     isEditable(newValue) {
       // Force component re-render when editable state changes
@@ -972,8 +841,10 @@ export default {
       clearTimeout(this._savingTimeout);
     }
     
-    // Reset AI service state
-    aiReviewService.resetState();
+    // Reset review panel state
+    if (this.$refs.reviewPanel) {
+      this.$refs.reviewPanel.resetState();
+    }
     
     // Force the editor to be unmounted cleanly
     this.editorKey += 1;
@@ -1155,16 +1026,6 @@ input.h1 {
   color: rgba(var(--v-theme-on-background), 1) !important;
   padding-left: 55px;
   font-weight: 400;
-}
-
-.generative-feedback :deep(ul),
-.generative-feedback :deep(ol) {
-  padding-left: 1em;
-}
-
-.generative-feedback :deep(p) {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
 }
 
 /* Navigation drawer layout styles */
