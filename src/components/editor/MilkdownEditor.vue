@@ -282,26 +282,9 @@ export default {
             }
         },
 
-
-        findTextPosition(text) {
-            if (!this.get || this.loading) return { start: -1, end: -1 };
-
-            let result = { start: -1, end: -1 };
-
-            this.get().action((ctx) => {
-                const view = ctx.get(editorViewCtx);
-                const parser = ctx.get(parserCtx);
-                
-                // Use the centralized function from commentFunctions
-                result = commentFunctions.findTextPosition(view, parser, text, this.modelValue);
-            });
-
-            return result;
-        },
-
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment', 'findTextPosition'],
+    expose: ['createComment', 'removeComment', 'refreshCommentDecorations', 'scrollToComment'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;

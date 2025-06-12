@@ -346,36 +346,6 @@ export class DocumentReview {
     }
 
     // Find text positions for a comment in the editor
-    static FindTextPositions(comment, editorRef) {
-        try {
-            const position = editorRef.findTextPosition(comment.problematicText);
-            
-            if (position.start === -1) {
-                return {
-                    success: false,
-                    error: {
-                        issue: comment.issueType,
-                        text: comment.problematicText,
-                        reason: 'Text not found in document'
-                    }
-                };
-            }
-
-            return {
-                success: true,
-                position: position
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: {
-                    issue: comment.issueType || 'unknown',
-                    text: comment.problematicText || 'unknown',
-                    reason: error.message
-                }
-            };
-        }
-    }
 
     // Create and save a comment to the store
     static async CreateComments(comment) {
