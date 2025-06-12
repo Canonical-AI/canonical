@@ -13,7 +13,7 @@
                 @click="handleFeedback"
               >
                 <v-icon size="16" class="mr-1">mdi-comment-quote</v-icon>
-                Feedback
+                {{ hasAiComments ? '' : 'Feedback' }}
               </v-btn>
             </template>
           </v-tooltip>
@@ -40,7 +40,7 @@
                   class="mr-1"
                 ></v-progress-circular>
                 <v-icon v-else size="16" class="mr-1">mdi-file-search</v-icon>
-                Review
+                {{ hasAiComments ? '' : 'Review' }}
               </v-btn>
             </template>
           </v-tooltip>
@@ -55,13 +55,12 @@
                 @click="handleClear"
               >
                 <v-icon size="16" class="mr-1">mdi-broom</v-icon>
-                Clear
               </v-btn>
             </template>
           </v-tooltip>
           
           <v-tooltip 
-            v-if="canUndo"
+            v-if="undoStore.length > 0"
             :text="isViewingVersion ? 
               'Undo last AI change (will navigate to live version)' : 
               'Undo last AI change'" 
@@ -73,7 +72,7 @@
                 class="text-none"
                 density="compact"
                 v-bind="props"
-                @click="handleUndo"
+                @click="handleUndoAll()"
               >
                 <v-icon size="16" class="mr-1">mdi-undo</v-icon>
                 Undo
@@ -104,7 +103,7 @@ export default {
     return {
       isReviewLoading: false,
       generativeFeedback: null,
-      undoStack: [],
+      undoStore: [],
     };
   },
   props: {
@@ -129,7 +128,7 @@ export default {
       default: null,
     },
   },
-  emits: ["update:isExpanded", "refresh-editor"],
+  emits: ["update:isExpanded", "refresh-editor", "update-document-content"],
   computed: {
     expandedModel: {
       get() {
@@ -142,10 +141,6 @@ export default {
     hasAiComments() {
       const comments = this.$store.state.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
-    },
-    canUndo() {
-      console.log('canUndo computed called, undoStack length:', this.undoStack.length);
-      return this.undoStack.length > 0;
     },
   },
   methods: {
@@ -178,7 +173,6 @@ export default {
       }
 
       this.isReviewLoading = true;
-      console.log('Review loading state set to true:', this.isReviewLoading);
 
       try {
         const documentContent = this.document.data.content;
@@ -231,7 +225,6 @@ export default {
         showAlert(this.$store, 'error', `AI review failed: ${error.message || 'Please try again'}`);
       } finally {
         this.isReviewLoading = false;
-        console.log('Review loading state set to false:', this.isReviewLoading);
       }
     },
 
@@ -258,94 +251,57 @@ export default {
       }
     },
 
-    async handleUndo() {
-      if (this.undoStack.length === 0) {
-        showAlert(this.$store, 'info', 'Nothing to undo');
+    async handleUndoAll() {
+      if (this.undoStore.length === 0) {
+        console.warn('Nothing to undo');
         return;
       }
 
-      const lastChange = this.undoStack.pop();
-      if (!lastChange) return;
+      // Find the oldest item (first one added) by timestamp
+      const oldestItem = this.undoStore.reduce((oldest, current) => 
+        current.timestamp < oldest.timestamp ? current : oldest
+      );
 
-      try {
-        // Check if we're viewing a version (not live)
-        const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
-        
-        if (isViewingVersion) {
-          // Navigate to live version first
-          await this.$router.push({ 
-            path: `/document/${this.document.id}`,
-            query: {} // Remove version query to go to live
-          });
-          
-          // Wait for navigation and document loading
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Get the live document from store
-          const liveDocument = this.$store.state.selected;
-          if (!liveDocument) {
-            throw new Error('Could not access live document');
-          }
-          
-          // Apply undo to live document
-          liveDocument.data.content = lastChange.content;
-          this.$store.commit("updateSelectedDocument", {
-            id: liveDocument.id,
-            data: liveDocument.data
-          });
-          
-          showAlert(this.$store, 'success', 'Last change undone in live document');
-          return;
-        }
-
-        // We're on live version, proceed normally
-        this.document.data.content = lastChange.content;
-        this.$store.commit("updateSelectedDocument", {
-          id: this.document.id,
-          data: this.document.data
+      // Emit event to parent to update the document content
+            
+      for ( const comment of this.undoStore) {
+        this.$store.dispatch('updateCommentData', {
+          id: comment.commentID,
+          data: { resolved: false }
         });
-
-        // Unresolve comment if it was an accepted suggestion
-        if (lastChange.action === 'accept-suggestion' && lastChange.commentId) {
-          await this.$store.dispatch('updateCommentData', {
-            id: lastChange.commentId,
-            data: { resolved: false }
-          });
-        }
-
-        this.$emit('refresh-editor');
-        showAlert(this.$store, 'success', 'Last change undone');
-
-      } catch (error) {
-        console.error('Error undoing change:', error);
-        showAlert(this.$store, 'error', 'Failed to undo change. Please try again.');
       }
+      this.$emit('update-document-content', oldestItem.content);
+
+
+      this.undoStore = [];
+      this.$emit('refresh-editor');
+      
+      showAlert(this.$store, 'success', 'Document content restored to original state');
     },
 
-    saveUndoState(undoData) {
-      // Limit undo stack to last 10 operations to prevent memory issues
-      if (this.undoStack.length >= 10) {
-        this.undoStack.shift(); // Remove oldest entry
+    async handleUndoOne() {
+      if (this.undoStore.length === 0) {
+        console.warn('Nothing to undo');
+        return;
       }
       
-      this.undoStack.push({
-        ...undoData,
-        timestamp: Date.now()
-      });
-      
-      console.log('Undo state saved. Stack length now:', this.undoStack.length);
     },
+
+    async addUndo(commentId, content){
+      this.undoStore.push({
+        commentID: commentId, 
+        content: content, 
+        timestamp: Date.now()});
+    }, 
+
 
     resetState() {
       this.isReviewLoading = false;
       this.generativeFeedback = null;
-      this.undoStack = [];
+      this.undoStore = [];
     },
 
-    /**
-     * Handle accepting an AI suggestion
-     * @param {Object} suggestionData - Suggestion data
-     */
+
     async handleAcceptSuggestion(suggestionData) {
       try {
         const { commentId, suggestion, editorPosition } = suggestionData;
@@ -364,7 +320,7 @@ export default {
         }
 
         // We're on live version, proceed normally
-        return await this.applySuggestionToCurrentDocument(suggestionData);
+        await this.applySuggestionToCurrentDocument(suggestionData);
 
       } catch (error) {
         console.error('Error accepting suggestion:', error);
@@ -373,53 +329,25 @@ export default {
       }
     },
 
-    /**
-     * Apply suggestion to the current document (live version)
-     * @private
-     */
     async applySuggestionToCurrentDocument(suggestionData) {
       const { commentId, suggestion, editorPosition } = suggestionData;
       const selectedText = editorPosition.selectedText;
-
-      // Save current state for undo
-      this.saveUndoState({
-        content: this.document.data.content,
-        commentId: commentId,
-        action: 'accept-suggestion',
-        originalText: selectedText,
-        newText: suggestion
-      });
 
       // Try to replace text in document with improved logic
       const currentContent = this.document.data.content;
       let updatedContent = this.performTextReplacement(currentContent, selectedText, suggestion);
       
       if (currentContent === updatedContent) {
-        // If exact match failed, try fuzzy matching for slight variations
-        updatedContent = this.performFuzzyTextReplacement(currentContent, selectedText, suggestion);
-        
-        if (currentContent === updatedContent) {
-          showAlert(this.$store, 'warning', 
+        showAlert(this.$store, 'warning', 
             'The text to be replaced could not be found. It may have been modified by a previous suggestion. ' +
             'Please check the document and apply the suggestion manually if needed.'
           );
-          
-          // Still resolve the comment since we attempted to apply it
-          await this.$store.dispatch('updateCommentData', {
-            id: commentId,
-            data: { resolved: true }
-          });
-          
           return { success: false, needsEditorRefresh: true };
-        }
       }
 
       // Update document
-      this.document.data.content = updatedContent;
-      this.$store.commit("updateSelectedDocument", {
-        id: this.document.id,
-        data: this.document.data
-      });
+      this.addUndo(commentId, this.document.data.content);
+      this.$emit('update-document-content', updatedContent);
 
       // Resolve the comment
       await this.$store.dispatch('updateCommentData', {
@@ -432,11 +360,7 @@ export default {
 
       return { success: true, needsEditorRefresh: true, shouldRefreshSuggestions: true };
     },
-
-    /**
-     * Apply suggestion to live version when viewing a historical version
-     * @private
-     */
+  
     async applySuggestionToLiveVersion(suggestionData) {
       const { commentId, suggestion, editorPosition } = suggestionData;
       const selectedText = editorPosition.selectedText;
@@ -455,49 +379,20 @@ export default {
         const liveDocument = this.$store.state.selected;
         const liveContent = liveDocument.data.content;
 
-        // Save current state for undo (using live document content)
-        this.saveUndoState({
-          content: liveContent,
-          commentId: commentId,
-          action: 'accept-suggestion',
-          originalText: selectedText,
-          newText: suggestion
-        });
-
-        // Try to apply suggestion to live version with improved logic
         let updatedContent = this.performTextReplacement(liveContent, selectedText, suggestion);
         
         if (liveContent === updatedContent) {
-          // If exact match failed, try fuzzy matching
-          updatedContent = this.performFuzzyTextReplacement(liveContent, selectedText, suggestion);
-          
-          if (liveContent === updatedContent) {
-            showAlert(this.$store, 'warning', 
-              'The text to be replaced was not found in the live version. ' +
-              'The document may have been modified since this version. ' +
-              'Please review the live document and apply the suggestion manually.'
-            );
-            
-            // Navigate to live version for manual application
-            await this.$router.push({ 
-              path: `/document/${this.document.id}`,
-              query: {} // Remove version query to go to live
-            });
-            
-            return { 
-              success: false, 
-              navigatedToLive: true,
-              needsEditorRefresh: true 
-            };
-          }
+          showAlert(this.$store, 'warning', 
+            'The text to be replaced could not be found. It may have been modified by a previous suggestion. ' +
+            'Please check the document and apply the suggestion manually if needed.'
+          );
+          return { success: false, needsEditorRefresh: true };
         }
         
         // Update live document
+        this.addUndo(commentId, liveContent);
         liveDocument.data.content = updatedContent;
-        this.$store.commit("updateSelectedDocument", {
-          id: liveDocument.id,
-          data: liveDocument.data
-        });
+        this.$emit('update-document-content', updatedContent);
 
         // Resolve the comment in the live version
         await this.$store.dispatch('updateCommentData', {
@@ -541,18 +436,10 @@ export default {
       }
     },
 
-    /**
-     * Perform text replacement with exact matching
-     * @private
-     */
     performTextReplacement(content, originalText, newText) {
       return content.replace(originalText, newText);
     },
 
-    /**
-     * Perform fuzzy text replacement for cases where text might have slight variations
-     * @private
-     */
     performFuzzyTextReplacement(content, originalText, newText) {
       // Try to find the text with normalized whitespace
       const normalizedOriginal = originalText.replace(/\s+/g, ' ').trim();
@@ -603,10 +490,6 @@ export default {
       return content; // No replacement if no match found
     },
 
-    /**
-     * Remove outdated AI suggestions that reference text no longer in the document
-     * @param {string} currentContent - Current document content
-     */
     async cleanupOutdatedSuggestions(currentContent) {
       try {
         const allComments = this.$store.state.selected?.comments || [];
@@ -669,5 +552,21 @@ export default {
 .generative-feedback :deep(p) {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
+}
+
+/* Make buttons more compact */
+.gen-btn .v-btn {
+  min-width: auto !important;
+  width: auto !important;
+  padding: 0 8px !important;
+}
+
+.gen-btn .v-btn__content {
+  justify-content: center;
+}
+
+/* Ensure icons are properly sized */
+.gen-btn .v-icon {
+  margin-right: 0 !important;
 }
 </style> 

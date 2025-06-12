@@ -240,7 +240,7 @@ export class DocumentReview {
         checkUserPermission();
         logUsage(store.state.user.uid, 'generateFeedback');
         
-        const result = await feedbackModel.generateContentStream({ prompt });
+        const result = await feedbackModel.generateContentStream(prompt);
         return result;
     }
 

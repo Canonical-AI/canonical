@@ -99,7 +99,7 @@
               </template>
             </v-tooltip>
             <v-tooltip 
-              v-if="comment.aiGenerated && comment.suggestion && !comment.resolved" 
+              v-if="comment.aiGenerated && comment.suggestion && !comment.resolved && canShowSuggestion" 
               text="Accept AI suggestion" 
               location="bottom"
             >
@@ -136,7 +136,7 @@
           </div>
           
           <!-- Show suggestion button for AI comments -->
-          <div v-if="comment.aiGenerated && comment.suggestion" class="mt-2">
+          <div v-if="comment.aiGenerated && comment.suggestion && canShowSuggestion" class="mt-2">
             <v-btn
               size="x-small"
               variant="text"
@@ -150,7 +150,7 @@
           </div>
           
           <!-- AI suggestion display -->
-          <div v-if="comment.aiGenerated && comment.suggestion && suggestionVisible" class="mt-2">
+          <div v-if="comment.aiGenerated && comment.suggestion && suggestionVisible && canShowSuggestion" class="mt-2">
             <div class="suggestion-text pa-2 bg-success-lighten rounded text-success-darken">
               <span class="font-weight-medium">"{{ comment.suggestion }}"</span>
             </div>
@@ -308,6 +308,13 @@ export default {
     },
     hasEditorPosition() {
       return this.comment?.editorID?.from !== undefined && this.comment?.editorID?.to !== undefined;
+    },
+    canShowSuggestion() {
+      // Only show suggestion if the original text can be found in the current document content
+      if (!this.originalText || !this.$store.state.selected?.data?.content) {
+        return false;
+      }
+      return this.$store.state.selected.data.content.includes(this.originalText);
     }
   },
   methods:{

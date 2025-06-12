@@ -51,6 +51,7 @@
         :disabled="isDisabled"
         :document="document"
         :editor-ref="$refs.milkdownEditor"
+        @update-document-content="updateDocumentContent"
         @refresh-editor="_refreshEditor"
       />
     </div>
@@ -491,6 +492,10 @@ export default {
     async triggerFeedbackFromToolbar() {
       // Open the drawer and trigger feedback through the ReviewPanel
       this.drawer = true;
+      
+      // Wait for the drawer to open and component to be available
+      await this.$nextTick();
+      
       if (this.$refs.reviewPanel) {
         await this.$refs.reviewPanel.handleFeedback();
       }
@@ -523,10 +528,6 @@ export default {
         }
       }
     },
-
-
-
-
 
     _refreshEditor() {
       this.$nextTick(() => {
@@ -619,6 +620,12 @@ export default {
       });
     },
 
+    updateDocumentContent(content) {
+      this.document.data.content = content;
+      this.editorContent = content;
+      this.isEditorModified = true;
+      this.editorKey++;
+    },
 
 
   },
