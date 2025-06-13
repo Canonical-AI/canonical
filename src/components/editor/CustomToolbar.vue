@@ -94,8 +94,9 @@
                     variant="text"
                     :disabled="disabled || !hasSelection"
                     @click="startAddingComment"
+                    @contextmenu.prevent="removeComment"
                     class="comment-btn"
-                    :class="{ active: isAddingComment }"
+                    :class="{ active: isActive.comment || isAddingComment }"
                 ></v-btn>
             </div>
         </div>
@@ -182,7 +183,6 @@
 
 <script>
 import { usePluginViewContext } from '@prosemirror-adapter/vue';
-import { commentFunctions } from './comment/index';
 import { nextTick } from 'vue';
 
 export default {
@@ -214,6 +214,7 @@ export default {
                 orderedList: false,
                 blockquote: false,
                 codeBlock: false,
+                comment: false,
             }
         };
     },
@@ -298,6 +299,10 @@ export default {
                     return this.addLinkMark(schema.marks.link);
                 case 'RemoveLink':
                     return this.removeLinkMark(schema.marks.link);
+                case 'AddComment':
+                    return this.addCommentMark(schema.marks.comment);
+                case 'RemoveComment':
+                    return this.removeCommentMark(schema.marks.comment);
                 case 'WrapInBulletList':
                     return this.wrapInList(schema.nodes.bullet_list, schema.nodes.list_item);
                 case 'WrapInOrderedList':
@@ -337,6 +342,25 @@ export default {
         },
 
         removeLinkMark(markType) {
+            return (state, dispatch) => {
+                if (!markType) return false;
+                const { from, to } = state.selection;
+                dispatch(state.tr.removeMark(from, to, markType));
+                return true;
+            };
+        },
+
+        addCommentMark(markType) {
+            return (state, dispatch, view, commentId) => {
+                if (!markType) return false;
+                const { from, to } = state.selection;
+                const commentMark = markType.create({ id: commentId });
+                dispatch(state.tr.addMark(from, to, commentMark));
+                return true;
+            };
+        },
+
+        removeCommentMark(markType) {
             return (state, dispatch) => {
                 if (!markType) return false;
                 const { from, to } = state.selection;
@@ -418,13 +442,40 @@ export default {
             this.commentText = '';
         },
 
+        removeComment() {
+            if (!this.hasSelection || this.disabled) return;
+            
+            // Check if current selection has a comment mark
+            const { state } = this.view;
+            const { from, to } = state.selection;
+            const commentMark = state.schema.marks.comment;
+            
+            if (commentMark && state.doc.rangeHasMark(from, to, commentMark)) {
+                // Remove existing comment
+                this.runCommand('RemoveComment');
+            }
+        },
+
         submitComment() {
             if (!this.commentText.trim() || !this.currentSelection) return;
 
             const { from, to } = this.currentSelection;
             const selectedText = this.view.state.doc.textBetween(from, to);
 
-            commentFunctions.createComment(this.view, from, to, this.commentText.trim(), selectedText);
+            // Generate a unique comment ID
+            const commentId = 'comment_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // Add the comment mark to the selected text
+            this.runCommand('AddComment', commentId);
+            
+            // TODO: Store the comment data (commentId, commentText, selectedText) in your backend/database
+            console.log('Comment added:', {
+                id: commentId,
+                text: this.commentText.trim(),
+                selectedText: selectedText,
+                from: from,
+                to: to
+            });
 
             this.isAddingComment = false;
             this.commentText = '';
@@ -471,6 +522,7 @@ export default {
             this.isActive.italic = this.isMarkActive('emphasis');
             this.isActive.strike = this.isMarkActive('strike_through');
             this.isActive.link = this.isMarkActive('link');
+            this.isActive.comment = this.isMarkActive('comment');
             
             // Check if we're in specific node types
             const { $from } = state.selection;
@@ -503,62 +555,82 @@ export default {
         positionToolbar() {
             if (!this.view || !this.hasSelection) return;
             
-            const { from, to } = this.view.state.selection;
-            const startCoords = this.view.coordsAtPos(from);
-            const endCoords = this.view.coordsAtPos(to);
-            
-            const toolbar = this.$refs.toolbar;
-            if (!toolbar) return;
-
-            // Get current toolbar dimensions
-            const toolbarRect = toolbar.getBoundingClientRect();
-            const toolbarWidth = toolbarRect.width || 300; // fallback
-            const toolbarHeight = toolbarRect.height || 60; // fallback
-            
-            // Calculate selection center
-            const selectionCenterX = (startCoords.left + endCoords.right) / 2;
-            const selectionTop = Math.min(startCoords.top, endCoords.top);
-            const selectionBottom = Math.max(startCoords.bottom, endCoords.bottom);
-            
-            // Calculate desired position (centered horizontally under selection)
-            let left = selectionCenterX - (toolbarWidth / 2);
-            let top = selectionBottom + 8; // 8px gap below selection
-            
-            // Viewport bounds checking
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-            const margin = 16; // Minimum margin from viewport edges
-            
-            // Adjust horizontal position to stay within viewport
-            const minLeft = margin;
-            const maxLeft = viewportWidth - toolbarWidth - margin;
-            
-            if (left < minLeft) {
-                left = minLeft;
-            } else if (left > maxLeft) {
-                left = maxLeft;
-            }
-            
-            // Vertical position adjustment
-            if (top + toolbarHeight > viewportHeight - margin) {
-                // Position above selection instead
-                top = selectionTop - toolbarHeight - 8;
+            try {
+                const { from, to } = this.view.state.selection;
                 
-                // If still overflowing top, position it in the visible area
-                if (top < margin) {
-                    top = Math.max(margin, selectionBottom + 8);
-                    // If selection is too close to bottom, position at the top
-                    if (top + toolbarHeight > viewportHeight - margin) {
-                        top = margin;
+                // Check if the view is properly initialized and has a DOM
+                if (!this.view.dom || !this.view.state || !this.view.state.doc) {
+                    return;
+                }
+                
+                // Check if the selection positions are valid
+                if (from < 0 || to < 0 || from > this.view.state.doc.content.size || to > this.view.state.doc.content.size) {
+                    return;
+                }
+                
+                const startCoords = this.view.coordsAtPos(from);
+                const endCoords = this.view.coordsAtPos(to);
+                
+                // Check if coordinates are valid
+                if (!startCoords || !endCoords) {
+                    return;
+                }
+                
+                const toolbar = this.$refs.toolbar;
+                if (!toolbar) return;
+
+                // Get current toolbar dimensions
+                const toolbarRect = toolbar.getBoundingClientRect();
+                const toolbarWidth = toolbarRect.width || 300; // fallback
+                const toolbarHeight = toolbarRect.height || 60; // fallback
+                
+                // Calculate selection center
+                const selectionCenterX = (startCoords.left + endCoords.right) / 2;
+                const selectionTop = Math.min(startCoords.top, endCoords.top);
+                const selectionBottom = Math.max(startCoords.bottom, endCoords.bottom);
+                
+                // Calculate desired position (centered horizontally under selection)
+                let left = selectionCenterX - (toolbarWidth / 2);
+                let top = selectionBottom + 8; // 8px gap below selection
+                
+                // Viewport bounds checking
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const margin = 16; // Minimum margin from viewport edges
+                
+                // Adjust horizontal position to stay within viewport
+                const minLeft = margin;
+                const maxLeft = viewportWidth - toolbarWidth - margin;
+                
+                if (left < minLeft) {
+                    left = minLeft;
+                } else if (left > maxLeft) {
+                    left = maxLeft;
+                }
+                
+                // Vertical position adjustment
+                if (top + toolbarHeight > viewportHeight - margin) {
+                    // Position above selection instead
+                    top = selectionTop - toolbarHeight - 8;
+                    
+                    // If still overflowing top, position it in the visible area
+                    if (top < margin) {
+                        top = Math.max(margin, selectionBottom + 8);
+                        // If selection is too close to bottom, position at the top
+                        if (top + toolbarHeight > viewportHeight - margin) {
+                            top = margin;
+                        }
                     }
                 }
+                
+                // Apply positioning directly since we're using Teleport
+                toolbar.style.position = 'fixed';
+                toolbar.style.left = `${left}px`;
+                toolbar.style.top = `${top}px`;
+                toolbar.style.zIndex = '1000';
+            } catch (error) {
+                console.warn('Error positioning toolbar:', error);
             }
-            
-            // Apply positioning directly since we're using Teleport
-            toolbar.style.position = 'fixed';
-            toolbar.style.left = `${left}px`;
-            toolbar.style.top = `${top}px`;
-            toolbar.style.zIndex = '1000';
         }
     },
     watch: {

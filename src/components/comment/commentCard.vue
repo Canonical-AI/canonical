@@ -263,7 +263,6 @@
 
 <script type="text/javascript">
 import {Comment} from "../../services/firebaseDataService";
-import { isSelectedTextPresent } from "../editor/comment/index.js";
 
 export default {
   emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor', 'accept-suggestion'],

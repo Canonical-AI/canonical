@@ -31,8 +31,10 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { createCommentPlugin, commentFunctions, commentPluginKey } from './comment';
+import { commentMark, commentInputRule } from './comment';
 import CustomToolbar from './CustomToolbar.vue';
+
+
 
 export default {
     name: "MilkdownEditor",
@@ -93,44 +95,18 @@ export default {
                 }
             });
 
-            crepe.editor.config((ctx)=>{
-                    ctx.set(rootCtx, root)
-                    ctx.get(listenerCtx).markdownUpdated((ctx, markdown) => {
-                        if (markdown !== props.modelValue) {
-                            emit("update:modelValue", markdown);
-                        }
-                    });
-                    
-                    ctx.update(editorViewOptionsCtx, (prev) => ({
-                        ...prev,
-                        editable: isEditable,
-                        handlePaste: (view, event) => {
-                            const parser = ctx.get(parserCtx);
-                            let text = event.clipboardData.getData('text/plain')
-                            text = text.replace(/<br\s*\/?>/gi, '')
+            // Configure the editor through the editor property
+            crepe.editor.config((ctx) => {
+                ctx.set(rootCtx, root);
+                ctx.get(listenerCtx).markdownUpdated((ctx, markdown) => {
+                    if (markdown !== props.modelValue) {
+                        emit("update:modelValue", markdown);
+                    }
+                });
+            });
 
-                            const slice = parser(text);
-                            if (!slice || typeof slice === 'string') return false;
-
-                            const contentSlice = view.state.selection.content();
-                            view.dispatch(
-                                view.state.tr.replaceSelection(
-                                    new Slice(slice.content, contentSlice.openStart, contentSlice.openEnd),
-                                ),
-                            );
-
-                            return true;
-                        },
-                        // Fix cursor position issue on mobile
-                        handleDOMEvents: {
-                            touchstart: (view, event) => {
-                                // Prevent cursor from jumping to beginning
-                                event.stopPropagation();
-                                return false;
-                            }
-                        }
-                    }))
-                }) 
+            // Add plugins to the editor
+            crepe.editor
                 .use(taskNode)
                 .use(referenceLinkNode)
                 .use(clipboard)
@@ -145,20 +121,67 @@ export default {
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
                     })))
-                .use($prose(() => createCommentPlugin()))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
                 .use(diagram)
-                .use( $view(diagramSchema.node, () => nodeViewFactory({
+                .use(commentMark)
+                .use(commentInputRule)
+                .use($view(diagramSchema.node, () => nodeViewFactory({
                     component: MermaidComponent,
                     key: 'mermaid-component',
                     stopEvent: () => true,
                 })))
                 .use(nord)
+                .config((ctx) => {
+                    // Configure editor view options after all plugins are loaded
+                    try {
+                        ctx.update(editorViewOptionsCtx, (prev) => ({
+                            ...prev,
+                            editable: isEditable,
+                            handlePaste: (view, event) => {
+                                try {
+                                    if (!view || !view.state) {
+                                        console.warn('View not ready for paste operation');
+                                        return false;
+                                    }
+                                    
+                                    const parser = ctx.get(parserCtx);
+                                    let text = event.clipboardData.getData('text/plain')
+                                    text = text.replace(/<br\s*\/?>/gi, '')
 
-                
-            return crepe
+                                    const slice = parser(text);
+                                    if (!slice || typeof slice === 'string') return false;
+
+                                    const contentSlice = view.state.selection.content();
+                                    view.dispatch(
+                                        view.state.tr.replaceSelection(
+                                            new Slice(slice.content, contentSlice.openStart, contentSlice.openEnd),
+                                        ),
+                                    );
+
+                                    return true;
+                                } catch (error) {
+                                    console.warn('Paste handler error:', error);
+                                    return false;
+                                }
+                            },
+                            // Fix cursor position issue on mobile
+                            handleDOMEvents: {
+                                touchstart: (view, event) => {
+                                    // Prevent cursor from jumping to beginning
+                                    if (!view) return false;
+                                    event.stopPropagation();
+                                    return false;
+                                }
+                            }
+                        }));
+                    } catch (error) {
+                        console.warn('Editor view options configuration error:', error);
+                    }
+                });
+
+            return crepe;
         })
     
         return { 
@@ -187,65 +210,6 @@ export default {
             }
         },
 
-        // Method to create comment decoration that can be called externally
-        createCommentDecoration(from, to, commentData) {
-            if (!this.get || this.loading) return;
-
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    commentFunctions.addDecoration(view, from, to, commentData);
-                });
-            } catch (error) {
-                console.error('Failed to create comment decoration:', error);
-            }
-        },
-
-        // Method to create a new comment with decoration
-        createComment(from, to, text, documentId, documentVersion) {
-            if (!this.get || this.loading) return null;
-
-            try {
-                let commentData = null;
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    commentData = commentFunctions.createComment(view, from, to, text, documentId, documentVersion);
-                });
-                return commentData;
-            } catch (error) {
-                console.error('Failed to create comment:', error);
-                return null;
-            }
-        },
-
-        // Method to remove a comment decoration
-        removeComment(commentId) {
-            if (!this.get || this.loading) {
-                console.error('Editor is not ready yet');
-                return;
-            }
-
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    
-                    // Use the comment functions to remove the comment
-                    commentFunctions.removeComment(view, commentId);
-                });
-            } catch (error) {
-                console.error('Failed to remove comment:', error);
-            }
-        },
-
-        // Method to refresh comment decorations (useful after plugin changes)
-        refreshCommentDecorations() {
-            if (!this.get || this.loading) return;
-
-            this.get().action((ctx) => {
-                const view = ctx.get(editorViewCtx);      
-                commentFunctions.refreshAllDecorations(view);
-            });
-        },
 
         // Method to scroll to a specific comment position in the editor
         scrollToComment(commentId) {
@@ -256,15 +220,21 @@ export default {
             this.get().action((ctx) => {
                 const view = ctx.get(editorViewCtx);
                 
-                // Use the centralized function from commentFunctions
-                commentFunctions.scrollToComment(view, commentId, this.$nextTick, this.$store.state);
-            });
+                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS
+           });
         },
 
 
         // Method to set up comment click handler
         setupCommentClickHandler() {
+            // Wait for editor to be fully initialized
             setTimeout(() => {
+                if (!this.get || this.loading) {
+                    // Retry if editor is not ready yet
+                    this.setupCommentClickHandler();
+                    return;
+                }
+                
                 const editorElement = this.$el?.querySelector('.ProseMirror');
                 if (editorElement) {
                     this.editorElement = editorElement;
@@ -295,34 +265,36 @@ export default {
     },
     watch: {
         isDarkTheme(newVal) {
-            if (newVal) {
-                this.editor.get().remove(nord)
-            } else {
-                this.editor.get()
+            if (!this.get || this.loading) {
+                return; // Don't try to modify editor if it's not ready
+            }
+            
+            try {
+                if (newVal) {
+                    this.editor.get().remove(nord)
+                } else {
+                    this.editor.get()
+                }
+            } catch (error) {
+                console.warn('Theme switching error:', error);
             }
         },
         // Watch both comments and version changes to filter comments by version
         '$store.state.selected.comments': {
             handler(oldVal, newVal) {
                 if (oldVal === newVal) return;
-                this.refreshCommentDecorations();
+                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS to update if comments are resolved or unresolved
             },
             immediate: true,
             deep: true
         },
         '$store.state.selected.currentVersion': {
             handler() {
-                this.refreshCommentDecorations();
+                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS if version changes
             },
             immediate: true
         },
-        loading: {
-            handler() {
-                if (this.loading) return;
-                this.refreshCommentDecorations();
-            },
-            immediate: true
-        },
+
 
         modelValue: {
             immediate: true,
