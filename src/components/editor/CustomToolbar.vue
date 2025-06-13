@@ -184,6 +184,7 @@
 <script>
 import { usePluginViewContext } from '@prosemirror-adapter/vue';
 import { nextTick } from 'vue';
+import { addCommentMarkToText } from './comment/index.js';
 
 export default {
     setup() {
@@ -456,31 +457,22 @@ export default {
             }
         },
 
-        submitComment() {
+        async submitComment() {
             if (!this.commentText.trim() || !this.currentSelection) return;
 
             const { from, to } = this.currentSelection;
             const selectedText = this.view.state.doc.textBetween(from, to);
 
-            // Generate a unique comment ID
-            const commentId = 'comment_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            // Add the comment mark to the selected text using the utility function
+            const success = await addCommentMarkToText(this.view, selectedText, this.commentText.trim(), from);
             
-            // Add the comment mark to the selected text
-            this.runCommand('AddComment', commentId);
-            
-            // TODO: Store the comment data (commentId, commentText, selectedText) in your backend/database
-            console.log('Comment added:', {
-                id: commentId,
-                text: this.commentText.trim(),
-                selectedText: selectedText,
-                from: from,
-                to: to
-            });
+            if (!success) {
+                console.error('Failed to add comment mark to text');
+            }
 
             this.isAddingComment = false;
             this.commentText = '';
         },
-
 
         startAddingLink() {
             if (!this.hasSelection || this.disabled) return;

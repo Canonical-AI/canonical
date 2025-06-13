@@ -31,7 +31,7 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { commentMark, commentInputRule } from './comment';
+import { commentMark} from './comment';
 import CustomToolbar from './CustomToolbar.vue';
 
 
@@ -121,12 +121,35 @@ export default {
                 .use($prose((ctx) => new Plugin({
                         view: pluginViewFactory({component: CustomToolbar, key: 'custom-toolbar'}),
                     })))
+                .use($prose((ctx) => new Plugin({
+                        props: {
+                            handleDOMEvents: {
+                                click: (view, event) => {
+                                    // Check if the clicked element is a comment mark
+                                    const target = event.target;
+                                    if (target && target.classList.contains('comment-mark')) {
+                                        const commentId = target.getAttribute('data-comment-id');
+                                        if (commentId) {
+                                            // Emit the comment-clicked event
+                                            const customEvent = new CustomEvent('comment-clicked', {
+                                                detail: { commentId },
+                                                bubbles: true
+                                            });
+                                            view.dom.dispatchEvent(customEvent);
+                                            return true; // Prevent default handling
+                                        }
+                                    }
+                                    return false;
+                                }
+                            }
+                        }
+                    })))
                 .use(remarkDirective)
                 .use(referenceLink.plugins) 
                 .use(task.plugins)
                 .use(diagram)
                 .use(commentMark)
-                .use(commentInputRule)
+
                 .use($view(diagramSchema.node, () => nodeViewFactory({
                     component: MermaidComponent,
                     key: 'mermaid-component',
@@ -220,8 +243,45 @@ export default {
             this.get().action((ctx) => {
                 const view = ctx.get(editorViewCtx);
                 
-                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS
-           });
+                // Find the comment mark element by data-comment-id
+                const commentElement = view.dom.querySelector(`[data-comment-id="${commentId}"]`);
+                
+                if (commentElement) {
+                    // Find the scrollable container - the main content area
+                    const scrollContainer = document.querySelector('main[style*="overflow-y: auto"]') || 
+                                          document.querySelector('.v-main') ||
+                                          commentElement.closest('.ProseMirror') ||
+                                          view.dom;
+                    
+                    if (scrollContainer && scrollContainer !== document.body) {
+                        // Calculate scroll position to center the comment element
+                        const containerRect = scrollContainer.getBoundingClientRect();
+                        const commentRect = commentElement.getBoundingClientRect();
+                        
+                        const scrollTop = scrollContainer.scrollTop + 
+                            (commentRect.top - containerRect.top) - 
+                            (containerRect.height / 2) + 
+                            (commentRect.height / 2);
+                        
+                        // Scroll within the container
+                        scrollContainer.scrollTo({
+                            top: scrollTop,
+                            behavior: 'smooth'
+                        });
+                    } else {
+                        // Fallback to scrollIntoView if no suitable container found
+                        commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    
+                    // Add a visual highlight effect
+                    commentElement.classList.add('comment-highlight');
+                    
+                    // Remove the highlight after a delay
+                    setTimeout(() => {
+                        commentElement.classList.remove('comment-highlight');
+                    }, 2000);
+                }
+            });
         },
 
 
@@ -249,6 +309,24 @@ export default {
             const commentId = event.detail?.commentId;
             if (commentId) {
                 this.$emit('comment-clicked', commentId);
+            }
+        },
+
+        // Method to refresh comment decorations in the editor
+        refreshCommentDecorations() {
+            if (!this.get || this.loading) {
+                console.warn('Editor not ready for comment decoration refresh');
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    // Force a re-render of the editor to update comment decorations
+                    view.dispatch(view.state.tr);
+                });
+            } catch (error) {
+                console.warn('Error refreshing comment decorations:', error);
             }
         },
 
@@ -295,6 +373,19 @@ export default {
             immediate: true
         },
 
+        // Watch for editor readiness and set the editor view in store
+        loading: {
+            handler(newVal) {
+                if (!newVal && this.get) {
+                    // Editor is ready, set the view in store
+                    this.get().action((ctx) => {
+                        const view = ctx.get(editorViewCtx);
+                        this.$store.commit('setEditorView', view);
+                    });
+                }
+            },
+            immediate: true
+        },
 
         modelValue: {
             immediate: true,
@@ -376,5 +467,18 @@ div.milkdown-toolbar {
     .canonical-editor .ProseMirror-focused {
         outline: none;
     }
+}
+
+/* Comment highlight effect */
+.comment-highlight {
+    background-color: rgba(255, 255, 0, 0.3) !important;
+    transition: background-color 0.3s ease;
+    animation: comment-pulse 2s ease-in-out;
+}
+
+@keyframes comment-pulse {
+    0% { background-color: rgba(255, 255, 0, 0.3); }
+    50% { background-color: rgba(255, 255, 0, 0.6); }
+    100% { background-color: rgba(255, 255, 0, 0.3); }
 }
 </style>

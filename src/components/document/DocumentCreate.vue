@@ -65,7 +65,6 @@
         ref="commentComponent"
         @scroll-to-comment="openDrawerAndScrollToComment"
         @refresh-editor-decorations="_refreshEditor"
-        @scroll-to-editor="scrollToCommentInEditor"
         @accept-suggestion="handleAcceptSuggestion"
       />
     </div>
@@ -208,6 +207,7 @@ import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
 import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
+import { provide } from 'vue';
 
 export default {
   components: {
@@ -304,6 +304,9 @@ export default {
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
+    
+    // Provide the scroll function to child components
+    provide('scrollToCommentInEditor', this.scrollToCommentInEditor.bind(this));
   },
   
   mounted() {

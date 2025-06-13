@@ -263,9 +263,12 @@
 
 <script type="text/javascript">
 import {Comment} from "../../services/firebaseDataService";
+import { removeCommentMarkById } from "../editor/comment/index.js";
+import { inject } from 'vue';
+
 
 export default {
-  emits: ['comment-resolved', 'comment-unresolved', 'scroll-to-editor', 'accept-suggestion'],
+  emits: ['comment-resolved', 'comment-unresolved', 'accept-suggestion'],
   props: {
     comment: {
       type: Object,
@@ -281,6 +284,12 @@ export default {
       suggestionVisible: false,
       maxOriginalTextLength: 100, // Characters to show before truncation
   }),
+  setup() {
+    const scrollToCommentInEditor = inject('scrollToCommentInEditor');
+    return {
+      scrollToCommentInEditor
+    };
+  },
   mounted(){
     this.newComment = {...this.comment}.comment
   },
@@ -342,7 +351,16 @@ export default {
     },
     
     async deleteComment (id) {
-      await this.$store.dispatch('deleteComment',id)
+      // Add a small delay to ensure the editor state is stable
+      await this.$nextTick();
+      
+      // Remove the comment mark from the editor first
+      const editorView = this.$store.state.editorView;
+      if (editorView) {
+        removeCommentMarkById(editorView, id);
+      }
+      
+      await this.$store.dispatch('deleteComment', id);
     },
 
     async resolveComment() {
@@ -351,6 +369,15 @@ export default {
           id: this.comment.id,
           data: { resolved: true }
         });
+        
+        // Add a small delay to ensure the editor state is stable
+        await this.$nextTick();
+        
+        // Remove the comment mark from the editor
+        const editorView = this.$store.state.editorView;
+        if (editorView) {
+          removeCommentMarkById(editorView, this.comment.id);
+        }
         
         this.$store.commit('alert', {
           type: 'success',
@@ -415,9 +442,9 @@ export default {
     },
 
     handleCardClick(event) {
-      // Only emit scroll event if comment has editor position and user isn't interacting with buttons
-      if (this.hasEditorPosition && !event.target.closest('button') && !event.target.closest('.v-btn')) {
-        this.$emit('scroll-to-editor', this.comment.id);
+      // Use the injected scroll function directly
+      if (this.scrollToCommentInEditor) {
+        this.scrollToCommentInEditor(this.comment.id);
       }
     },
 

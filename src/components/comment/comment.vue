@@ -33,7 +33,6 @@
               :ref="`comment-${event.value.id}`"
               @comment-resolved="refreshEditorDecorations"
               @comment-unresolved="refreshEditorDecorations"
-              @scroll-to-editor="$emit('scroll-to-editor', $event)"
               @accept-suggestion="$emit('accept-suggestion', $event)"
             />
             <!-- Render child comments with indentation -->
@@ -46,7 +45,6 @@
                 class="mb-2"
                 @comment-resolved="refreshEditorDecorations"
                 @comment-unresolved="refreshEditorDecorations"
-                @scroll-to-editor="$emit('scroll-to-editor', $event)"
                 @accept-suggestion="$emit('accept-suggestion', $event)"
               />
             </div>
@@ -94,13 +92,14 @@
 
 <script>
 import commentCard from "./commentCard.vue"
+import { inject } from 'vue';
 
 //TODO: 
 // - need a way to resolve comments (i.e. stop showing them inline but show in sidebar unless filtered)
 
 
 export default {
-  emits: ['refresh-editor-decorations', 'scroll-to-editor', 'accept-suggestion'],
+  emits: ['refresh-editor-decorations', 'accept-suggestion'],
   components: {
     commentCard
   },
@@ -189,6 +188,12 @@ export default {
           return allItems.sort((a, b) => a.sortDate - b.sortDate);
         }
       }
+    },
+    setup() {
+      const scrollToCommentInEditor = inject('scrollToCommentInEditor');
+      return {
+        scrollToCommentInEditor
+      };
     },
     methods: {
       async addComment () {
