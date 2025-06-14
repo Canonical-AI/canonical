@@ -90,9 +90,6 @@
 import commentCard from "./commentCard.vue"
 import { inject } from 'vue';
 
-//TODO: 
-// - need a way to resolve comments (i.e. stop showing them inline but show in sidebar unless filtered)
-
 
 export default {
   emits: [ 'accept-suggestion'],

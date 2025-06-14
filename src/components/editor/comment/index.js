@@ -176,26 +176,6 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
   }
 }
 
-/**
- * Debug utility to log document structure (for troubleshooting)
- * @param {Object} state - ProseMirror state
- */
-function debugDocumentStructure(state) {
-  console.log('=== Document Structure Debug ===');
-  console.log('Document size:', state.doc.content.size);
-  console.log('Text content:', state.doc.textContent);
-  
-  let nodeCount = 0;
-  state.doc.descendants((node, pos) => {
-    nodeCount++;
-    if (node.isText) {
-      console.log(`Text node ${nodeCount}: pos=${pos}, size=${node.nodeSize}, text="${node.text}"`);
-    } else {
-      console.log(`Node ${nodeCount}: pos=${pos}, size=${node.nodeSize}, type=${node.type.name}`);
-    }
-  });
-  console.log('=== End Document Structure ===');
-}
 
 /**
  * Helper function to find text in document with proper ProseMirror node traversal
@@ -211,10 +191,7 @@ function findTextInDocument(state, searchText, debug = false) {
 
   const normalizedSearchText = normalizeText(searchText);
   console.log(`findTextInDocument: Searching for "${normalizedSearchText}"`);
-  
-  if (debug) {
-    debugDocumentStructure(state);
-  }
+
 
   // Traverse all text nodes in the document
   let foundPositions = null;
@@ -378,8 +355,6 @@ export async function deleteComment(editorView, commentId) {
     return false;
   }
 }
-
-
 
 /**
  * Utility function to remove a comment mark from text in the editor
@@ -603,10 +578,9 @@ style.textContent = `
   }
   
   .comment-mark.comment-resolved {
-    background-color: rgba(76, 175, 80, 0.15) !important;
-    border: 1px solid rgba(76, 175, 80, 0.40) !important;
+    background-color: rgba(76, 175, 80, 0.05) !important;
+    border: 1px solid rgba(76, 175, 80, 0.20) !important;
     opacity: 0.7 !important;
-    text-decoration: line-through !important;
   }
   
   .comment-mark.comment-resolved:hover {

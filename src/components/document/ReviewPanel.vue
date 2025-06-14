@@ -96,6 +96,7 @@
 import { marked } from "marked";
 import { DocumentReview } from "../../services/vertexAiService";
 import { showAlert } from "../../utils/uiHelpers";
+import { inject } from 'vue';
 
 export default {
   name: "ReviewPanel",
@@ -142,6 +143,12 @@ export default {
       const comments = this.$store.state.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
     },
+  },
+  setup() {
+    const deleteComment = inject('deleteComment');
+    return {
+      deleteComment
+    };
   },
   methods: {
     renderMarkdown(text) {
@@ -257,7 +264,6 @@ export default {
     },
 
     async handleClear() {
-      //TODO: this needs to be updated to clear the marks as well
       try {
         const allComments = this.$store.state.selected?.comments || [];
         const aiComments = allComments.filter(comment => comment.aiGenerated === true);
@@ -267,12 +273,13 @@ export default {
           return;
         }
 
+        // Clear all AI comments using the injected deleteComment function
+        // This will handle both store deletion and editor mark removal
         await Promise.all(aiComments.map(comment => 
-          console.log('TODO')
-
-          //TODO: this needs to be updated to clear the marks as well
+          this.deleteComment(comment.id)
         ));
 
+        this.$emit('refresh-editor');
         showAlert(this.$store, 'success', `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`);
         
       } catch (error) {
