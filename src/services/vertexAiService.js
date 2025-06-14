@@ -3,6 +3,7 @@ import {firebaseApp} from "../firebase";
 import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
 import store from "../store";
+import { addCommentMarkToText } from "../components/editor/comment/index.js";
 
 const vertexAI = getVertexAI(firebaseApp);
 
@@ -321,6 +322,8 @@ export class DocumentReview {
 
         ${documentContent}`;
         
+        console.log('Document content being reviewed:', documentContent.substring(0, 200) + '...');
+        
         try {
             const result = await reviewModel.generateContent(prompt);
             const response = result.response;
@@ -329,6 +332,7 @@ export class DocumentReview {
             if (functionCalls && functionCalls.length > 0) {
                 const functionCall = functionCalls[0];
                 if (functionCall.name === 'create_comments') {
+                    console.log('AI generated comments:', functionCall.args.comments);
                     return functionCall.args.comments;
                 }
             } else {
@@ -355,17 +359,17 @@ export class DocumentReview {
             documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
             createdAt: new Date().toISOString(),
             resolved: false,
-            editorID: {
-                selectedText: comment.problematicText
-            },
+            selectedText: comment.problematicText,
             suggestion: comment?.suggestion || null,
             aiGenerated: true,
             issueType: comment?.issueType || null,
             severity: comment?.severity || null
         };
 
-        await store.dispatch('addComment', commentData);
-        return commentData;
+        console.log('Creating comment with data:', commentData);
+        const createdComment = await store.dispatch('addComment', commentData);
+        console.log('Comment created, returned:', createdComment);
+        return createdComment;
     }
 
     // Handle and track comment creation errors
@@ -385,18 +389,72 @@ export class DocumentReview {
             throw new Error('Document content and editor reference are required');
         }
 
+        // Validate that editorRef is a ProseMirror editor view
+        if (!editorRef.state || !editorRef.dispatch || !editorRef.dom) {
+            throw new Error('Invalid editor reference. Expected ProseMirror editor view.');
+        }
+
         checkUserPermission();
         
         try {
             // Step 1: Generate AI comments
             const aiComments = await this.GenerateComments(documentContent);
             
+            if (!aiComments || aiComments.length === 0) {
+                return {
+                    success: true,
+                    commentsCreated: 0,
+                    marksAdded: 0,
+                    marksFailed: 0,
+                    details: {
+                        created: [],
+                    }
+                };
+            }
+            
             let commentsCreated = [];
+            let marksAdded = 0;
+            let marksFailed = 0;
             
             // Step 2: Process each AI comment
             for (const comment of aiComments) {
-                const createdComment = await this.CreateComments(comment);
-                commentsCreated.push(createdComment);
+                try {
+                    // Create the comment in the store
+                    const createdComment = await this.CreateComments(comment);
+                    
+                    // Validate that the comment was created successfully
+                    if (!createdComment || !createdComment.id) {
+                        console.error('Comment creation failed - no ID returned:', createdComment);
+                        continue;
+                    }
+                    
+                    commentsCreated.push(createdComment);
+                    
+                    // Add visual mark to the editor
+                    if (createdComment.selectedText) {
+                        console.log(`Adding mark for comment "${createdComment.id}" with text "${createdComment.selectedText}"`);
+                        const markSuccess = await addCommentMarkToText(
+                            editorRef, 
+                            createdComment.selectedText, 
+                            createdComment.id, 
+                            null, // startPos - will be found automatically
+                            false // resolved
+                        );
+                        
+                        if (markSuccess) {
+                            marksAdded++;
+                            console.log(`Successfully added mark for comment "${createdComment.id}"`);
+                        } else {
+                            marksFailed++;
+                            console.warn(`Failed to add visual mark for comment "${createdComment.id}" with text "${createdComment.selectedText}"`);
+                        }
+                    } else {
+                        console.warn(`Comment "${createdComment.id}" has no selectedText, skipping mark creation`);
+                    }
+                } catch (commentError) {
+                    console.error('Error processing individual comment:', commentError);
+                    // Continue with other comments even if one fails
+                }
             }
 
             logUsage(store.state.user.uid, 'generatedInlineComments');
@@ -404,6 +462,8 @@ export class DocumentReview {
             return {
                 success: true,
                 commentsCreated: commentsCreated.length,
+                marksAdded: marksAdded,
+                marksFailed: marksFailed,
                 details: {
                     created: commentsCreated,
                 }

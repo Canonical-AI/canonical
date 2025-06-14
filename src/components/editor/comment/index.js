@@ -127,14 +127,19 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
   // If startPos is provided, use it directly
   if (startPos !== null) {
     to = startPos + (textToMark ? textToMark.length : 0);
+    console.log(`addCommentMarkToText: Using provided position ${from}-${to} for text "${textToMark}"`);
   } else if (textToMark) {
-    // Try to find the text with flexible matching
+    // Try to find the text with proper ProseMirror node traversal
     const found = findTextInDocument(state, textToMark);
     if (found) {
       from = found.from;
       to = found.to;
+      console.log(`addCommentMarkToText: Found text "${textToMark}" at position ${from}-${to}`);
     } else {
       console.warn(`addCommentMarkToText: Could not find text "${textToMark}" in document. Comment will be created without text marking.`);
+      // Enable debug mode to help troubleshoot
+      console.log('addCommentMarkToText: Enabling debug mode to troubleshoot text finding...');
+      findTextInDocument(state, textToMark, true);
       // Return true to allow comment creation without text marking
       return true;
     }
@@ -143,71 +148,158 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
     return true;
   }
 
+  // Validate positions are within document bounds
+  if (from < 0 || to > state.doc.content.size || from >= to) {
+    console.warn(`addCommentMarkToText: Invalid position range ${from}-${to} for document size ${state.doc.content.size}`);
+    return true; // Allow comment creation without marking
+  }
+
   // Check if there's already a comment mark in this range
   if (state.doc.rangeHasMark(from, to, commentMarkType)) {
     console.warn(`addCommentMarkToText: Comment mark already exists for range ${from}-${to}`);
     return false;
   }
 
-  const commentMark = commentMarkType.create({ id: commentId, resolved });
-  const transaction = state.tr.addMark(from, to, commentMark);
+  try {
+    const commentMark = commentMarkType.create({ id: commentId, resolved });
+    const transaction = state.tr.addMark(from, to, commentMark);
 
-  if (dispatch) {
-    dispatch(transaction);
+    if (dispatch) {
+      dispatch(transaction);
+    }
+
+    console.log(`addCommentMarkToText: Successfully added comment mark for ID "${commentId}" at position ${from}-${to} (resolved: ${resolved})`);
+    return true;
+  } catch (error) {
+    console.error('addCommentMarkToText: Error creating or applying mark:', error);
+    return false;
   }
-
-  console.log(`addCommentMarkToText: Successfully added comment mark for ID "${commentId}" at position ${from}-${to} (resolved: ${resolved})`);
-  return true;
 }
 
 /**
- * Helper function to find text in document with flexible matching
+ * Debug utility to log document structure (for troubleshooting)
+ * @param {Object} state - ProseMirror state
+ */
+function debugDocumentStructure(state) {
+  console.log('=== Document Structure Debug ===');
+  console.log('Document size:', state.doc.content.size);
+  console.log('Text content:', state.doc.textContent);
+  
+  let nodeCount = 0;
+  state.doc.descendants((node, pos) => {
+    nodeCount++;
+    if (node.isText) {
+      console.log(`Text node ${nodeCount}: pos=${pos}, size=${node.nodeSize}, text="${node.text}"`);
+    } else {
+      console.log(`Node ${nodeCount}: pos=${pos}, size=${node.nodeSize}, type=${node.type.name}`);
+    }
+  });
+  console.log('=== End Document Structure ===');
+}
+
+/**
+ * Helper function to find text in document with proper ProseMirror node traversal
  * @param {Object} state - ProseMirror state
  * @param {string} searchText - Text to search for
+ * @param {boolean} debug - Enable debug logging
  * @returns {Object|null} - {from, to} positions or null if not found
  */
-function findTextInDocument(state, searchText) {
+function findTextInDocument(state, searchText, debug = false) {
   if (!searchText || !searchText.trim()) {
     return null;
   }
 
-  const docText = state.doc.textContent;
   const normalizedSearchText = normalizeText(searchText);
-  const normalizedDocText = normalizeText(docText);
-
-  // Try exact match first
-  let index = normalizedDocText.indexOf(normalizedSearchText);
-  if (index !== -1) {
-    const from = state.doc.resolve(index).pos;
-    const to = state.doc.resolve(index + normalizedSearchText.length).pos;
-    return { from, to };
-  }
-
-  // Try fuzzy matching (ignore case and extra whitespace)
-  const fuzzySearchText = normalizedSearchText.toLowerCase().trim();
-  const fuzzyDocText = normalizedDocText.toLowerCase();
+  console.log(`findTextInDocument: Searching for "${normalizedSearchText}"`);
   
-  index = fuzzyDocText.indexOf(fuzzySearchText);
-  if (index !== -1) {
-    const from = state.doc.resolve(index).pos;
-    const to = state.doc.resolve(index + fuzzySearchText.length).pos;
-    return { from, to };
+  if (debug) {
+    debugDocumentStructure(state);
   }
 
-  // Try finding the longest common substring
-  const words = searchText.split(/\s+/).filter(word => word.length > 3);
-  for (const word of words) {
-    const normalizedWord = normalizeText(word);
-    index = normalizedDocText.indexOf(normalizedWord);
-    if (index !== -1) {
-      const from = state.doc.resolve(index).pos;
-      const to = state.doc.resolve(index + normalizedWord.length).pos;
-      console.log(`addCommentMarkToText: Found partial match for word "${word}" at position ${from}-${to}`);
-      return { from, to };
+  // Traverse all text nodes in the document
+  let foundPositions = null;
+  
+  state.doc.descendants((node, pos) => {
+    if (node.isText) {
+      const nodeText = node.text;
+      const normalizedNodeText = normalizeText(nodeText);
+      
+      if (debug) {
+        console.log(`findTextInDocument: Checking text node at pos ${pos}: "${nodeText}"`);
+      }
+      
+      // Try exact match first
+      let index = normalizedNodeText.indexOf(normalizedSearchText);
+      if (index !== -1) {
+        foundPositions = {
+          from: pos + index,
+          to: pos + index + normalizedSearchText.length
+        };
+        console.log(`findTextInDocument: Found exact match at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
+        return false; // Stop traversal
+      }
+      
+      // Try case-insensitive match
+      const lowerNodeText = normalizedNodeText.toLowerCase();
+      const lowerSearchText = normalizedSearchText.toLowerCase();
+      index = lowerNodeText.indexOf(lowerSearchText);
+      if (index !== -1) {
+        foundPositions = {
+          from: pos + index,
+          to: pos + index + lowerSearchText.length
+        };
+        console.log(`findTextInDocument: Found case-insensitive match at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
+        return false; // Stop traversal
+      }
     }
+  });
+
+  if (foundPositions) {
+    return foundPositions;
   }
 
-  return null;
+  // If no exact match found, try fuzzy matching with individual words
+  const searchWords = normalizedSearchText.split(/\s+/).filter(word => word.length > 2);
+  if (searchWords.length > 1) {
+    console.log(`findTextInDocument: Trying fuzzy match with words:`, searchWords);
+    
+    state.doc.descendants((node, pos) => {
+      if (node.isText) {
+        const nodeText = node.text;
+        const normalizedNodeText = normalizeText(nodeText);
+        
+        // Check if this node contains most of the search words
+        let matchedWords = 0;
+        let bestMatchPos = null;
+        
+        for (const word of searchWords) {
+          const wordIndex = normalizedNodeText.toLowerCase().indexOf(word.toLowerCase());
+          if (wordIndex !== -1) {
+            matchedWords++;
+            if (!bestMatchPos) {
+              bestMatchPos = {
+                from: pos + wordIndex,
+                to: pos + wordIndex + word.length
+              };
+            }
+          }
+        }
+        
+        // If we found most words (at least 70% of search words), use this match
+        if (matchedWords >= Math.ceil(searchWords.length * 0.7) && bestMatchPos) {
+          foundPositions = bestMatchPos;
+          console.log(`findTextInDocument: Found fuzzy match (${matchedWords}/${searchWords.length} words) at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
+          return false; // Stop traversal
+        }
+      }
+    });
+  }
+
+  if (!foundPositions) {
+    console.warn(`findTextInDocument: Could not find text "${normalizedSearchText}" in document`);
+  }
+
+  return foundPositions;
 }
 
 /**

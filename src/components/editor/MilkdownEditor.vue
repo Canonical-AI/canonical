@@ -355,9 +355,28 @@ export default {
             }
         },
 
+        // Method to get the editor view for external use (e.g., AI comment creation)
+        getEditorView() {
+            if (!this.get || this.loading) {
+                console.warn('Editor not ready, cannot get editor view');
+                return null;
+            }
+
+            try {
+                let editorView = null;
+                this.get().action((ctx) => {
+                    editorView = ctx.get(editorViewCtx);
+                });
+                return editorView;
+            } catch (error) {
+                console.warn('Error getting editor view:', error);
+                return null;
+            }
+        },
+
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['createComment', 'refreshCommentDecorations', 'scrollToComment', 'resolveComment', 'unresolveComment', 'deleteComment'],
+    expose: ['createComment', 'refreshCommentDecorations', 'scrollToComment', 'resolveComment', 'unresolveComment', 'deleteComment', 'getEditorView'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;

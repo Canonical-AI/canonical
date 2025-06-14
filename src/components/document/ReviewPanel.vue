@@ -176,13 +176,34 @@ export default {
 
       try {
         const documentContent = this.document.data.content;
+        
+        // Get the actual editor view from the MilkdownEditor component
+        let editorView = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        while (!editorView && attempts < maxAttempts) {
+          editorView = this.editorRef.getEditorView();
+          if (!editorView) {
+            attempts++;
+            if (attempts < maxAttempts) {
+              console.log(`Editor not ready, attempt ${attempts}/${maxAttempts}, waiting...`);
+              await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+            }
+          }
+        }
+        
+        if (!editorView) {
+          throw new Error('Editor view not available after multiple attempts. Please try again.');
+        }
+        
         const maxRetries = 2;
         let results = null;
         
         // Retry loop for better reliability
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
-            results = await DocumentReview.createInlineComments(documentContent, this.editorRef);
+            results = await DocumentReview.createInlineComments(documentContent, editorView);
             
             if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
               break;
@@ -204,11 +225,21 @@ export default {
           throw new Error(results?.error || 'AI review failed to generate results');
         }
 
+        // Force editor refresh to show new comment marks
         this.$emit('refresh-editor');
 
-        // Show appropriate success message
+        // Show detailed success message with mark information
         if (results.commentsCreated > 0) {
-          let message = `AI review completed! ${results.commentsCreated} inline comments added.`;
+          let message = `AI review completed! ${results.commentsCreated} comments created.`;
+          
+          if (results.marksAdded > 0) {
+            message += ` ${results.marksAdded} visual marks added to the editor.`;
+          }
+          
+          if (results.marksFailed > 0) {
+            message += ` ${results.marksFailed} comments couldn't be visually marked (text may have changed).`;
+          }
+          
           showAlert(this.$store, 'success', message);
         } else {
           const message = documentContent.trim().length < 100 
@@ -226,6 +257,7 @@ export default {
     },
 
     async handleClear() {
+      //TODO: this needs to be updated to clear the marks as well
       try {
         const allComments = this.$store.state.selected?.comments || [];
         const aiComments = allComments.filter(comment => comment.aiGenerated === true);
@@ -236,10 +268,11 @@ export default {
         }
 
         await Promise.all(aiComments.map(comment => 
-          this.$store.dispatch('deleteComment', comment.id)
+          console.log('TODO')
+
+          //TODO: this needs to be updated to clear the marks as well
         ));
 
-        this.$emit('refresh-editor');
         showAlert(this.$store, 'success', `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`);
         
       } catch (error) {
