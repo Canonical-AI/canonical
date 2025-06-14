@@ -76,7 +76,7 @@
                   size="small"
                   icon="mdi-check"
                   v-bind="props"
-                  @click="resolveComment">
+                  @click="resolveComment(comment.id)">
                 </v-btn>
               </template>
             </v-tooltip>
@@ -218,7 +218,7 @@
                   size="small"
                   icon="mdi-delete"
                   v-bind="props"
-                  @click="deleteComment(comment.id)">
+                  @click="deleteCommentLocal(comment.id)">
                 </v-btn>
               </template>
             </v-tooltip>
@@ -263,12 +263,11 @@
 
 <script type="text/javascript">
 import {Comment} from "../../services/firebaseDataService";
-import { removeCommentMarkById } from "../editor/comment/index.js";
 import { inject } from 'vue';
 
 
 export default {
-  emits: ['comment-resolved', 'comment-unresolved', 'accept-suggestion'],
+  emits: ['accept-suggestion'],
   props: {
     comment: {
       type: Object,
@@ -286,8 +285,14 @@ export default {
   }),
   setup() {
     const scrollToCommentInEditor = inject('scrollToCommentInEditor');
+    const resolveComment = inject('resolveComment');
+    const unresolveComment = inject('unresolveComment');
+    const deleteComment = inject('deleteComment');
     return {
-      scrollToCommentInEditor
+      scrollToCommentInEditor,
+      resolveComment,
+      unresolveComment,
+      deleteComment
     };
   },
   mounted(){
@@ -341,7 +346,7 @@ export default {
       this.editing = true;
       // Unresolve comment when user starts editing
       if (this.comment.resolved) {
-        await this.unresolveComment();
+        await this.unresolveCommentLocal();
       }
     },
 
@@ -350,62 +355,32 @@ export default {
       this.resetForm()
     },
     
-    async deleteComment (id) {
-      // Add a small delay to ensure the editor state is stable
-      await this.$nextTick();
-      
-      // Remove the comment mark from the editor first
-      const editorView = this.$store.state.editorView;
-      if (editorView) {
-        removeCommentMarkById(editorView, id);
+    async deleteCommentLocal (id) {
+      // Use the injected deleteComment function
+      if (this.deleteComment) {
+        await this.deleteComment(id);
+      } else {
+        console.warn('deleteCommentLocal: No deleteComment function injected');
       }
-      
-      await this.$store.dispatch('deleteComment', id);
     },
 
-    async resolveComment() {
+    async unresolveCommentLocal() {
       try {
-        await this.$store.dispatch('updateCommentData', {
-          id: this.comment.id,
-          data: { resolved: true }
-        });
-        
-        // Add a small delay to ensure the editor state is stable
-        await this.$nextTick();
-        
-        // Remove the comment mark from the editor
-        const editorView = this.$store.state.editorView;
-        if (editorView) {
-          removeCommentMarkById(editorView, this.comment.id);
+        if (this.unresolveComment) {
+          // Get the selected text with proper null checking
+          const selectedText = this.comment?.editorID?.selectedText || this.originalText || '';
+          
+          if (!selectedText) {
+            console.warn('unresolveCommentLocal: No selected text available for comment', this.comment.id);
+            // Still try to unresolve without text marking
+            await this.unresolveComment(this.comment.id, '');
+            return;
+          }
+          
+          await this.unresolveComment(this.comment.id, selectedText);
+        } else {
+          console.warn('unresolveCommentLocal: No unresolveComment function injected');
         }
-        
-        this.$store.commit('alert', {
-          type: 'success',
-          message: 'Comment resolved',
-          autoClear: true
-        });
-        
-        // Now that the store is properly updated, emit the event
-        this.$emit('comment-resolved', this.comment.id);
-      } catch (error) {
-        console.error('Error resolving comment:', error);
-        this.$store.commit('alert', {
-          type: 'error',
-          message: 'Failed to resolve comment',
-          autoClear: true
-        });
-      }
-    },
-
-    async unresolveComment() {
-      try {
-        await this.$store.dispatch('updateCommentData', {
-          id: this.comment.id,
-          data: { resolved: false }
-        });
-        
-        // Now that the store is properly updated, emit the event
-        this.$emit('comment-unresolved', this.comment.id);
       } catch (error) {
         console.error('Error unresolving comment:', error);
       }
@@ -462,8 +437,13 @@ export default {
     },
 
     acceptSuggestion() {
-      if (!this.comment.suggestion || !this.comment.editorID.selectedText) {
-        console.error('Cannot accept suggestion: missing suggestion or problematic text');
+      const selectedText = this.comment?.editorID?.selectedText || this.originalText || '';
+      
+      if (!this.comment.suggestion || !selectedText) {
+        console.error('Cannot accept suggestion: missing suggestion or problematic text', {
+          suggestion: this.comment.suggestion,
+          selectedText: selectedText
+        });
         return;
       }
 

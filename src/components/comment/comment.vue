@@ -31,8 +31,6 @@
             <commentCard 
               :comment="event.value"
               :ref="`comment-${event.value.id}`"
-              @comment-resolved="refreshEditorDecorations"
-              @comment-unresolved="refreshEditorDecorations"
               @accept-suggestion="$emit('accept-suggestion', $event)"
             />
             <!-- Render child comments with indentation -->
@@ -43,8 +41,6 @@
                 :comment="child"
                 :ref="`comment-${child.id}`"
                 class="mb-2"
-                @comment-resolved="refreshEditorDecorations"
-                @comment-unresolved="refreshEditorDecorations"
                 @accept-suggestion="$emit('accept-suggestion', $event)"
               />
             </div>
@@ -99,7 +95,7 @@ import { inject } from 'vue';
 
 
 export default {
-  emits: ['refresh-editor-decorations', 'accept-suggestion'],
+  emits: [ 'accept-suggestion'],
   components: {
     commentCard
   },
@@ -260,9 +256,6 @@ export default {
         });
       },
 
-      refreshEditorDecorations() {
-        this.$emit('refresh-editor-decorations');
-      },
 
       toggleFilter() {
         this.showResolved = this.showResolved === 'all' ? 'active' : 'all';

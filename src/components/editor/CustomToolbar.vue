@@ -184,7 +184,7 @@
 <script>
 import { usePluginViewContext } from '@prosemirror-adapter/vue';
 import { nextTick } from 'vue';
-import { addCommentMarkToText } from './comment/index.js';
+import { addComment } from './comment/index.js';
 
 export default {
     setup() {
@@ -464,7 +464,7 @@ export default {
             const selectedText = this.view.state.doc.textBetween(from, to);
 
             // Add the comment mark to the selected text using the utility function
-            const success = await addCommentMarkToText(this.view, selectedText, this.commentText.trim(), from);
+            const success = await addComment(this.view, selectedText, this.commentText.trim(), from);
             
             if (!success) {
                 console.error('Failed to add comment mark to text');

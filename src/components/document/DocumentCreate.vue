@@ -207,7 +207,6 @@ import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
 import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
-import { provide } from 'vue';
 
 export default {
   components: {
@@ -292,6 +291,14 @@ export default {
     editorMounted: false,
     showEditor: true,
   }),
+  provide() {
+    return {
+      resolveComment: this.resolveComment.bind(this),
+      unresolveComment: this.unresolveComment.bind(this),
+      deleteComment: this.deleteComment.bind(this),
+      scrollToCommentInEditor: this.scrollToCommentInEditor.bind(this),
+    };
+  },
   async created() {
     this.isLoading = true;
     // if (this.$route.query.type){
@@ -304,9 +311,6 @@ export default {
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
-    
-    // Provide the scroll function to child components
-    provide('scrollToCommentInEditor', this.scrollToCommentInEditor.bind(this));
   },
   
   mounted() {
@@ -323,8 +327,6 @@ export default {
         name: doc.data.name,
       }));
     },
-
-
 
     async fetchDocument(id, version = null) {
       // Completely unmount the editor first to prevent state issues
@@ -490,7 +492,6 @@ export default {
       this.$router.push({ path: `/document/create-document` });
     },
 
-
     async triggerFeedbackFromToolbar() {
       // Open the drawer and trigger feedback through the ReviewPanel
       this.drawer = true;
@@ -618,13 +619,40 @@ export default {
       });
     },
 
+    // Method to resolve a comment and remove its mark from the editor
+    async resolveComment(commentId) {
+      await this.$refs.milkdownEditor.resolveComment(commentId);
+    },
+
+    async unresolveComment(commentId, textToMark) {
+      await this.$refs.milkdownEditor.unresolveComment(commentId, textToMark);
+    },
+
+    // Method to delete a comment and remove its mark from the editor
+    async deleteComment(commentId) {
+      try {
+        // Use the MilkdownEditor's deleteComment method
+        if (this.$refs.milkdownEditor) {
+          await this.$refs.milkdownEditor.deleteComment(commentId);
+        } else {
+          console.warn('deleteComment: MilkdownEditor not available');
+        }
+      } catch (error) {
+        console.error('Error deleting comment:', error);
+        this.$store.commit('alert', {
+          type: 'error',
+          message: 'Failed to delete comment',
+          autoClear: true
+        });
+      }
+    },
+
     updateDocumentContent(content) {
       this.document.data.content = content;
       this.editorContent = content;
       this.isEditorModified = true;
       this.editorKey++;
     },
-
 
   },
   computed: {
@@ -799,8 +827,6 @@ export default {
         }, 500); // Set timeout to 1 second
       }
     },
-
-
 
     isEditable(newValue) {
       // Force component re-render when editable state changes
