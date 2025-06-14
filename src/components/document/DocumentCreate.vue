@@ -15,9 +15,9 @@
           last update:
           {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
         </div>
-        <v-menu class="border border-surface-light">
+        <v-menu v-if="document.id" class="border border-surface-light">
           <template v-slot:activator="{ props }">
-            <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
+            <v-btn :disabled="isDisabled" v-bind="props" icon>
               <v-icon>mdi-dots-vertical</v-icon>
             </v-btn>
           </template>
@@ -44,26 +44,16 @@
       </v-card-actions>
       <v-divider></v-divider>
 
-      <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
-        <v-expansion-panel>
-          <v-expansion-panel-title>
-            <v-btn
-              :disabled="isDisabled"
-              class="text-none gen-btn"
-              @click="sendPromptToVertexAI()"
-              density="compact"
-              >Generate Feedback
-            </v-btn>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text>
-            <p
-              class="generative-feedback text-sm ma-1 pa-1"
-              v-if="generativeFeedback !== null"
-              v-html="renderMarkdown(generativeFeedback)"
-            ></p>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
+      <ReviewPanel
+        ref="reviewPanel"
+        v-model:isExpanded="isGenPanelExpanded"
+        :is-viewing-version="isViewingVersion"
+        :disabled="isDisabled"
+        :document="document"
+        :editor-ref="$refs.milkdownEditor"
+        @update-document-content="updateDocumentContent"
+        @refresh-editor="_refreshEditor"
+      />
     </div>
 
     <!-- Scrollable comments section -->
@@ -74,8 +64,8 @@
         :doc-type="'document'"
         ref="commentComponent"
         @scroll-to-comment="openDrawerAndScrollToComment"
-        @refresh-editor-decorations="refreshEditorDecorations"
-        @scroll-to-editor="scrollToCommentInEditor"
+        @refresh-editor-decorations="_refreshEditor"
+        @accept-suggestion="handleAcceptSuggestion"
       />
     </div>
   </v-navigation-drawer>
@@ -124,14 +114,17 @@
         />
       </template>
     </v-tooltip>
-    <v-tooltip text="Feedback from your AI coach" location="bottom">
+    <v-tooltip 
+      v-if="$store.getters.canAccessAi" 
+      text="Feedback from your AI coach" 
+      location="bottom"
+    >
       <template v-slot:activator="{ props }">
         <v-icon
           :disabled="isDisabled"
-          v-if="$store.getters.canAccessAi"
           class="mx-1 gen-icon"
           v-bind="props"
-          @click="sendPromptToVertexAI()"
+          @click="triggerFeedbackFromToolbar()"
           icon="mdi-comment-quote"
         />
       </template>
@@ -208,11 +201,12 @@
 import { ProsemirrorAdapterProvider } from "@prosemirror-adapter/vue";
 import { marked } from "marked";
 import comment from "../comment/comment.vue";
-import { Feedback } from "../../services/vertexAiService";
 import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
+import ReviewPanel from "./ReviewPanel.vue";
+import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
 
 export default {
   components: {
@@ -221,6 +215,7 @@ export default {
     ProsemirrorAdapterProvider,
     MilkdownProvider,
     VersionModal,
+    ReviewPanel,
   },
   emits: ["scrollToBottom"],
   props: {
@@ -274,7 +269,6 @@ export default {
       required: (value) => !!value || "Required.",
     },
     drawer: false,
-    generativeFeedback: null,
     previousType: null,
     previousContent: null,
     previousTitle: null,
@@ -297,6 +291,14 @@ export default {
     editorMounted: false,
     showEditor: true,
   }),
+  provide() {
+    return {
+      resolveComment: this.resolveComment.bind(this),
+      unresolveComment: this.unresolveComment.bind(this),
+      deleteComment: this.deleteComment.bind(this),
+      scrollToCommentInEditor: this.scrollToCommentInEditor.bind(this),
+    };
+  },
   async created() {
     this.isLoading = true;
     // if (this.$route.query.type){
@@ -306,7 +308,7 @@ export default {
       this.fetchDocument(this.$route.params.id);
     }
     this.isLoading = false;
-    this.debounceSave = this.debounce(() => this.saveDocument(), 5000);
+    this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
   },
@@ -319,25 +321,11 @@ export default {
   },
 
   methods: {
-    renderMarkdown(text) {
-      return marked(text); // Convert Markdown to HTML
-    },
-
     getFormattedDocuments() {
       return this.$store.state.documents.map((doc) => ({
         id: doc.id,
         name: doc.data.name,
       }));
-    },
-
-    debounce(func, delay) {
-      let timeout;
-      return function () {
-        clearTimeout(timeout);
-        this._savingTimeout = timeout = setTimeout(() => {
-          func.apply();
-        }, delay);
-      };
     },
 
     async fetchDocument(id, version = null) {
@@ -437,7 +425,6 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
-        this.$refs?.milkdownEditor?.updateCommentPositionsOnSave();
       }
 
       this.isEditorModified = false;
@@ -505,22 +492,48 @@ export default {
       this.$router.push({ path: `/document/create-document` });
     },
 
-    async sendPromptToVertexAI() {
+    async triggerFeedbackFromToolbar() {
+      // Open the drawer and trigger feedback through the ReviewPanel
       this.drawer = true;
-
-      const prompt = `
-            title ${this.document.data.name}
-            type of doc ${this.document.data.type}
-            ${this.document.data.content}
-            `;
-      const result = await Feedback.generateFeedback({ prompt: prompt });
-
-      this.generativeFeedback = "";
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        this.generativeFeedback += chunkText;
+      
+      // Wait for the drawer to open and component to be available
+      await this.$nextTick();
+      
+      if (this.$refs.reviewPanel) {
+        await this.$refs.reviewPanel.handleFeedback();
       }
-      return;
+    },
+
+    async handleAcceptSuggestion(suggestionData) {
+      if (this.$refs.reviewPanel) {
+        const result = await this.$refs.reviewPanel.handleAcceptSuggestion(suggestionData);
+        
+        // Handle editor refresh if needed (only if we didn't navigate away)
+        if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
+          this.editorKey++;
+        }
+        
+        // Refresh suggestions after successful application to prevent stale references
+        if (result?.shouldRefreshSuggestions && result?.success) {
+          this.$nextTick(async () => {
+            this._refreshEditor();
+            
+            // Clean up any outdated suggestions that might reference old text
+            if (this.$refs.reviewPanel) {
+              await this.$refs.reviewPanel.cleanupOutdatedSuggestions(this.document.data.content);
+            }
+            
+          });
+        }
+      }
+    },
+
+    _refreshEditor() {
+      this.$nextTick(() => {
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.refreshCommentDecorations();
+        }
+      });
     },
 
     toggleFavorite() {
@@ -529,24 +542,12 @@ export default {
     },
 
     copyToClipboard() {
-      const url = window.location.href; // Get the current URL
-      navigator.clipboard
-        .writeText(url) // Copy the URL to clipboard
-        .then(() => {
-          this.$store.commit("alert", {
-            type: "info",
-            message: "URL copied to clipboard!",
-            autoClear: true,
-          });
-        })
-        .catch((err) => {
-          console.error("Failed to copy: ", err);
-        });
+      const url = window.location.href;
+      copyToClipboard(url, this.$store, "URL copied to clipboard!");
     },
 
     getRandomPlaceholder() {
-      const randomIndex = Math.floor(Math.random() * this.placeholders.length);
-      this.currentPlaceholder = this.placeholders[randomIndex];
+      this.currentPlaceholder = getRandomItem(this.placeholders);
     },
 
     autoGrow(event) {
@@ -572,16 +573,7 @@ export default {
     },
 
     placeCursorAtEnd(element) {
-      try {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        range.collapse(false); // false means collapse to end
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } catch (error) {
-        console.warn('Could not place cursor at end:', error);
-      }
+      placeCursorAtEnd(element);
     },
 
     async toggleDraft() {
@@ -598,59 +590,11 @@ export default {
     },
 
     activateEditor() {
-      if (this.isLoading || !this.showEditor) return;
-      
-      try {
-        setTimeout(() => {
-          const editorElement = document.querySelector('.ProseMirror.editor');
-          if (editorElement) {
-
-            if (this.$vuetify.display.mobile) {
-              if (document.activeElement !== editorElement) {
-                editorElement.focus();
-              }
-            } else {
-              // Desktop behavior: clear focus, then set focus with cursor
-              document.activeElement?.blur();
-              editorElement.focus();
-              
-              // Only set cursor position if there's no existing selection
-              const selection = window.getSelection();
-              if (selection.rangeCount === 0) {
-                // Find a text node to place cursor in rather than at element position 0
-                const textNode = this.findFirstTextNode(editorElement);
-                if (textNode) {
-                  const range = document.createRange();
-                  // Place cursor at end of text rather than beginning
-                  range.setStart(textNode, textNode.textContent.length);
-                  range.collapse(true);
-                  selection.removeAllRanges();
-                  selection.addRange(range);
-                }
-              }
-            }
-          }
-        }, 50);
-      } catch (error) {
-        console.error("Error focusing editor:", error);
-      }
-    },
-    
-    // Helper function to find the first text node in the editor
-    findFirstTextNode(element) {
-      // If this is a text node, return it
-      if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
-        return element;
-      }
-
-      for (let i = 0; i < element.childNodes.length; i++) {
-        const textNode = this.findFirstTextNode(element.childNodes[i]);
-        if (textNode) {
-          return textNode;
-        }
-      }
-      
-      return null;
+      activateEditor({
+        isMobile: this.$vuetify.display.mobile,
+        isLoading: this.isLoading,
+        showEditor: this.showEditor
+      });
     },
 
     // Method to open drawer and scroll to specific comment
@@ -666,16 +610,6 @@ export default {
       });
     },
 
-
-    // Method to refresh editor decorations when comments are resolved/unresolved
-    refreshEditorDecorations() {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.refreshCommentDecorations();
-        }
-      });
-    },
-
     // Method to scroll to a comment position in the editor when clicked from sidebar
     scrollToCommentInEditor(commentId) {
       this.$nextTick(() => {
@@ -685,6 +619,40 @@ export default {
       });
     },
 
+    // Method to resolve a comment and remove its mark from the editor
+    async resolveComment(commentId) {
+      await this.$refs.milkdownEditor.resolveComment(commentId);
+    },
+
+    async unresolveComment(commentId) {
+      await this.$refs.milkdownEditor.unresolveComment(commentId);
+    },
+
+    // Method to delete a comment and remove its mark from the editor
+    async deleteComment(commentId) {
+      try {
+        // Use the MilkdownEditor's deleteComment method
+        if (this.$refs.milkdownEditor) {
+          await this.$refs.milkdownEditor.deleteComment(commentId);
+        } else {
+          console.warn('deleteComment: MilkdownEditor not available');
+        }
+      } catch (error) {
+        console.error('Error deleting comment:', error);
+        this.$store.commit('alert', {
+          type: 'error',
+          message: 'Failed to delete comment',
+          autoClear: true
+        });
+      }
+    },
+
+    updateDocumentContent(content) {
+      this.document.data.content = content;
+      this.editorContent = content;
+      this.isEditorModified = true;
+      this.editorKey++;
+    },
 
   },
   computed: {
@@ -700,6 +668,10 @@ export default {
         return true;
       }
     },
+    isViewingVersion() {
+      return this.$route.query.v && this.$route.query.v !== 'live';
+    },
+
     editorContent: {
       get() {
         return this.document.data.content;
@@ -725,7 +697,11 @@ export default {
           this.isEditorModified = true;
           // This will make the title change visible in the document tree
           if (this.document.id) {
-            this.$store.commit("updateSelectedDocument", this.document);
+            const documentUpdateData = {
+              id: this.document.id,
+              data: this.document.data
+            };
+            this.$store.commit("updateSelectedDocument", documentUpdateData);
           }
         }
 
@@ -740,7 +716,12 @@ export default {
 
         if (this.isEditorModified) {
           console.log("trying to save....");
-          this.$store.commit("updateSelectedDocument", this.document); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          // Only pass document data, not comments, to avoid overwriting store's comment state
+          const documentUpdateData = {
+            id: this.document.id,
+            data: this.document.data
+          };
+          this.$store.commit("updateSelectedDocument", documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();
@@ -847,12 +828,6 @@ export default {
       }
     },
 
-    generativeFeedback(newValue) {
-      if (newValue !== null) {
-        this.isGenPanelExpanded = 0;
-      }
-    },
-
     isEditable(newValue) {
       // Force component re-render when editable state changes
       // Don't increment editorKey on mobile as it causes cursor position issues
@@ -895,6 +870,11 @@ export default {
     if (this.debounceSave) {
       // Cancel any pending debounced save
       clearTimeout(this._savingTimeout);
+    }
+    
+    // Reset review panel state
+    if (this.$refs.reviewPanel) {
+      this.$refs.reviewPanel.resetState();
     }
     
     // Force the editor to be unmounted cleanly
@@ -1079,16 +1059,6 @@ input.h1 {
   font-weight: 400;
 }
 
-.generative-feedback :deep(ul),
-.generative-feedback :deep(ol) {
-  padding-left: 1em;
-}
-
-.generative-feedback :deep(p) {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
 /* Navigation drawer layout styles */
 .drawer-header {
   border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
@@ -1131,5 +1101,14 @@ input.h1 {
   background: rgba(var(--v-theme-outline), 0.5);
 }
 
+/* AI Review loading animation */
+.rotating {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 </style>

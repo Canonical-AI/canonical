@@ -3,6 +3,7 @@ import {firebaseApp} from "../firebase";
 import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
 import store from "../store";
+import { addCommentMarkToText } from "../components/editor/comment/index.js";
 
 const vertexAI = getVertexAI(firebaseApp);
 
@@ -122,7 +123,6 @@ export class Generate{
     
         const result = await genModel.generateContent(value.prompt);
         return result
-
     }
 }
 
@@ -135,8 +135,6 @@ export class Chat {
     }
 
     async initChat(history = null) {
-
-
         if (store.state.project.id === null) {
             await store.dispatch('enter');
         }
@@ -147,13 +145,10 @@ export class Chat {
 
 
         if (store.state.documents.length === 0) {
-            console.log("loading documents");
             documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
         } else {
             documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
         }
-
-        
 
         this.generativeModel = getGenerativeModel(vertexAI, { 
             model: model,
@@ -198,6 +193,7 @@ export class Chat {
 
         const response = await this.chat.sendMessageStream(newMessage); // Return the response from the chat
 
+        logUsage(store.state.user.uid, 'sentMessage');
         return response
     }
 
@@ -209,7 +205,7 @@ export class Chat {
         }
 
         const summaryModel = getGenerativeModel(vertexAI, { 
-            model: "gemini-1.5-flash" ,
+            model: model ,
             systemInstruction: 'create atitle no more than 4 or 5 words',
             maxOutputTokens: 25
           });
@@ -227,6 +223,258 @@ export class Message {
     }
 }
 
+export class DocumentReview {
+    constructor() {
+        // Initialize the review model with function calling capabilities
+    }
+
+    // Generate AI feedback for a document (moved from aiReviewService)
+    static async generateFeedback(document) {
+        if (!document?.data) return null
+
+        const prompt = `
+          title ${document.data.name}
+          type of doc ${document.data.type}
+          ${document.data.content}
+        `
+        
+        checkUserPermission();
+        logUsage(store.state.user.uid, 'generateFeedback');
+        
+        const result = await feedbackModel.generateContentStream(prompt);
+        return result;
+    }
+
+    // Generate AI comments using the model
+    static async GenerateComments(documentContent) {
+        // Define the function that the model can call to create comments
+        const createCommentFunction = {
+            name: "create_comments",
+            description: "Identify issues in the document text that needs an inline comment",
+            parameters: {
+                type: "object",
+                properties: {
+                    comments: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                issueType: {
+                                    type: "string",
+                                    enum: ["logic", "grammar", "accuracy", "tone", "clarity"],
+                                    description: "The type of issue identified"
+                                },  
+                                severity: {
+                                    type: "string", 
+                                    enum: ["high", "medium", "low"],
+                                    description: "The severity level of the issue"
+                                },
+                                comment: {
+                                    type: "string",
+                                    description: "A brief explanation of the issue and suggested fix"
+                                },
+                                suggestion: {
+                                    type: "string",
+                                    description: "(optional) Suggested replacement text "
+                                }, 
+                                problematicText: {
+                                    type: "string",
+                                    description: "The exact problematic text from the document that has the issue"
+                                }
+                            },
+                            required: ["issueType", "severity", "comment", "problematicText"]
+                        }
+                    }
+                },
+                required: ["comments"]
+            }
+        };
+
+        const reviewModel = getGenerativeModel(vertexAI, { 
+            model: model,
+            tools: [{ functionDeclarations: [createCommentFunction] }],
+            systemInstruction: `You are a senior product manager reviewing a document.
+
+            Your task is to identify specific issues in the text and report them by calling the create_comments function with an array of all the issues you find.
+
+            Look for:
+            - Clarity of thought and communication
+            - Logical inconsistencies or contradictions  
+            - Grammatical errors (spelling, punctuation, syntax)
+            - Factual inaccuracies or unsupported claims
+            - Tone issues (too formal, too casual, unclear)
+            - Structure problems (poor flow, missing sections)
+            - Unclear or ambiguous phrasing
+            - Redundant or wordy expressions
+
+            Rules:
+            - Be specific and actionable in your feedback
+            - Focus on issues that meaningfully impact document quality
+            - Provide constructive suggestions for improvement
+            - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
+            - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
+            - The text is markdown, dont include any markdown formatting in the problematicText, just the text that is problemati and be very specific so we can find it.
+            - You MUST call the create_comments function to provide your analysis
+            - Call the create_comments function with ALL issues found in a single call, not multiple separate calls`
+        });
+
+        const prompt = `Please review the following document and identify issues by calling the create_comments function:
+
+        ${documentContent}`;
+        
+        console.log('Document content being reviewed:', documentContent.substring(0, 200) + '...');
+        
+        try {
+            const result = await reviewModel.generateContent(prompt);
+            const response = result.response;
+            const functionCalls = response.functionCalls();
+
+            if (functionCalls && functionCalls.length > 0) {
+                const functionCall = functionCalls[0];
+                if (functionCall.name === 'create_comments') {
+                    console.log('AI generated comments:', functionCall.args.comments);
+                    return functionCall.args.comments;
+                }
+            } else {
+                const responseText = response.text();
+                if (responseText) {
+                    console.warn('Model provided text response instead of function calls:', responseText);
+                }
+            }
+            
+            return [];
+        } catch (error) {
+            console.error('Error generating comments:', error);
+            throw error;
+        }
+    }
+
+    // Find text positions for a comment in the editor
+
+    // Create and save a comment to the store
+    static async CreateComments(comment) {
+        const commentData = {
+            comment: comment.comment,
+            documentId: store.state.selected.id,
+            documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
+            createdAt: new Date().toISOString(),
+            resolved: false,
+            selectedText: comment.problematicText,
+            suggestion: comment?.suggestion || null,
+            aiGenerated: true,
+            issueType: comment?.issueType || null,
+            severity: comment?.severity || null
+        };
+
+        console.log('Creating comment with data:', commentData);
+        const createdComment = await store.dispatch('addComment', commentData);
+        console.log('Comment created, returned:', createdComment);
+        return createdComment;
+    }
+
+    // Handle and track comment creation errors
+    static HandleCommentErrors(error, comment = null) {
+        const errorData = {
+            issue: comment?.issueType || 'unknown',
+            text: comment?.problematicText || 'unknown',
+            reason: error.message || error.reason || 'Unknown error'
+        };
+
+        console.error('Failed to create comment:', error);
+        return errorData;
+    }
+
+    static async createInlineComments(documentContent, editorRef) {
+        if (!documentContent || !editorRef) {
+            throw new Error('Document content and editor reference are required');
+        }
+
+        // Validate that editorRef is a ProseMirror editor view
+        if (!editorRef.state || !editorRef.dispatch || !editorRef.dom) {
+            throw new Error('Invalid editor reference. Expected ProseMirror editor view.');
+        }
+
+        checkUserPermission();
+        
+        try {
+            // Step 1: Generate AI comments
+            const aiComments = await this.GenerateComments(documentContent);
+            
+            if (!aiComments || aiComments.length === 0) {
+                return {
+                    success: true,
+                    commentsCreated: 0,
+                    marksAdded: 0,
+                    marksFailed: 0,
+                    details: {
+                        created: [],
+                    }
+                };
+            }
+            
+            let commentsCreated = [];
+            let marksAdded = 0;
+            let marksFailed = 0;
+            
+            // Step 2: Process each AI comment
+            for (const comment of aiComments) {
+                try {
+                    // Create the comment in the store
+                    const createdComment = await this.CreateComments(comment);
+                    
+                    // Validate that the comment was created successfully
+                    if (!createdComment || !createdComment.id) {
+                        console.error('Comment creation failed - no ID returned:', createdComment);
+                        continue;
+                    }
+                    
+                    commentsCreated.push(createdComment);
+                    
+                    // Add visual mark to the editor
+                    if (createdComment.selectedText) {
+                        console.log(`Adding mark for comment "${createdComment.id}" with text "${createdComment.selectedText}"`);
+                        const markSuccess = await addCommentMarkToText(
+                            editorRef, 
+                            createdComment.selectedText, 
+                            createdComment.id, 
+                            null, // startPos - will be found automatically
+                            false // resolved
+                        );
+                        
+                        if (markSuccess) {
+                            marksAdded++;
+                            console.log(`Successfully added mark for comment "${createdComment.id}"`);
+                        } else {
+                            marksFailed++;
+                            console.warn(`Failed to add visual mark for comment "${createdComment.id}" with text "${createdComment.selectedText}"`);
+                        }
+                    } else {
+                        console.warn(`Comment "${createdComment.id}" has no selectedText, skipping mark creation`);
+                    }
+                } catch (commentError) {
+                    console.error('Error processing individual comment:', commentError);
+                    // Continue with other comments even if one fails
+                }
+            }
+
+            logUsage(store.state.user.uid, 'generatedInlineComments');
+
+            return {
+                success: true,
+                commentsCreated: commentsCreated.length,
+                marksAdded: marksAdded,
+                marksFailed: marksFailed,
+                details: {
+                    created: commentsCreated,
+                }
+            };
+
+        } catch (error) {
+            console.error('Error in createInlineComments:', error);
+            throw error;
+        }
+    }
+}
 
 
 export {vertexAI, genModel}

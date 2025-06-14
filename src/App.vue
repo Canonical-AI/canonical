@@ -51,12 +51,12 @@
           
 
         <v-menu
-          class="w-auto user-menu"
+          v-if='$store.getters.isUserLoggedIn === false'
           :close-on-content-click = "false"
           v-model="loginMenuOpen"
           offset-y>
           <template v-slot:activator="{ props }">
-            <v-btn v-if='$store.getters.isUserLoggedIn === false' v-bind="props">
+            <v-btn v-bind="props">
               Login
           </v-btn>
           </template>
@@ -65,6 +65,7 @@
 
 
         <v-menu
+        v-if='$store.getters.isUserLoggedIn === true && $store.state.user.email'
         class="user-menu w-auto"
         offset-overflow
         left
@@ -73,7 +74,6 @@
               <v-avatar
                   size="32"
                   color="black"
-                  v-if='$store.getters.isUserLoggedIn === true && $store.state.user.email'
                   v-bind="props">
                 <span
                   class="white--text text-h5">
