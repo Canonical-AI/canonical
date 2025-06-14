@@ -329,9 +329,27 @@ export default {
             }
         },
 
+        // Method to force update editor content without re-mounting
+        forceUpdateContent(content) {
+            if (!this.get || this.loading) return;
+            
+            this.get().action((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                const parser = ctx.get(parserCtx);
+                const schema = ctx.get(schemaCtx);
+                
+                const slice = parser(content);
+                if (!slice || typeof slice === 'string') return;
+                
+                const tr = view.state.tr;
+                tr.replaceWith(0, view.state.doc.content.size, slice);
+                view.dispatch(tr);
+            });
+        },
+
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['createComment',, 'getEditorView'],
+    expose: ['createComment', 'getEditorView', 'forceUpdateContent'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;

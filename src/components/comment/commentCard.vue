@@ -28,6 +28,7 @@
             >
               resolved
             </v-chip>
+
             <v-chip
               v-if="comment.aiGenerated"
               size="x-small"
@@ -38,17 +39,20 @@
               <v-icon size="12" class="mr-1">mdi-robot</v-icon>
               AI
             </v-chip>
-            <!-- <v-chip
-              v-if="comment.severity"
-              size="x-small"
-              :color="getSeverityColor(comment.severity)"
-              variant="outlined"
-              class="ml-2"
-            >
-              {{ comment.severity }}
-            </v-chip> -->
+  
           </div>
           <div>
+            <v-chip
+              v-if="canUndo"
+              variant="flat"
+              size="x-small"
+              color="purple"
+              class="ml-2"
+              @click="$eventStore.emitEvent('undo-comment', comment)"
+            >
+              <v-icon size="12" class="mr-1">mdi-undo</v-icon>
+              undo
+            </v-chip>
             <v-tooltip text="Edit this comment" location="bottom">
               <template v-slot:activator="{ props }">
                 <v-btn
@@ -318,6 +322,13 @@ export default {
       
       const canShow = this.$store.state.selected.data.content.includes(this.originalText);
       return canShow;
+    },
+    canUndo() {
+      if( this.$store.state.selected.data.content.includes(this.comment.suggestion) && this.comment.resolved){
+        return true;
+      } else {
+        return false;
+      }
     }
   },
   methods:{
@@ -409,6 +420,11 @@ export default {
 .comment-resolved {
   opacity: 0.7;
   background-color: rgba(var(--v-theme-success), 0.05);
+}
+
+.comment-resolved .v-card-subtitle {
+  opacity: 1;
+  background-color: transparent;
 }
 
 .original-text {

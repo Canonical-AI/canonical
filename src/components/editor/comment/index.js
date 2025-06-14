@@ -561,6 +561,11 @@ export function updateCommentMarkResolved(editorView, commentId, resolved) {
   }
 }
 
+export function changeCommentText(editorView, commentId, newText) {
+
+}
+
+
 // Add CSS styles for comment marks
 const style = document.createElement('style');
 style.textContent = `

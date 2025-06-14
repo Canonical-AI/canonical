@@ -180,7 +180,7 @@
             <ProsemirrorAdapterProvider>
               <MilkdownEditor
                 :key="editorKey"
-                :disabled="isDisabled || !isEditable"
+                :disabled="editorDisabled"
                 ref="milkdownEditor"
                 v-model="editorContent"
                 @comment-clicked="openDrawerAndScrollToComment"
@@ -195,14 +195,13 @@
 
 <script>
 import { ProsemirrorAdapterProvider } from "@prosemirror-adapter/vue";
-import { marked } from "marked";
 import comment from "../comment/comment.vue";
 import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
-import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
+import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers";
 import { useEventWatcher } from "../../composables/useEventWatcher";
 import { useComments } from "../../composables/comments";
 
@@ -242,79 +241,42 @@ export default {
         draft: true,
       },
     },
-    previousDocumentValue: {
-      name: "[DRAFT] New Doc..",
-      content: "Hello **World**",
-      type: "",
-      relationships: [],
-      draft: true,
-    },
-    documentTypes: [
-      "product",
-      "feature",
-      "roadmap",
-      "goal",
-      "idea",
-      "risk",
-      "persona",
-      "need",
-      "journey",
-      "job to be done",
-      "insight",
-      "interview",
-    ],
-    rules: {
-      required: (value) => !!value || "Required.",
-    },
     drawer: false,
     previousType: null,
     previousContent: null,
     previousTitle: null,
-    previousData: null,
     debounceSave: null,
     isFavorite: false,
     editorKey: 0,
     fadeTransition: fadeTransition,
-    placeholders: [
-      "Write something...",
-      "Start your story...",
-      "Share your thoughts...",
-      "Compose a message...",
-      "Get your ideas out...",
-      "What are you thinking about?",
-      "What are you doing dave?",
-    ],
-    currentPlaceholder: "Get your ideas out...",
     isGenPanelExpanded: null,
-    editorMounted: false,
     showEditor: true,
     eventWatcher: null,
     previousVersion: null,
   }),
   async created() {
     this.isLoading = true;
-    // if (this.$route.query.type){
-    //     await this.populateTemplate(this.$route.query.type)
-    // }
+    
+    // Set initial editable state based on route
+    const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+    this.isEditable = !isViewingVersion;
+    
     if (this.$route.params.id) {
-      this.fetchDocument(this.$route.params.id);
+      // Check if there's a version query parameter
+      const version = this.$route.query.v;
+      await this.fetchDocument(this.$route.params.id, version);
     }
     this.isLoading = false;
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
-    this.getRandomPlaceholder();
-    
     // Set up comments composable
-    const { handleAcceptSuggestion } = useComments(this.$store, this.$eventStore);
+    const { handleAcceptSuggestion, handleUndo } = useComments(this.$store, this.$eventStore);
     
     this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
-      // Don't process content replacement when switching between versions
-      const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
-      const wasViewingVersion = this.previousVersion !== undefined && this.previousVersion !== 'live';
       
       // If we're switching from version to no version or vice versa, skip the replacement
-      if (isViewingVersion !== wasViewingVersion) {
-        console.log('Skipping content replacement due to version change');
+      if (this.$route.query.v && this.$route.query.v !== 'live') {
+        console.log('Skipping content replacement due to version change, TODO FIX THIS LATER');
         return;
       }
       
@@ -323,13 +285,22 @@ export default {
       this.document.data.content = newContent;
       this.editorContent = newContent;
       this.isEditorModified = true;
-      this.editorKey++;
+      this.$refs.milkdownEditor.forceUpdateContent(newContent);
     });
 
     // Set up event watcher for accept-suggestion events
     this.eventWatcher = useEventWatcher(this.$eventStore, 'accept-suggestion', (payload) => {
       handleAcceptSuggestion(payload, {
         editorContent: this.editorContent,
+      });
+    });
+
+    this.eventWatcher = useEventWatcher(this.$eventStore, 'undo-comment', (payload) => {
+      handleUndo(payload, {
+        editorContent: this.editorContent,
+        documentData: this.document.data.content,
+        isEditorModified: this.isEditorModified,
+        refreshEditor: this.$refs.milkdownEditor.forceUpdateContent,
       });
     });
 
@@ -390,12 +361,13 @@ export default {
         this.isFavorite = this.$store.getters.isFavorite(this.document.id);
         this.isEditorModified = false;
         
+        // Set editable state based on whether we're viewing a version
         if (version) {
           this.isEditable = false;
         } else {
           this.isEditable = true;
         }
-        
+        this.editorKey++;
 
       } catch (error) {
         console.error("Error fetching document:", error);
@@ -536,10 +508,6 @@ export default {
       copyToClipboard(url, this.$store, "URL copied to clipboard!");
     },
 
-    getRandomPlaceholder() {
-      this.currentPlaceholder = getRandomItem(this.placeholders);
-    },
-
     autoGrow(event) {
       const textarea = event.target;
       textarea.style.height = "auto"; // Reset the height
@@ -560,10 +528,6 @@ export default {
         this.document.data.name = newName;
       }
       event.target.blur(); // Remove focus from the title
-    },
-
-    placeCursorAtEnd(element) {
-      placeCursorAtEnd(element);
     },
 
     async toggleDraft() {
@@ -604,19 +568,22 @@ export default {
   },
   computed: {
     isDisabled() {
+      // Don't override isEditable state - it's managed by version viewing logic
       if (
         this.$store.getters.isUserLoggedIn ||
-        this.$store.state.project?.id != null
+        this.$store.state.project?.id != null 
       ) {
-        this.isEditable = true;
         return false;
       } else {
-        this.isEditable = false;
         return true;
       }
     },
     isViewingVersion() {
       return this.$route.query.v && this.$route.query.v !== 'live';
+    },
+    
+    editorDisabled() {
+      return this.isDisabled || !this.isEditable;
     },
 
     editorContent: {
@@ -690,37 +657,37 @@ export default {
         if (this.isCreatingDocument) return;
         
         try {
-          // Skip heavy operations if only query params changed (internal update)
-          if (from && to.path === from.path && to.params.id === from.params.id && to.query.v === from.query.v) {
-            console.log('Query-only route change, skipping reload');
+          // Check if we're switching between versions or from version to live
+          const isVersionChange = to?.query?.v !== from?.query?.v;
+          const isSameDocument = to?.params?.id === from?.params?.id && to?.path === from?.path;
+          
+          // If same document and no version change, skip reload
+          if (isSameDocument && !isVersionChange) {
+            console.log('Same document, no version change - skipping reload');
             return;
           }
 
-          // Skip if navigating to the same document we already have loaded
-          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query && to.query.v === from.query.v) {
-            console.log('Navigating to same document, skipping reload');
-            return;
-          }
-
-          if (this.isEditorModified) {
+          // If switching from version to live (or vice versa), don't save
+          if (isVersionChange && this.isEditorModified) {
+            console.log('Version change detected - not saving, will reload');
+            this.isEditorModified = false; // Reset to prevent saving
+          } else if (this.isEditorModified && !isVersionChange) {
+            // Only save if we're not changing versions
+            console.log('saving document before navigation');
             await this.saveDocument();
-          }
-  
-          if (to === from) {
-            return;
           }
           
           // Track the previous version before making changes
           this.previousVersion = this.$route.query.v;
           
-          if (this.$route.params.id && this.$route.query.v) {
-            // Viewing a specific version - always fetch
+          if (to.params.id && to.query.v) {
+            // Load Version
             this.showEditor = false;
             this.isEditorModified = false;
             await this.$nextTick();
             await this.fetchDocument(this.$route.params.id, this.$route.query.v);
-          } else if (this.$route.params.id && this.document.id !== this.$route.params.id) {
-            // Only fetch if it's a different document
+          } else if (to.params.id) {
+            // Loading live version
             this.showEditor = false;
             this.isEditorModified = false;
             await this.$nextTick();
@@ -736,6 +703,7 @@ export default {
               },
               comments: [],
             };
+
             this.editorContent = this.document.data.content;
             this.previousContent = this.document.data.content;
             this.previousTitle = this.document.data.name;
@@ -785,10 +753,26 @@ export default {
         this.editorKey += 1;
       }
     },
+    
+    isViewingVersion(newValue, oldValue) {
+      // Don't run during initial component creation
+      if (this.isLoading) {
+        return;
+      }
+      
+      // Update isEditable when version viewing state changes
+      if (newValue !== oldValue) {
+        this.isEditable = !newValue; // If viewing version, not editable; if viewing live, editable
+      }
+    },
   },
   beforeRouteLeave(to, from, next) {
-    // Save any pending changes
-    if (this.isEditorModified) {
+    // Check if we're switching versions - don't save in that case
+    const isVersionChange = to.query?.v !== from.query?.v;
+    const isSameDocument = to.params.id === from.params.id && to.path === from.path;
+    
+    // Only save if we're not switching versions and have modifications
+    if (this.isEditorModified && !isVersionChange) {
       this.saveDocument();
     }
     
@@ -808,8 +792,11 @@ export default {
     });
   },
   beforeUnmount() {
-    // Save any pending changes
-    if (this.isEditorModified) {
+    // Check if we're in the middle of a version change - don't save in that case
+    const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+    
+    // Only save if we're not viewing a version and have modifications
+    if (this.isEditorModified && !isViewingVersion) {
       this.saveDocument();
     }
     
@@ -834,7 +821,6 @@ export default {
     
     // Force the editor to be unmounted cleanly
     this.editorKey += 1;
-    this.editorMounted = false;
   },
 };
 </script>

@@ -192,6 +192,7 @@ const store = createStore({
           let selectedBase = await Document.getDocById(id);
           let selectedVersion = await Document.getDocVersion(id, version);
           selectedBase.data = selectedVersion.content;
+          selectedBase.viewingVersion = version;
           selectedData = selectedBase;
         } else {
           selectedData = await Document.getDocById(id);

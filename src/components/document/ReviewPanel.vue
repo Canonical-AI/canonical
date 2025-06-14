@@ -128,7 +128,7 @@ export default {
       default: null,
     },
   },
-  emits: ["update:isExpanded", "refresh-editor", "update-document-content"],
+  emits: ["update:isExpanded", "update-document-content"],
   computed: {
     expandedModel: {
       get() {
@@ -229,8 +229,6 @@ export default {
           throw new Error(results?.error || 'AI review failed to generate results');
         }
 
-        // Force editor refresh to show new comment marks
-        this.$emit('refresh-editor');
 
         // Show detailed success message with mark information
         if (results.commentsCreated > 0) {
@@ -270,75 +268,49 @@ export default {
           return;
         }
 
-        // Clear all AI comments using the injected deleteComment function
-        // This will handle both store deletion and editor mark removal
-        await Promise.all(aiComments.map(comment => 
-          this.$eventStore.emitEvent('delete-comment', {commentId: comment.id})
-        ));
+        // Clear all AI comments and wait for each deletion to complete
+        const deletionPromises = aiComments.map(async (comment) => {
+          try {
+            // Delete from store and database
+            await this.$store.dispatch('deleteComment', comment.id);
+            
+            // Remove visual marks from editor
+            if (this.editorRef) {
+              const editorView = this.editorRef.getEditorView();
+              if (editorView) {
+                const { removeCommentMarkById } = await import('../../components/editor/comment/index.js');
+                removeCommentMarkById(editorView, comment.id);
+              }
+            }
+            
+            return { success: true, commentId: comment.id };
+          } catch (error) {
+            console.error(`Failed to delete comment ${comment.id}:`, error);
+            return { success: false, commentId: comment.id, error: error.message };
+          }
+        });
 
-        this.$emit('refresh-editor');
-        showAlert(this.$store, 'success', `${aiComments.length} AI comment${aiComments.length > 1 ? 's' : ''} cleared`);
+        // Wait for all deletions to complete
+        const results = await Promise.all(deletionPromises);
+        
+        // Count successes and failures
+        const successfulDeletions = results.filter(r => r.success).length;
+        const failedDeletions = results.filter(r => !r.success);
+        
+
+        // Show appropriate message
+        if (failedDeletions.length === 0) {
+          showAlert(this.$store, 'success', `${successfulDeletions} AI comment${successfulDeletions > 1 ? 's' : ''} cleared successfully`);
+        } else if (successfulDeletions === 0) {
+          showAlert(this.$store, 'error', `Failed to clear any AI comments. Please try again.`);
+        } else {
+          showAlert(this.$store, 'warning', `${successfulDeletions} comment${successfulDeletions > 1 ? 's' : ''} cleared, ${failedDeletions.length} failed`);
+        }
         
       } catch (error) {
         console.error('Error clearing AI comments:', error);
         showAlert(this.$store, 'error', 'Failed to clear AI comments. Please try again.');
       }
-    },
-
-    async handleUndoAll() {
-      if (!this.undoStore || this.undoStore.length === 0) {
-        console.warn('Nothing to undo');
-        return;
-      }
-
-      // Find the oldest item (first one added) by timestamp
-      const oldestItem = this.undoStore.reduce((oldest, current) => 
-        current.timestamp < oldest.timestamp ? current : oldest
-      );
-
-      // Unresolve all comments in the undo store
-      for (const item of this.undoStore) {
-        await this.$store.dispatch('updateCommentData', {
-          id: item.commentId,
-          data: { resolved: false }
-        });
-      }
-
-      // Restore the oldest document content
-      this.$emit('update-document-content', oldestItem.editorContent);
-
-      this.$emit('refresh-editor');
-      
-      showAlert(this.$store, 'success', 'Document content restored to original state');
-    },
-
-    async handleUndoOne() {
-      if (!this.undoStore || this.undoStore.length === 0) {
-        console.warn('Nothing to undo');
-        return;
-      }
-      
-      // Find the most recent item (last one added) by timestamp
-      const mostRecentItem = this.undoStore.reduce((mostRecent, current) => 
-        current.timestamp > mostRecent.timestamp ? current : mostRecent
-      );
-
-      // Remove the most recent item from the undo store
-      if (this.removeFromUndoStore) {
-        this.removeFromUndoStore(mostRecentItem.commentId);
-      }
-
-      // Unresolve the comment in the database
-      await this.$store.dispatch('updateCommentData', {
-        id: mostRecentItem.commentId,
-        data: { resolved: false }
-      });
-
-      // Restore the document content
-      this.$emit('update-document-content', mostRecentItem.editorContent);
-      this.$emit('refresh-editor');
-      
-      showAlert(this.$store, 'success', 'Last suggestion undone');
     },
 
     resetState() {
