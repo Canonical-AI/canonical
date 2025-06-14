@@ -76,7 +76,7 @@
                   size="small"
                   icon="mdi-check"
                   v-bind="props"
-                  @click="resolveComment(comment.id)">
+                  @click="$eventStore.emitEvent('resolve-comment', {commentId: comment.id})">
                 </v-btn>
               </template>
             </v-tooltip>
@@ -116,6 +116,7 @@
                 </v-btn>
               </template>
             </v-tooltip>
+            
           </div>
         </v-card-subtitle>
 
@@ -218,7 +219,7 @@
                   size="small"
                   icon="mdi-delete"
                   v-bind="props"
-                  @click="deleteCommentLocal(comment.id)">
+                  @click="$eventStore.emitEvent('delete-comment', {commentId: comment.id})">
                 </v-btn>
               </template>
             </v-tooltip>
@@ -262,12 +263,10 @@
 </template>
 
 <script type="text/javascript">
-import {Comment} from "../../services/firebaseDataService";
 import { inject } from 'vue';
 
 
 export default {
-  emits: ['accept-suggestion'],
   props: {
     comment: {
       type: Object,
@@ -283,18 +282,6 @@ export default {
       suggestionVisible: false,
       maxOriginalTextLength: 100, // Characters to show before truncation
   }),
-  setup() {
-    const scrollToCommentInEditor = inject('scrollToCommentInEditor');
-    const resolveComment = inject('resolveComment');
-    const unresolveComment = inject('unresolveComment');
-    const deleteComment = inject('deleteComment');
-    return {
-      scrollToCommentInEditor,
-      resolveComment,
-      unresolveComment,
-      deleteComment
-    };
-  },
   mounted(){
     this.newComment = {...this.comment}.comment
   },
@@ -329,11 +316,8 @@ export default {
         return false;
       }
       
-      // Use the utility function to check if selected text is still present
-      // Note: This would need to be called with the editor view, but for now we'll use a fallback
-      // In a real implementation, you'd want to pass the editor view to this component
-      // For now, we'll use the simple string includes as a fallback
-      return this.$store.state.selected.data.content.includes(this.originalText);
+      const canShow = this.$store.state.selected.data.content.includes(this.originalText);
+      return canShow;
     }
   },
   methods:{
@@ -346,34 +330,13 @@ export default {
       this.editing = true;
       // Unresolve comment when user starts editing
       if (this.comment.resolved) {
-        await this.unresolveCommentLocal();
+        this.$eventStore.emitEvent('un-resolve-comment', {commentId: this.comment.id})
       }
     },
 
     async updateComment (id,updatedComment) {
       await this.$store.dispatch('updateComment',{id,updatedComment})
       this.resetForm()
-    },
-    
-    async deleteCommentLocal (id) {
-      // Use the injected deleteComment function
-      if (this.deleteComment) {
-        await this.deleteComment(id);
-      } else {
-        console.warn('deleteCommentLocal: No deleteComment function injected');
-      }
-    },
-
-    async unresolveCommentLocal() {
-      try {
-        if (this.unresolveComment) {
-          await this.unresolveComment(this.comment.id);
-        } else {
-          console.warn('unresolveCommentLocal: No unresolveComment function injected');
-        }
-      } catch (error) {
-        console.error('Error unresolving comment:', error);
-      }
     },
 
     toggleOriginalTextExpanded() {
@@ -406,11 +369,8 @@ export default {
       }
     },
 
-    handleCardClick(event) {
-      // Use the injected scroll function directly
-      if (this.scrollToCommentInEditor) {
-        this.scrollToCommentInEditor(this.comment.id);
-      }
+    handleCardClick() {
+      this.$eventStore.emitEvent('scroll-to-comment', {commentId: this.comment.id})
     },
 
     getSeverityColor(severity) {
@@ -426,22 +386,12 @@ export default {
       }
     },
 
-    acceptSuggestion() {
-      const selectedText = this.comment?.selectedText || this.originalText || '';
-      
-      if (!this.comment.suggestion || !selectedText) {
-        console.error('Cannot accept suggestion: missing suggestion or problematic text', {
-          suggestion: this.comment.suggestion,
-          selectedText: selectedText
-        });
-        return;
-      }
-
-      // Emit event to parent with the suggestion data
-      this.$emit('accept-suggestion', {
+    async acceptSuggestion() {
+      // Emit event to event store for processing by DocumentCreate component
+      this.$eventStore.emitEvent('accept-suggestion', {
         commentId: this.comment.id,
+        selectedText: this.comment?.selectedText || this.originalText || '',
         suggestion: this.comment.suggestion,
-        editorPosition: this.comment.editorID
       });
     },
   }

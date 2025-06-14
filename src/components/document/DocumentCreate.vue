@@ -51,8 +51,6 @@
         :disabled="isDisabled"
         :document="document"
         :editor-ref="$refs.milkdownEditor"
-        @update-document-content="updateDocumentContent"
-        @refresh-editor="_refreshEditor"
       />
     </div>
 
@@ -64,8 +62,6 @@
         :doc-type="'document'"
         ref="commentComponent"
         @scroll-to-comment="openDrawerAndScrollToComment"
-        @refresh-editor-decorations="_refreshEditor"
-        @accept-suggestion="handleAcceptSuggestion"
       />
     </div>
   </v-navigation-drawer>
@@ -207,6 +203,8 @@ import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
 import { showAlert, copyToClipboard, activateEditor, placeCursorAtEnd, debounce, getRandomItem } from "../../utils/uiHelpers";
+import { useEventWatcher } from "../../composables/useEventWatcher";
+import { useComments } from "../../composables/comments";
 
 export default {
   components: {
@@ -290,15 +288,9 @@ export default {
     isGenPanelExpanded: null,
     editorMounted: false,
     showEditor: true,
+    eventWatcher: null,
+    previousVersion: null,
   }),
-  provide() {
-    return {
-      resolveComment: this.resolveComment.bind(this),
-      unresolveComment: this.unresolveComment.bind(this),
-      deleteComment: this.deleteComment.bind(this),
-      scrollToCommentInEditor: this.scrollToCommentInEditor.bind(this),
-    };
-  },
   async created() {
     this.isLoading = true;
     // if (this.$route.query.type){
@@ -311,6 +303,36 @@ export default {
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     this.getRandomPlaceholder();
+    
+    // Set up comments composable
+    const { handleAcceptSuggestion } = useComments(this.$store, this.$eventStore);
+    
+    this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
+      // Don't process content replacement when switching between versions
+      const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+      const wasViewingVersion = this.previousVersion !== undefined && this.previousVersion !== 'live';
+      
+      // If we're switching from version to no version or vice versa, skip the replacement
+      if (isViewingVersion !== wasViewingVersion) {
+        console.log('Skipping content replacement due to version change');
+        return;
+      }
+      
+      const content = this.document.data.content;
+      const newContent = content.replace(payload.contentfrom, payload.contentto);
+      this.document.data.content = newContent;
+      this.editorContent = newContent;
+      this.isEditorModified = true;
+      this.editorKey++;
+    });
+
+    // Set up event watcher for accept-suggestion events
+    this.eventWatcher = useEventWatcher(this.$eventStore, 'accept-suggestion', (payload) => {
+      handleAcceptSuggestion(payload, {
+        editorContent: this.editorContent,
+      });
+    });
+
   },
   
   mounted() {
@@ -504,38 +526,6 @@ export default {
       }
     },
 
-    async handleAcceptSuggestion(suggestionData) {
-      if (this.$refs.reviewPanel) {
-        const result = await this.$refs.reviewPanel.handleAcceptSuggestion(suggestionData);
-        
-        // Handle editor refresh if needed (only if we didn't navigate away)
-        if (result?.needsEditorRefresh && !result?.navigatedToLive && !this.$vuetify.display.mobile) {
-          this.editorKey++;
-        }
-        
-        // Refresh suggestions after successful application to prevent stale references
-        if (result?.shouldRefreshSuggestions && result?.success) {
-          this.$nextTick(async () => {
-            this._refreshEditor();
-            
-            // Clean up any outdated suggestions that might reference old text
-            if (this.$refs.reviewPanel) {
-              await this.$refs.reviewPanel.cleanupOutdatedSuggestions(this.document.data.content);
-            }
-            
-          });
-        }
-      }
-    },
-
-    _refreshEditor() {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.refreshCommentDecorations();
-        }
-      });
-    },
-
     toggleFavorite() {
       this.$store.commit("toggleFavorite", this.document.id);
       this.isFavorite = !this.isFavorite;
@@ -610,49 +600,6 @@ export default {
       });
     },
 
-    // Method to scroll to a comment position in the editor when clicked from sidebar
-    scrollToCommentInEditor(commentId) {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.scrollToComment(commentId);
-        }
-      });
-    },
-
-    // Method to resolve a comment and remove its mark from the editor
-    async resolveComment(commentId) {
-      await this.$refs.milkdownEditor.resolveComment(commentId);
-    },
-
-    async unresolveComment(commentId) {
-      await this.$refs.milkdownEditor.unresolveComment(commentId);
-    },
-
-    // Method to delete a comment and remove its mark from the editor
-    async deleteComment(commentId) {
-      try {
-        // Use the MilkdownEditor's deleteComment method
-        if (this.$refs.milkdownEditor) {
-          await this.$refs.milkdownEditor.deleteComment(commentId);
-        } else {
-          console.warn('deleteComment: MilkdownEditor not available');
-        }
-      } catch (error) {
-        console.error('Error deleting comment:', error);
-        this.$store.commit('alert', {
-          type: 'error',
-          message: 'Failed to delete comment',
-          autoClear: true
-        });
-      }
-    },
-
-    updateDocumentContent(content) {
-      this.document.data.content = content;
-      this.editorContent = content;
-      this.isEditorModified = true;
-      this.editorKey++;
-    },
 
   },
   computed: {
@@ -744,13 +691,13 @@ export default {
         
         try {
           // Skip heavy operations if only query params changed (internal update)
-          if (from && to.path === from.path && to.params.id === from.params.id) {
+          if (from && to.path === from.path && to.params.id === from.params.id && to.query.v === from.query.v) {
             console.log('Query-only route change, skipping reload');
             return;
           }
 
           // Skip if navigating to the same document we already have loaded
-          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query.v) {
+          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query && to.query.v === from.query.v) {
             console.log('Navigating to same document, skipping reload');
             return;
           }
@@ -762,6 +709,9 @@ export default {
           if (to === from) {
             return;
           }
+          
+          // Track the previous version before making changes
+          this.previousVersion = this.$route.query.v;
           
           if (this.$route.params.id && this.$route.query.v) {
             // Viewing a specific version - always fetch
@@ -875,6 +825,11 @@ export default {
     // Reset review panel state
     if (this.$refs.reviewPanel) {
       this.$refs.reviewPanel.resetState();
+    }
+    
+    // Clean up event watcher
+    if (this.eventWatcher) {
+      this.eventWatcher = null;
     }
     
     // Force the editor to be unmounted cleanly

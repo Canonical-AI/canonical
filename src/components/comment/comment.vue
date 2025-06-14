@@ -31,7 +31,7 @@
             <commentCard 
               :comment="event.value"
               :ref="`comment-${event.value.id}`"
-              @accept-suggestion="$emit('accept-suggestion', $event)"
+
             />
             <!-- Render child comments with indentation -->
             <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
@@ -41,7 +41,7 @@
                 :comment="child"
                 :ref="`comment-${child.id}`"
                 class="mb-2"
-                @accept-suggestion="$emit('accept-suggestion', $event)"
+
               />
             </div>
           </div>
@@ -92,7 +92,7 @@ import { inject } from 'vue';
 
 
 export default {
-  emits: [ 'accept-suggestion'],
+
   components: {
     commentCard
   },
@@ -182,12 +182,6 @@ export default {
         }
       }
     },
-    setup() {
-      const scrollToCommentInEditor = inject('scrollToCommentInEditor');
-      return {
-        scrollToCommentInEditor
-      };
-    },
     methods: {
       async addComment () {
         await this.$refs.form.validate();
@@ -199,17 +193,6 @@ export default {
           this.$store.dispatch('addComment', commentData);
           this.newComment = '';
         }
-      },
-      async editComment (id,updatedComment) {
-        await this.$refs.form.validate();
-        if (this.valid) {
-          await this.$store.dispatch('updateComment', {id, updatedComment});
-        }
-        this.$refs.form.resetValidation();
-      },
-      async deleteComment (id) {
-        await this.$store.dispatch('deleteComment', id)
-        this.$refs.form.resetValidation();
       },
       resetForm () {
         this.$refs.form.reset()

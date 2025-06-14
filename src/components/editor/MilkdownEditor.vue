@@ -32,6 +32,7 @@ import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
 import { commentMark, resolveComment, unresolveComment, deleteComment } from './comment';
 import CustomToolbar from './CustomToolbar.vue';
+import { useEventWatcher } from '../../composables/useEventWatcher';
 
 export default {
     name: "MilkdownEditor",
@@ -229,35 +230,6 @@ export default {
             }
         },
 
-        // Method to resolve a comment and remove its mark from the editor
-        async resolveComment(commentId) {
-            if (!this.get || this.loading) return;
-            
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    resolveComment(view, commentId);
-                });
-        },
-
-        async unresolveComment(commentId) {
-            if (!this.get || this.loading) return;
-
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    unresolveComment(view, commentId);
-                });
-
-        },
-
-        // Method to delete a comment and remove its mark from the editor
-        async deleteComment(commentId) {
-            if (!this.get || this.loading) return;
-
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    deleteComment(view, commentId);
-                });
-        },
 
         // Method to scroll to a specific comment position in the editor
         scrollToComment(commentId) {
@@ -337,23 +309,6 @@ export default {
             }
         },
 
-        // Method to refresh comment decorations in the editor
-        refreshCommentDecorations() {
-            if (!this.get || this.loading) {
-                console.warn('Editor not ready for comment decoration refresh');
-                return;
-            }
-
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    // Force a re-render of the editor to update comment decorations
-                    view.dispatch(view.state.tr);
-                });
-            } catch (error) {
-                console.warn('Error refreshing comment decorations:', error);
-            }
-        },
 
         // Method to get the editor view for external use (e.g., AI comment creation)
         getEditorView() {
@@ -376,7 +331,7 @@ export default {
 
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['createComment', 'refreshCommentDecorations', 'scrollToComment', 'resolveComment', 'unresolveComment', 'deleteComment', 'getEditorView'],
+    expose: ['createComment',, 'getEditorView'],
     computed: {
         isUserLoggedIn() {
             return this.$store.getters.isUserLoggedIn;
@@ -434,6 +389,41 @@ export default {
         if (this.modelValue) {
             this.processContentBeforeRender(this.modelValue);
         }
+
+        // Set up event watcher for resolve-comment events
+        this.resolveCommentWatcher = useEventWatcher(this.$eventStore, 'resolve-comment', (payload) => {
+            if (!this.get || this.loading) return;
+            
+            this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    resolveComment(view, payload.commentId);
+                });
+        });
+
+        // Set up event watcher for add events
+        this.unresolveCommentWatcher = useEventWatcher(this.$eventStore, 'un-resolve-comment', (payload) => {
+            if (!this.get || this.loading) return;
+            
+            this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    unresolveComment(view, payload.commentId);
+                });
+        });
+
+        // Set up event watcher for un-resolve-comment events
+        this.deleteCommentWatcher = useEventWatcher(this.$eventStore, 'delete-comment', (payload) => {
+            if (!this.get || this.loading) return;
+            
+            this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    deleteComment(view, payload.commentId);
+                });
+        });
+
+        this.scrollToCommentWatcher = useEventWatcher(this.$eventStore, 'scroll-to-comment', (payload) => {
+            this.scrollToComment(payload.commentId);
+        });
+
     },
     mounted() {
         this.$nextTick(() => {
@@ -443,6 +433,19 @@ export default {
     beforeUnmount() {
         if (this.editorElement && this.commentClickHandler) {
             this.editorElement.removeEventListener('comment-clicked', this.commentClickHandler);
+        }
+
+        if (this.resolveCommentWatcher) {
+            this.resolveCommentWatcher.stop();
+        }
+        if (this.unresolveCommentWatcher) {
+            this.unresolveCommentWatcher.stop();
+        }
+        if (this.deleteCommentWatcher) {    
+            this.deleteCommentWatcher.stop();
+        }
+        if (this.scrollToCommentWatcher) {
+            this.scrollToCommentWatcher.stop();
         }
     }
 };

@@ -68,8 +68,8 @@ const store = createStore({
       filter: "",
       templates:[],
       favorites: [],
-      comments: [],
       tasks: [],
+      undoStore: [],
     }
   },
   getters: {
@@ -112,7 +112,6 @@ const store = createStore({
       return state.selected.comments
         .sort((a, b) => a.date.createDate - b.date.createDate);
     },
-    
     // Filter comments by version - shows all comments for 'live' version, or only version-specific comments
     filteredCommentsByVersion: (state) => {
       if (!state.selected.comments) return [];
@@ -130,7 +129,6 @@ const store = createStore({
         .filter(comment => comment.documentVersion === currentVersion)
         .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
     },
-
     // Get threaded comments organized as parent-child structure
     threadedCommentsByVersion: (state, getters) => {
       const filteredComments = getters.filteredCommentsByVersion;
@@ -287,7 +285,6 @@ const store = createStore({
       return id;
     },
 
-
     async renameChat({state, commit}, {id, newName}){
       try {
         await ChatHistory.updateChatField(id, 'name', newName);
@@ -306,6 +303,7 @@ const store = createStore({
       commit('updateCommentInState', {id, values: data});
       return updatedCommentData;
     },
+
 
 
   },
@@ -631,7 +629,13 @@ const store = createStore({
       }
     },
 
+    addUndo(state, payload){
+      state.undoStore.push(payload);
+    },
 
+    clearUndo(state){
+      state.undoStore = [];
+    },
   }
 });
 
