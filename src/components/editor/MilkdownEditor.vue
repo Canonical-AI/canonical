@@ -30,7 +30,7 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { commentMark, removeCommentMarkById, addCommentMarkToText} from './comment';
+import { commentMark, removeCommentMarkById, addCommentMarkToText, updateCommentMarkResolved} from './comment';
 import CustomToolbar from './CustomToolbar.vue';
 
 export default {
@@ -237,7 +237,7 @@ export default {
             }
 
             try {
-                // Update the comment in the database
+                // Update the comment in the database first
                 await this.$store.dispatch('updateCommentData', {
                     id: commentId,
                     data: { resolved: true }
@@ -247,10 +247,13 @@ export default {
                 await this.$nextTick();
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Remove the comment mark from the editor using the editor context
+                // Update the comment mark to resolved state
                 this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    removeCommentMarkById(view, commentId);
+                    const success = updateCommentMarkResolved(view, commentId, true);
+                    if (!success) {
+                        console.warn('resolveComment: Failed to update comment mark to resolved state');
+                    }
                 });
                 
                 this.$store.commit('alert', {
@@ -268,7 +271,7 @@ export default {
             }
         },
 
-        async unresolveComment(commentId, textToMark) {
+        async unresolveComment(commentId) {
             if (!this.get || this.loading) {
                 return;
             }
@@ -284,15 +287,14 @@ export default {
                 await this.$nextTick();
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Only add comment mark if we have text to mark
-                if (textToMark && textToMark.trim()) {
-                    this.get().action((ctx) => {
-                        const view = ctx.get(editorViewCtx);
-                        addCommentMarkToText(view, textToMark, commentId);
-                    });
-                } else {
-                    console.warn('unresolveComment: No text provided to mark for comment', commentId);
-                }
+                // Update the comment mark to unresolved state
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const success = updateCommentMarkResolved(view, commentId, false);
+                    if (!success) {
+                        console.warn('unresolveComment: Failed to update comment mark to unresolved state');
+                    }
+                });
                 
                 this.$store.commit('alert', {
                     type: 'success',

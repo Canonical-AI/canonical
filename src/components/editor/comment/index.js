@@ -6,22 +6,25 @@ export const commentMark = $mark('comment', (ctx) => {
   return {
     inclusive: false,
     attrs: { 
-      id: { default: null }
+      id: { default: null },
+      resolved: { default: false }
     },
     parseDOM: [
       {
         tag: 'span[data-comment-id]',
         getAttrs: (dom) => ({
           id: dom.getAttribute('data-comment-id'),
+          resolved: dom.getAttribute('data-resolved') === 'true'
         }),
       },
     ],
     toDOM: (mark) => [
       'span',
       {
-        class: 'comment-mark',
+        class: `comment-mark ${mark.attrs.resolved ? 'comment-resolved' : ''}`,
         ref: `comment-mark-${mark.attrs.id}`,
         'data-comment-id': mark.attrs.id,
+        'data-resolved': mark.attrs.resolved.toString(),
       },
       0,
     ],
@@ -32,7 +35,8 @@ export const commentMark = $mark('comment', (ctx) => {
       },
       runner: (state, node, markType) => {
         const id = node.attributes?.id || '';
-        state.openMark(markType, {id});
+        const resolved = node.attributes?.resolved === 'true';
+        state.openMark(markType, {id, resolved});
         state.next(node.children[0]); // recurse into text inside
         state.closeMark(markType);
       },
@@ -43,7 +47,8 @@ export const commentMark = $mark('comment', (ctx) => {
         state.withMark(mark, 'textDirective', undefined, { 
           name: 'comment', 
           attributes: { 
-            id: mark.attrs.id 
+            id: mark.attrs.id,
+            resolved: mark.attrs.resolved.toString()
           } });
       },
     },
@@ -64,29 +69,40 @@ export const commentMark = $mark('comment', (ctx) => {
  * @returns {boolean} - True if comment mark was successfully added, false otherwise
  */
 export const addComment = async (editorView, textToMark, commentContent, startPos = null, parentId = null, versionId = null, aiGenerated = false) => {
-  if (!editorView || !textToMark || !commentContent) {
-    console.error('addCommentMarkToText: Missing required parameters');
+  if (!editorView || !commentContent) {
+    console.error('addComment: Missing required parameters');
     return false;
   }
   
   const commentData = {
     comment: commentContent,
     documentVersion: versionId || (store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion),
-    selectedText: textToMark,
+    selectedText: textToMark || '',
     parentId: parentId || null,
     resolved: false,
     aiGenerated: aiGenerated || false
   };
 
-  const comment = await store.dispatch('addComment', commentData);
+  try {
+    const comment = await store.dispatch('addComment', commentData);
 
-  // Create and apply the comment mark with the database-generated ID
-  const success = await addCommentMarkToText(editorView, textToMark, comment.id, startPos)
-  return success;
+    // Try to add the comment mark to text, but don't fail if it doesn't work
+    if (textToMark || startPos !== null) {
+      const markSuccess = await addCommentMarkToText(editorView, textToMark, comment.id, startPos, comment.resolved);
+      if (!markSuccess) {
+        console.warn('addComment: Failed to add comment mark to text, but comment was created successfully');
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('addComment: Error creating comment:', error);
+    return false;
+  }
 }
 
-export async function addCommentMarkToText(editorView, textToMark, commentId, startPos = null) {
-  if (!editorView || !textToMark || !commentId) {
+export async function addCommentMarkToText(editorView, textToMark, commentId, startPos = null, resolved = false) {
+  if (!editorView || !commentId) {
     console.error('addCommentMarkToText: Missing required parameters');
     return false;
   }
@@ -103,45 +119,102 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
   let from = startPos;
   let to = startPos;
 
-  // If startPos is not provided, search for the text in the document
-  if (startPos === null) {
-    const docText = state.doc.textContent;
-    const textIndex = docText.indexOf(textToMark);
-    
-    if (textIndex === -1) {
-      console.error(`addCommentMarkToText: Text "${textToMark}" not found in document`);
-      return false;
+  // If startPos is provided, use it directly
+  if (startPos !== null) {
+    to = startPos + (textToMark ? textToMark.length : 0);
+  } else if (textToMark) {
+    // Try to find the text with flexible matching
+    const found = findTextInDocument(state, textToMark);
+    if (found) {
+      from = found.from;
+      to = found.to;
+    } else {
+      console.warn(`addCommentMarkToText: Could not find text "${textToMark}" in document. Comment will be created without text marking.`);
+      // Return true to allow comment creation without text marking
+      return true;
     }
-
-    // Convert character index to position
-    from = state.doc.resolve(textIndex).pos;
-    to = state.doc.resolve(textIndex + textToMark.length).pos;
   } else {
-    // Use provided startPos and calculate end position
-    to = startPos + textToMark.length;
-  }
-
-  // Verify the text at the position matches what we expect
-  const actualText = state.doc.textBetween(from, to);
-  if (actualText !== textToMark) {
-    console.error(`addCommentMarkToText: Text mismatch. Expected: "${textToMark}", Found: "${actualText}"`);
-    return false;
+    console.warn('addCommentMarkToText: No text to mark and no position provided');
+    return true;
   }
 
   // Check if there's already a comment mark in this range
   if (state.doc.rangeHasMark(from, to, commentMarkType)) {
-    console.warn(`addCommentMarkToText: Comment mark already exists for text "${textToMark}"`);
+    console.warn(`addCommentMarkToText: Comment mark already exists for range ${from}-${to}`);
     return false;
   }
 
-  const commentMark = commentMarkType.create({ id: commentId });
+  const commentMark = commentMarkType.create({ id: commentId, resolved });
   const transaction = state.tr.addMark(from, to, commentMark);
 
   if (dispatch) {
     dispatch(transaction);
   }
 
+  console.log(`addCommentMarkToText: Successfully added comment mark for ID "${commentId}" at position ${from}-${to} (resolved: ${resolved})`);
   return true;
+}
+
+/**
+ * Helper function to find text in document with flexible matching
+ * @param {Object} state - ProseMirror state
+ * @param {string} searchText - Text to search for
+ * @returns {Object|null} - {from, to} positions or null if not found
+ */
+function findTextInDocument(state, searchText) {
+  if (!searchText || !searchText.trim()) {
+    return null;
+  }
+
+  const docText = state.doc.textContent;
+  const normalizedSearchText = normalizeText(searchText);
+  const normalizedDocText = normalizeText(docText);
+
+  // Try exact match first
+  let index = normalizedDocText.indexOf(normalizedSearchText);
+  if (index !== -1) {
+    const from = state.doc.resolve(index).pos;
+    const to = state.doc.resolve(index + normalizedSearchText.length).pos;
+    return { from, to };
+  }
+
+  // Try fuzzy matching (ignore case and extra whitespace)
+  const fuzzySearchText = normalizedSearchText.toLowerCase().trim();
+  const fuzzyDocText = normalizedDocText.toLowerCase();
+  
+  index = fuzzyDocText.indexOf(fuzzySearchText);
+  if (index !== -1) {
+    const from = state.doc.resolve(index).pos;
+    const to = state.doc.resolve(index + fuzzySearchText.length).pos;
+    return { from, to };
+  }
+
+  // Try finding the longest common substring
+  const words = searchText.split(/\s+/).filter(word => word.length > 3);
+  for (const word of words) {
+    const normalizedWord = normalizeText(word);
+    index = normalizedDocText.indexOf(normalizedWord);
+    if (index !== -1) {
+      const from = state.doc.resolve(index).pos;
+      const to = state.doc.resolve(index + normalizedWord.length).pos;
+      console.log(`addCommentMarkToText: Found partial match for word "${word}" at position ${from}-${to}`);
+      return { from, to };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Helper function to normalize text for comparison
+ * @param {string} text - Text to normalize
+ * @returns {string} - Normalized text
+ */
+function normalizeText(text) {
+  return text
+    .replace(/\s+/g, ' ') // Replace multiple whitespace with single space
+    .replace(/[\r\n\t]/g, ' ') // Replace line breaks and tabs with spaces
+    .trim();
 }
 
 /**
@@ -287,6 +360,69 @@ export function scrollToCommentInEditor(commentId, editorView = null) {
     return false;
 }
 
+/**
+ * Utility function to update the resolved state of a comment mark
+ * 
+ * @param {Object} editorView - The ProseMirror editor view instance
+ * @param {string} commentId - The comment ID to update
+ * @param {boolean} resolved - The new resolved state
+ * @returns {boolean} - True if comment mark was successfully updated, false otherwise
+ */
+export function updateCommentMarkResolved(editorView, commentId, resolved) {
+  if (!editorView || !commentId) {
+    console.error('updateCommentMarkResolved: Missing required parameters');
+    return false;
+  }
+
+  const { state, dispatch } = editorView;
+  const { schema } = state;
+  const commentMarkType = schema.marks.comment;
+
+  if (!commentMarkType) {
+    console.error('updateCommentMarkResolved: Comment mark type not found in schema');
+    return false;
+  }
+
+  try {
+    // Find all ranges that contain the target mark
+    const ranges = [];
+    state.doc.descendants((node, pos) => {
+      if (!node.isText) return;
+      node.marks.forEach(mark => {
+        if (mark.type === commentMarkType && mark.attrs.id === commentId) {
+          ranges.push({ from: pos, to: pos + node.nodeSize });
+        }
+      });
+    });
+
+    if (ranges.length === 0) {
+      console.warn(`updateCommentMarkResolved: No comment mark found with ID "${commentId}"`);
+      return false;
+    }
+
+    // Update marks using mapping so every subsequent range is remapped
+    let tr = state.tr;
+    ranges.forEach(({ from, to }) => {
+      const mappedFrom = tr.mapping.map(from);
+      const mappedTo = tr.mapping.map(to);
+      
+      // Remove the old mark
+      tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
+      
+      // Add the new mark with updated resolved state
+      const newCommentMark = commentMarkType.create({ id: commentId, resolved });
+      tr = tr.addMark(mappedFrom, mappedTo, newCommentMark);
+    });
+
+    dispatch(tr);
+    console.log(`updateCommentMarkResolved: Successfully updated comment mark with ID "${commentId}" to resolved: ${resolved}`);
+    return true;
+  } catch (error) {
+    console.error('updateCommentMarkResolved: Error applying transaction:', error);
+    return false;
+  }
+}
+
 // Add CSS styles for comment marks
 const style = document.createElement('style');
 style.textContent = `
@@ -301,6 +437,17 @@ style.textContent = `
   
   .comment-mark:hover {
     background-color: rgba(255, 255, 0, 0.35) !important;
+  }
+  
+  .comment-mark.comment-resolved {
+    background-color: rgba(76, 175, 80, 0.15) !important;
+    border: 1px solid rgba(76, 175, 80, 0.40) !important;
+    opacity: 0.7 !important;
+    text-decoration: line-through !important;
+  }
+  
+  .comment-mark.comment-resolved:hover {
+    background-color: rgba(76, 175, 80, 0.25) !important;
   }
   
   .comment-highlight {

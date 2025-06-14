@@ -624,8 +624,8 @@ export default {
       await this.$refs.milkdownEditor.resolveComment(commentId);
     },
 
-    async unresolveComment(commentId, textToMark) {
-      await this.$refs.milkdownEditor.unresolveComment(commentId, textToMark);
+    async unresolveComment(commentId) {
+      await this.$refs.milkdownEditor.unresolveComment(commentId);
     },
 
     // Method to delete a comment and remove its mark from the editor

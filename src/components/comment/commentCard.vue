@@ -120,7 +120,7 @@
         </v-card-subtitle>
 
         <!-- Original text display for comments with editorID -->
-        <div v-if="comment.editorID?.selectedText" class="text-caption text-medium-emphasis mx-4 mb-2">
+        <div v-if="comment.selectedText" class="text-caption text-medium-emphasis mx-4 mb-2">
           <div class="original-text pa-2 bg-surface-variant rounded d-flex align-center">
             <span class="flex-grow-1">"{{ displayedOriginalText }}"</span>
             <v-btn 
@@ -309,7 +309,7 @@ export default {
       return foundUser || { displayName: 'User not found' }
     },
     originalText() {
-      return this.comment?.editorID?.selectedText || '';
+      return this.comment?.selectedText || '';
     },
     shouldShowExpandButton() {
       return this.originalText.length > this.maxOriginalTextLength;
@@ -367,17 +367,7 @@ export default {
     async unresolveCommentLocal() {
       try {
         if (this.unresolveComment) {
-          // Get the selected text with proper null checking
-          const selectedText = this.comment?.editorID?.selectedText || this.originalText || '';
-          
-          if (!selectedText) {
-            console.warn('unresolveCommentLocal: No selected text available for comment', this.comment.id);
-            // Still try to unresolve without text marking
-            await this.unresolveComment(this.comment.id, '');
-            return;
-          }
-          
-          await this.unresolveComment(this.comment.id, selectedText);
+          await this.unresolveComment(this.comment.id);
         } else {
           console.warn('unresolveCommentLocal: No unresolveComment function injected');
         }
@@ -437,7 +427,7 @@ export default {
     },
 
     acceptSuggestion() {
-      const selectedText = this.comment?.editorID?.selectedText || this.originalText || '';
+      const selectedText = this.comment?.selectedText || this.originalText || '';
       
       if (!this.comment.suggestion || !selectedText) {
         console.error('Cannot accept suggestion: missing suggestion or problematic text', {
