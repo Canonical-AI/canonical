@@ -217,6 +217,73 @@ function normalizeText(text) {
     .trim();
 }
 
+export async function resolveComment(editorView, commentId) {
+  try{
+    await store.dispatch('updateCommentData', {
+      id: commentId,
+      data: { resolved: true }
+    });
+
+    // Add a small delay to ensure the editor state is stable
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    updateCommentMarkResolved(editorView, commentId, true);
+
+    store.commit('alert', {
+        type: 'success',
+        message: 'Comment resolved',
+        autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('resolveComment: Error updating comment mark:', error);
+    return false;
+  }
+}
+
+export async function unresolveComment(editorView, commentId) {
+  try{
+    await store.dispatch('updateCommentData', {
+      id: commentId,
+      data: { resolved: false }
+    });
+
+    // Add a small delay to ensure the editor state is stable
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    updateCommentMarkResolved(editorView, commentId, false);
+
+    store.commit('alert', {
+        type: 'success',
+        message: 'Comment unresolved',
+        autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('unresolveComment: Error updating comment mark:', error);
+    return false;
+  }
+}
+
+export async function deleteComment(editorView, commentId) {
+  try{
+    await store.dispatch('deleteComment', commentId);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    removeCommentMarkById(editorView, commentId);
+    store.commit('alert', {
+      type: 'success',
+      message: 'Comment deleted',
+      autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('deleteComment: Error deleting comment:', error);
+    return false;
+  }
+}
+
+
+
 /**
  * Utility function to remove a comment mark from text in the editor
  * 
@@ -415,7 +482,6 @@ export function updateCommentMarkResolved(editorView, commentId, resolved) {
     });
 
     dispatch(tr);
-    console.log(`updateCommentMarkResolved: Successfully updated comment mark with ID "${commentId}" to resolved: ${resolved}`);
     return true;
   } catch (error) {
     console.error('updateCommentMarkResolved: Error applying transaction:', error);

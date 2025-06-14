@@ -30,7 +30,7 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { commentMark, removeCommentMarkById, addCommentMarkToText, updateCommentMarkResolved} from './comment';
+import { commentMark, removeCommentMarkById, updateCommentMarkResolved, resolveComment, unresolveComment, deleteComment  } from './comment';
 import CustomToolbar from './CustomToolbar.vue';
 
 export default {
@@ -232,118 +232,32 @@ export default {
 
         // Method to resolve a comment and remove its mark from the editor
         async resolveComment(commentId) {
-            if (!this.get || this.loading) {
-                return;
-            }
-
-            try {
-                // Update the comment in the database first
-                await this.$store.dispatch('updateCommentData', {
-                    id: commentId,
-                    data: { resolved: true }
-                });
-                
-                // Add a small delay to ensure the editor state is stable
-                await this.$nextTick();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Update the comment mark to resolved state
-                this.get().action((ctx) => {
+            if (!this.get || this.loading) return;
+            
+            this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    const success = updateCommentMarkResolved(view, commentId, true);
-                    if (!success) {
-                        console.warn('resolveComment: Failed to update comment mark to resolved state');
-                    }
+                    resolveComment(view, commentId);
                 });
-                
-                this.$store.commit('alert', {
-                    type: 'success',
-                    message: 'Comment resolved',
-                    autoClear: true
-                });
-            } catch (error) {
-                console.error('Error resolving comment:', error);
-                this.$store.commit('alert', {
-                    type: 'error',
-                    message: 'Failed to resolve comment',
-                    autoClear: true
-                });
-            }
         },
 
         async unresolveComment(commentId) {
-            if (!this.get || this.loading) {
-                return;
-            }
+            if (!this.get || this.loading) return;
 
-            try {
-                // Update the comment in the database first
-                await this.$store.dispatch('updateCommentData', {
-                    id: commentId,
-                    data: { resolved: false }
-                });
-                
-                // Add a small delay to ensure the editor state is stable
-                await this.$nextTick();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Update the comment mark to unresolved state
-                this.get().action((ctx) => {
+            this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    const success = updateCommentMarkResolved(view, commentId, false);
-                    if (!success) {
-                        console.warn('unresolveComment: Failed to update comment mark to unresolved state');
-                    }
+                    unresolveComment(view, commentId);
                 });
-                
-                this.$store.commit('alert', {
-                    type: 'success',
-                    message: 'Comment unresolved',
-                    autoClear: true
-                });
-            } catch (error) {
-                console.error('Error unresolving comment:', error);
-                this.$store.commit('alert', {
-                    type: 'error',
-                    message: 'Failed to unresolve comment',
-                    autoClear: true
-                });
-            }
+
         },
 
         // Method to delete a comment and remove its mark from the editor
         async deleteComment(commentId) {
-            if (!this.get || this.loading) {
-                return;
-            }
-            
-            try {
-                // Add a small delay to ensure the editor state is stable
-                await this.$nextTick();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                // Remove the comment mark from the editor first using the editor context
-                this.get().action((ctx) => {
+            if (!this.get || this.loading) return;
+
+            this.get().action((ctx) => {
                     const view = ctx.get(editorViewCtx);
-                    removeCommentMarkById(view, commentId);
+                    deleteComment(view, commentId);
                 });
-                
-                // Delete the comment from the database
-                await this.$store.dispatch('deleteComment', commentId);
-                
-                this.$store.commit('alert', {
-                    type: 'success',
-                    message: 'Comment deleted',
-                    autoClear: true
-                });
-            } catch (error) {
-                console.error('Error deleting comment:', error);
-                this.$store.commit('alert', {
-                    type: 'error',
-                    message: 'Failed to delete comment',
-                    autoClear: true
-                });
-            }
         },
 
         // Method to scroll to a specific comment position in the editor
