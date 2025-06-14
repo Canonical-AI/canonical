@@ -30,7 +30,7 @@ import { Plugin } from 'prosemirror-state';
 
 import MermaidComponent from './MermaidComponent.vue'
 import { diagram , diagramSchema} from '@milkdown/plugin-diagram'
-import { commentMark, removeCommentMarkById, updateCommentMarkResolved, resolveComment, unresolveComment, deleteComment  } from './comment';
+import { commentMark, resolveComment, unresolveComment, deleteComment } from './comment';
 import CustomToolbar from './CustomToolbar.vue';
 
 export default {
@@ -146,7 +146,6 @@ export default {
                 .use(task.plugins)
                 .use(diagram)
                 .use(commentMark)
-
                 .use($view(diagramSchema.node, () => nodeViewFactory({
                     component: MermaidComponent,
                     key: 'mermaid-component',
@@ -395,20 +394,6 @@ export default {
         '$store.state.selected.currentVersion': {
             handler() {
                 //TODO: RE-IMPLEMENT COMMENT FUNCTIONS if version changes
-            },
-            immediate: true
-        },
-
-        // Watch for editor readiness and set the editor view in store
-        loading: {
-            handler(newVal) {
-                if (!newVal && this.get) {
-                    // Editor is ready, set the view in store
-                    this.get().action((ctx) => {
-                        const view = ctx.get(editorViewCtx);
-                        this.$store.commit('setEditorView', view);
-                    });
-                }
             },
             immediate: true
         },

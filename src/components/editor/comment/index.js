@@ -4,7 +4,7 @@ import store from '../../../store';
 
 export const commentMark = $mark('comment', (ctx) => {
   return {
-    inclusive: false,
+    inclusive: true,
     attrs: { 
       id: { default: null },
       resolved: { default: false }
@@ -12,19 +12,24 @@ export const commentMark = $mark('comment', (ctx) => {
     parseDOM: [
       {
         tag: 'span[data-comment-id]',
-        getAttrs: (dom) => ({
-          id: dom.getAttribute('data-comment-id'),
-          resolved: dom.getAttribute('data-resolved') === 'true'
-        }),
+        getAttrs: (dom) => {
+          if (!(dom instanceof HTMLElement))
+            throw expectDomTypeError(dom)
+
+          return {
+            id: dom?.getAttribute('data-comment-id') ?? null,
+            resolved: dom?.getAttribute('data-resolved') === 'true' ?? false
+          }
+        },
       },
     ],
     toDOM: (mark) => [
       'span',
       {
-        class: `comment-mark ${mark.attrs.resolved ? 'comment-resolved' : ''}`,
-        ref: `comment-mark-${mark.attrs.id}`,
-        'data-comment-id': mark.attrs.id,
-        'data-resolved': mark.attrs.resolved.toString(),
+        class: `comment-mark ${mark?.attrs?.resolved ? 'comment-resolved' : ''}`,
+        ref: `comment-mark-${mark?.attrs?.id}`,
+        'data-comment-id': mark?.attrs?.id,
+        'data-resolved': mark?.attrs?.resolved?.toString(),
       },
       0,
     ],

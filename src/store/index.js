@@ -70,7 +70,6 @@ const store = createStore({
       favorites: [],
       comments: [],
       tasks: [],
-      editorView: null // Global reference to the editor view
     }
   },
   getters: {
@@ -481,9 +480,7 @@ const store = createStore({
       state.selected = document;
     },
 
-    setEditorView(state, editorView) {
-      state.editorView = editorView;
-    },
+
 
     updateSelectedDocument(state, document) {
       if (state.selected.isLoading) {return}
