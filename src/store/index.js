@@ -68,8 +68,7 @@ const store = createStore({
       filter: "",
       templates:[],
       favorites: [],
-      comments: [],
-      tasks: []
+      tasks: [],
     }
   },
   getters: {
@@ -112,7 +111,6 @@ const store = createStore({
       return state.selected.comments
         .sort((a, b) => a.date.createDate - b.date.createDate);
     },
-    
     // Filter comments by version - shows all comments for 'live' version, or only version-specific comments
     filteredCommentsByVersion: (state) => {
       if (!state.selected.comments) return [];
@@ -130,7 +128,6 @@ const store = createStore({
         .filter(comment => comment.documentVersion === currentVersion)
         .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
     },
-
     // Get threaded comments organized as parent-child structure
     threadedCommentsByVersion: (state, getters) => {
       const filteredComments = getters.filteredCommentsByVersion;
@@ -194,6 +191,7 @@ const store = createStore({
           let selectedBase = await Document.getDocById(id);
           let selectedVersion = await Document.getDocVersion(id, version);
           selectedBase.data = selectedVersion.content;
+          selectedBase.viewingVersion = version;
           selectedData = selectedBase;
         } else {
           selectedData = await Document.getDocById(id);
@@ -287,45 +285,6 @@ const store = createStore({
       return id;
     },
 
-    // Update comment positions in database (called on document save)
-    async updateCommentPositions({state, commit}, positionUpdates) {
-      if (state.selected.id === null) return;
-
-      const validComments = state.selected.comments.filter(c => c && c.id);
-  
-      for (const update of positionUpdates) {
-        const comment = validComments.find(c => c.id === update.commentId);
-        
-        if (comment && comment.editorID) {
-
-          comment.editorID.from = update.newFrom;
-          comment.editorID.to = update.newTo;
-
-          await Document.updateCommentData(state.selected.id, comment.id, {
-            editorID: {
-              from: update.newFrom,
-              to: update.newTo
-            }
-          });
-
-
-          commit('updateCommentInState', {id: comment.id, values: 
-            {
-              editorID: {
-                from: update.newFrom,
-                to: update.newTo
-              }
-            }
-          });
-
-        } 
-      }
-    },
-
-
-        ///--------------------------------------------------------------
-    /// Chats
-
     async renameChat({state, commit}, {id, newName}){
       try {
         await ChatHistory.updateChatField(id, 'name', newName);
@@ -344,6 +303,7 @@ const store = createStore({
       commit('updateCommentInState', {id, values: data});
       return updatedCommentData;
     },
+
 
 
   },
@@ -518,6 +478,8 @@ const store = createStore({
       state.selected = document;
     },
 
+
+
     updateSelectedDocument(state, document) {
       if (state.selected.isLoading) {return}
       state.selected = {...state.selected, ...document}
@@ -666,7 +628,6 @@ const store = createStore({
         ...values
       }
     },
-
 
   }
 });

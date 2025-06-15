@@ -15,9 +15,9 @@
           last update:
           {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
         </div>
-        <v-menu class="border border-surface-light">
+        <v-menu v-if="document.id" class="border border-surface-light">
           <template v-slot:activator="{ props }">
-            <v-btn :disabled="isDisabled" v-if="document.id" v-bind="props" icon>
+            <v-btn :disabled="isDisabled" v-bind="props" icon>
               <v-icon>mdi-dots-vertical</v-icon>
             </v-btn>
           </template>
@@ -44,26 +44,14 @@
       </v-card-actions>
       <v-divider></v-divider>
 
-      <v-expansion-panels v-model="isGenPanelExpanded" variant="accordion">
-        <v-expansion-panel>
-          <v-expansion-panel-title>
-            <v-btn
-              :disabled="isDisabled"
-              class="text-none gen-btn"
-              @click="sendPromptToVertexAI()"
-              density="compact"
-              >Generate Feedback
-            </v-btn>
-          </v-expansion-panel-title>
-          <v-expansion-panel-text>
-            <p
-              class="generative-feedback text-sm ma-1 pa-1"
-              v-if="generativeFeedback !== null"
-              v-html="renderMarkdown(generativeFeedback)"
-            ></p>
-          </v-expansion-panel-text>
-        </v-expansion-panel>
-      </v-expansion-panels>
+      <ReviewPanel
+        ref="reviewPanel"
+        v-model:isExpanded="isGenPanelExpanded"
+        :is-viewing-version="isViewingVersion"
+        :disabled="isDisabled"
+        :document="document"
+        :editor-ref="$refs.milkdownEditor"
+      />
     </div>
 
     <!-- Scrollable comments section -->
@@ -74,8 +62,6 @@
         :doc-type="'document'"
         ref="commentComponent"
         @scroll-to-comment="openDrawerAndScrollToComment"
-        @refresh-editor-decorations="refreshEditorDecorations"
-        @scroll-to-editor="scrollToCommentInEditor"
       />
     </div>
   </v-navigation-drawer>
@@ -124,14 +110,17 @@
         />
       </template>
     </v-tooltip>
-    <v-tooltip text="Feedback from your AI coach" location="bottom">
+    <v-tooltip 
+      v-if="$store.getters.canAccessAi" 
+      text="Feedback from your AI coach" 
+      location="bottom"
+    >
       <template v-slot:activator="{ props }">
         <v-icon
           :disabled="isDisabled"
-          v-if="$store.getters.canAccessAi"
           class="mx-1 gen-icon"
           v-bind="props"
-          @click="sendPromptToVertexAI()"
+          @click="triggerFeedbackFromToolbar()"
           icon="mdi-comment-quote"
         />
       </template>
@@ -191,7 +180,7 @@
             <ProsemirrorAdapterProvider>
               <MilkdownEditor
                 :key="editorKey"
-                :disabled="isDisabled || !isEditable"
+                :disabled="editorDisabled"
                 ref="milkdownEditor"
                 v-model="editorContent"
                 @comment-clicked="openDrawerAndScrollToComment"
@@ -206,13 +195,15 @@
 
 <script>
 import { ProsemirrorAdapterProvider } from "@prosemirror-adapter/vue";
-import { marked } from "marked";
 import comment from "../comment/comment.vue";
-import { Feedback } from "../../services/vertexAiService";
 import { MilkdownProvider } from "@milkdown/vue";
 import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
+import ReviewPanel from "./ReviewPanel.vue";
+import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers";
+import { useEventWatcher } from "../../composables/useEventWatcher";
+import { useComments } from "../../composables/comments";
 
 export default {
   components: {
@@ -221,6 +212,7 @@ export default {
     ProsemirrorAdapterProvider,
     MilkdownProvider,
     VersionModal,
+    ReviewPanel,
   },
   emits: ["scrollToBottom"],
   props: {
@@ -249,66 +241,69 @@ export default {
         draft: true,
       },
     },
-    previousDocumentValue: {
-      name: "[DRAFT] New Doc..",
-      content: "Hello **World**",
-      type: "",
-      relationships: [],
-      draft: true,
-    },
-    documentTypes: [
-      "product",
-      "feature",
-      "roadmap",
-      "goal",
-      "idea",
-      "risk",
-      "persona",
-      "need",
-      "journey",
-      "job to be done",
-      "insight",
-      "interview",
-    ],
-    rules: {
-      required: (value) => !!value || "Required.",
-    },
     drawer: false,
-    generativeFeedback: null,
     previousType: null,
     previousContent: null,
     previousTitle: null,
-    previousData: null,
     debounceSave: null,
     isFavorite: false,
     editorKey: 0,
     fadeTransition: fadeTransition,
-    placeholders: [
-      "Write something...",
-      "Start your story...",
-      "Share your thoughts...",
-      "Compose a message...",
-      "Get your ideas out...",
-      "What are you thinking about?",
-      "What are you doing dave?",
-    ],
-    currentPlaceholder: "Get your ideas out...",
     isGenPanelExpanded: null,
-    editorMounted: false,
     showEditor: true,
+    eventWatcher: null,
+    previousVersion: null,
   }),
   async created() {
     this.isLoading = true;
-    // if (this.$route.query.type){
-    //     await this.populateTemplate(this.$route.query.type)
-    // }
+    
+    // Set initial editable state based on route
+    const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+    this.isEditable = !isViewingVersion;
+    
     if (this.$route.params.id) {
-      this.fetchDocument(this.$route.params.id);
+      // Check if there's a version query parameter
+      const version = this.$route.query.v;
+      await this.fetchDocument(this.$route.params.id, version);
     }
     this.isLoading = false;
-    this.debounceSave = this.debounce(() => this.saveDocument(), 5000);
+    this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
-    this.getRandomPlaceholder();
+    // Set up comments composable
+    const { handleAcceptSuggestion, handleUndo } = useComments(this.$store, this.$eventStore);
+    
+    this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
+      
+      // If we're switching from version to no version or vice versa, skip the replacement
+      if (this.$route.query.v && this.$route.query.v !== 'live') {
+        console.log('Skipping content replacement due to version change, TODO FIX THIS LATER');
+        return;
+      }
+      
+      const content = this.document.data.content;
+      const newContent = content.replace(payload.contentfrom, payload.contentto);
+      this.document.data.content = newContent;
+      this.editorContent = newContent;
+      this.isEditorModified = true;
+      this.$refs.milkdownEditor.forceUpdateContent(newContent);
+    });
+
+    // Set up event watcher for accept-suggestion events
+    this.eventWatcher = useEventWatcher(this.$eventStore, 'accept-suggestion', (payload) => {
+      handleAcceptSuggestion(payload, {
+        editorContent: this.editorContent,
+      });
+    });
+
+    this.eventWatcher = useEventWatcher(this.$eventStore, 'undo-comment', (payload) => {
+      handleUndo(payload, {
+        editorContent: this.editorContent,
+        documentData: this.document.data.content,
+        isEditorModified: this.isEditorModified,
+        refreshEditor: this.$refs.milkdownEditor.forceUpdateContent,
+      });
+    });
+
   },
   
   mounted() {
@@ -319,25 +314,11 @@ export default {
   },
 
   methods: {
-    renderMarkdown(text) {
-      return marked(text); // Convert Markdown to HTML
-    },
-
     getFormattedDocuments() {
       return this.$store.state.documents.map((doc) => ({
         id: doc.id,
         name: doc.data.name,
       }));
-    },
-
-    debounce(func, delay) {
-      let timeout;
-      return function () {
-        clearTimeout(timeout);
-        this._savingTimeout = timeout = setTimeout(() => {
-          func.apply();
-        }, delay);
-      };
     },
 
     async fetchDocument(id, version = null) {
@@ -380,12 +361,13 @@ export default {
         this.isFavorite = this.$store.getters.isFavorite(this.document.id);
         this.isEditorModified = false;
         
+        // Set editable state based on whether we're viewing a version
         if (version) {
           this.isEditable = false;
         } else {
           this.isEditable = true;
         }
-        
+        this.editorKey++;
 
       } catch (error) {
         console.error("Error fetching document:", error);
@@ -437,7 +419,6 @@ export default {
         await this.createDocument();
       } else {
         await this.$store.commit("saveSelectedDocument");
-        this.$refs?.milkdownEditor?.updateCommentPositionsOnSave();
       }
 
       this.isEditorModified = false;
@@ -505,22 +486,16 @@ export default {
       this.$router.push({ path: `/document/create-document` });
     },
 
-    async sendPromptToVertexAI() {
+    async triggerFeedbackFromToolbar() {
+      // Open the drawer and trigger feedback through the ReviewPanel
       this.drawer = true;
-
-      const prompt = `
-            title ${this.document.data.name}
-            type of doc ${this.document.data.type}
-            ${this.document.data.content}
-            `;
-      const result = await Feedback.generateFeedback({ prompt: prompt });
-
-      this.generativeFeedback = "";
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        this.generativeFeedback += chunkText;
+      
+      // Wait for the drawer to open and component to be available
+      await this.$nextTick();
+      
+      if (this.$refs.reviewPanel) {
+        await this.$refs.reviewPanel.handleFeedback();
       }
-      return;
     },
 
     toggleFavorite() {
@@ -529,24 +504,8 @@ export default {
     },
 
     copyToClipboard() {
-      const url = window.location.href; // Get the current URL
-      navigator.clipboard
-        .writeText(url) // Copy the URL to clipboard
-        .then(() => {
-          this.$store.commit("alert", {
-            type: "info",
-            message: "URL copied to clipboard!",
-            autoClear: true,
-          });
-        })
-        .catch((err) => {
-          console.error("Failed to copy: ", err);
-        });
-    },
-
-    getRandomPlaceholder() {
-      const randomIndex = Math.floor(Math.random() * this.placeholders.length);
-      this.currentPlaceholder = this.placeholders[randomIndex];
+      const url = window.location.href;
+      copyToClipboard(url, this.$store, "URL copied to clipboard!");
     },
 
     autoGrow(event) {
@@ -571,19 +530,6 @@ export default {
       event.target.blur(); // Remove focus from the title
     },
 
-    placeCursorAtEnd(element) {
-      try {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        range.collapse(false); // false means collapse to end
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } catch (error) {
-        console.warn('Could not place cursor at end:', error);
-      }
-    },
-
     async toggleDraft() {
       await this.$store.dispatch("toggleDraft");
       // Force update of documents list to reflect the change in tree
@@ -598,59 +544,11 @@ export default {
     },
 
     activateEditor() {
-      if (this.isLoading || !this.showEditor) return;
-      
-      try {
-        setTimeout(() => {
-          const editorElement = document.querySelector('.ProseMirror.editor');
-          if (editorElement) {
-
-            if (this.$vuetify.display.mobile) {
-              if (document.activeElement !== editorElement) {
-                editorElement.focus();
-              }
-            } else {
-              // Desktop behavior: clear focus, then set focus with cursor
-              document.activeElement?.blur();
-              editorElement.focus();
-              
-              // Only set cursor position if there's no existing selection
-              const selection = window.getSelection();
-              if (selection.rangeCount === 0) {
-                // Find a text node to place cursor in rather than at element position 0
-                const textNode = this.findFirstTextNode(editorElement);
-                if (textNode) {
-                  const range = document.createRange();
-                  // Place cursor at end of text rather than beginning
-                  range.setStart(textNode, textNode.textContent.length);
-                  range.collapse(true);
-                  selection.removeAllRanges();
-                  selection.addRange(range);
-                }
-              }
-            }
-          }
-        }, 50);
-      } catch (error) {
-        console.error("Error focusing editor:", error);
-      }
-    },
-    
-    // Helper function to find the first text node in the editor
-    findFirstTextNode(element) {
-      // If this is a text node, return it
-      if (element.nodeType === Node.TEXT_NODE && element.textContent.trim()) {
-        return element;
-      }
-
-      for (let i = 0; i < element.childNodes.length; i++) {
-        const textNode = this.findFirstTextNode(element.childNodes[i]);
-        if (textNode) {
-          return textNode;
-        }
-      }
-      
-      return null;
+      activateEditor({
+        isMobile: this.$vuetify.display.mobile,
+        isLoading: this.isLoading,
+        showEditor: this.showEditor
+      });
     },
 
     // Method to open drawer and scroll to specific comment
@@ -667,39 +565,27 @@ export default {
     },
 
 
-    // Method to refresh editor decorations when comments are resolved/unresolved
-    refreshEditorDecorations() {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.refreshCommentDecorations();
-        }
-      });
-    },
-
-    // Method to scroll to a comment position in the editor when clicked from sidebar
-    scrollToCommentInEditor(commentId) {
-      this.$nextTick(() => {
-        if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.scrollToComment(commentId);
-        }
-      });
-    },
-
-
   },
   computed: {
     isDisabled() {
+      // Don't override isEditable state - it's managed by version viewing logic
       if (
         this.$store.getters.isUserLoggedIn ||
-        this.$store.state.project?.id != null
+        this.$store.state.project?.id != null 
       ) {
-        this.isEditable = true;
         return false;
       } else {
-        this.isEditable = false;
         return true;
       }
     },
+    isViewingVersion() {
+      return this.$route.query.v && this.$route.query.v !== 'live';
+    },
+    
+    editorDisabled() {
+      return this.isDisabled || !this.isEditable;
+    },
+
     editorContent: {
       get() {
         return this.document.data.content;
@@ -725,7 +611,11 @@ export default {
           this.isEditorModified = true;
           // This will make the title change visible in the document tree
           if (this.document.id) {
-            this.$store.commit("updateSelectedDocument", this.document);
+            const documentUpdateData = {
+              id: this.document.id,
+              data: this.document.data
+            };
+            this.$store.commit("updateSelectedDocument", documentUpdateData);
           }
         }
 
@@ -740,7 +630,12 @@ export default {
 
         if (this.isEditorModified) {
           console.log("trying to save....");
-          this.$store.commit("updateSelectedDocument", this.document); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          // Only pass document data, not comments, to avoid overwriting store's comment state
+          const documentUpdateData = {
+            id: this.document.id,
+            data: this.document.data
+          };
+          this.$store.commit("updateSelectedDocument", documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();
@@ -762,34 +657,37 @@ export default {
         if (this.isCreatingDocument) return;
         
         try {
-          // Skip heavy operations if only query params changed (internal update)
-          if (from && to.path === from.path && to.params.id === from.params.id) {
-            console.log('Query-only route change, skipping reload');
+          // Check if we're switching between versions or from version to live
+          const isVersionChange = to?.query?.v !== from?.query?.v;
+          const isSameDocument = to?.params?.id === from?.params?.id && to?.path === from?.path;
+          
+          // If same document and no version change, skip reload
+          if (isSameDocument && !isVersionChange) {
+            console.log('Same document, no version change - skipping reload');
             return;
           }
 
-          // Skip if navigating to the same document we already have loaded
-          if (this.$route.params.id && this.document.id === this.$route.params.id && !this.$route.query.v) {
-            console.log('Navigating to same document, skipping reload');
-            return;
-          }
-
-          if (this.isEditorModified) {
+          // If switching from version to live (or vice versa), don't save
+          if (isVersionChange && this.isEditorModified) {
+            console.log('Version change detected - not saving, will reload');
+            this.isEditorModified = false; // Reset to prevent saving
+          } else if (this.isEditorModified && !isVersionChange) {
+            // Only save if we're not changing versions
+            console.log('saving document before navigation');
             await this.saveDocument();
           }
-  
-          if (to === from) {
-            return;
-          }
           
-          if (this.$route.params.id && this.$route.query.v) {
-            // Viewing a specific version - always fetch
+          // Track the previous version before making changes
+          this.previousVersion = this.$route.query.v;
+          
+          if (to.params.id && to.query.v) {
+            // Load Version
             this.showEditor = false;
             this.isEditorModified = false;
             await this.$nextTick();
             await this.fetchDocument(this.$route.params.id, this.$route.query.v);
-          } else if (this.$route.params.id && this.document.id !== this.$route.params.id) {
-            // Only fetch if it's a different document
+          } else if (to.params.id) {
+            // Loading live version
             this.showEditor = false;
             this.isEditorModified = false;
             await this.$nextTick();
@@ -805,6 +703,7 @@ export default {
               },
               comments: [],
             };
+
             this.editorContent = this.document.data.content;
             this.previousContent = this.document.data.content;
             this.previousTitle = this.document.data.name;
@@ -847,12 +746,6 @@ export default {
       }
     },
 
-    generativeFeedback(newValue) {
-      if (newValue !== null) {
-        this.isGenPanelExpanded = 0;
-      }
-    },
-
     isEditable(newValue) {
       // Force component re-render when editable state changes
       // Don't increment editorKey on mobile as it causes cursor position issues
@@ -860,10 +753,26 @@ export default {
         this.editorKey += 1;
       }
     },
+    
+    isViewingVersion(newValue, oldValue) {
+      // Don't run during initial component creation
+      if (this.isLoading) {
+        return;
+      }
+      
+      // Update isEditable when version viewing state changes
+      if (newValue !== oldValue) {
+        this.isEditable = !newValue; // If viewing version, not editable; if viewing live, editable
+      }
+    },
   },
   beforeRouteLeave(to, from, next) {
-    // Save any pending changes
-    if (this.isEditorModified) {
+    // Check if we're switching versions - don't save in that case
+    const isVersionChange = to.query?.v !== from.query?.v;
+    const isSameDocument = to.params.id === from.params.id && to.path === from.path;
+    
+    // Only save if we're not switching versions and have modifications
+    if (this.isEditorModified && !isVersionChange) {
       this.saveDocument();
     }
     
@@ -883,8 +792,11 @@ export default {
     });
   },
   beforeUnmount() {
-    // Save any pending changes
-    if (this.isEditorModified) {
+    // Check if we're in the middle of a version change - don't save in that case
+    const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+    
+    // Only save if we're not viewing a version and have modifications
+    if (this.isEditorModified && !isViewingVersion) {
       this.saveDocument();
     }
     
@@ -897,9 +809,18 @@ export default {
       clearTimeout(this._savingTimeout);
     }
     
+    // Reset review panel state
+    if (this.$refs.reviewPanel) {
+      this.$refs.reviewPanel.resetState();
+    }
+    
+    // Clean up event watcher
+    if (this.eventWatcher) {
+      this.eventWatcher = null;
+    }
+    
     // Force the editor to be unmounted cleanly
     this.editorKey += 1;
-    this.editorMounted = false;
   },
 };
 </script>
@@ -1079,16 +1000,6 @@ input.h1 {
   font-weight: 400;
 }
 
-.generative-feedback :deep(ul),
-.generative-feedback :deep(ol) {
-  padding-left: 1em;
-}
-
-.generative-feedback :deep(p) {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
 /* Navigation drawer layout styles */
 .drawer-header {
   border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
@@ -1131,5 +1042,14 @@ input.h1 {
   background: rgba(var(--v-theme-outline), 0.5);
 }
 
+/* AI Review loading animation */
+.rotating {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 </style>

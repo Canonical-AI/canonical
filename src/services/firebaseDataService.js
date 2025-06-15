@@ -311,9 +311,13 @@ export class Comment {
   constructor(value) {
     this.comment = value.comment; 
     this.documentVersion = value.documentVersion || null;
-    this.editorID = value.editorID || null;
     this.resolved = value.resolved || false;
     this.parentId = value.parentId || null; // For thread support
+    this.aiGenerated = value.aiGenerated || false;
+    this.issueType = value.issueType || null;
+    this.severity = value.severity || null;
+    this.suggestion = value.suggestion || null;
+    this.selectedText = value.selectedText || null;
     Object.assign(this, addInDefaults(this));
   }
 }
@@ -543,7 +547,6 @@ export class Document {
   /// DOC VERSIONS
   ///-----------------------------------  
   static async getDocVersion(docID, versionNumber){
-    console.log('getDocVersion', docID, versionNumber)
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
     const q = query(versionsRef, where("versionNumber", "==", versionNumber));

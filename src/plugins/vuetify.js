@@ -141,7 +141,11 @@ export default createVuetify({
   },
   defaults:{
     VTooltip: {
-      openDelay: '300'
+      openDelay: '300',
+      closeDelay: '100',
+      eager: false,
+      openOnHover: true,
+      openOnFocus: false
     }
   },
   icons: {

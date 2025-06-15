@@ -5,7 +5,6 @@ import { Generate } from "../../../services/vertexAiService";
 import { useInstance } from '@milkdown/vue';
 import { ref } from 'vue'
 
-
 export default {
     setup(){
         const { node, view , prevState, selected, getPos} = useNodeViewContext()
@@ -95,7 +94,6 @@ export default {
         selected: {
             handler(newVal) {
                 this.isSelected = !!newVal;
-                console.log(this.isSelected)
             },
             immediate: true
         }

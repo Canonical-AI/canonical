@@ -136,7 +136,7 @@ export default {
 
         }, );
 
-        this.tooltipProvider.update(this.view, this.prevState);
+        //this.tooltipProvider.update(this.view, this.prevState);
     },
     computed: {
         ...mapGetters(['filteredDocuments']),

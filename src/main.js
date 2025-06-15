@@ -3,6 +3,7 @@ import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
 import store from './store/index';
+import { eventStore } from './store/eventStore';
 import VueGtag from "vue-gtag";
 import dayjs from "dayjs";
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -59,6 +60,7 @@ app.config.globalProperties.$formatDate = formatServerTimeStamp
 app.config.globalProperties.$fadeTransition = fadeTransition
 app.config.globalProperties.$slideFadeTransition = slideFadeTransition
 app.config.globalProperties.$marked = marked
+app.config.globalProperties.$eventStore = eventStore
 
 app.mount('#app')
 

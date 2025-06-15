@@ -31,9 +31,7 @@
             <commentCard 
               :comment="event.value"
               :ref="`comment-${event.value.id}`"
-              @comment-resolved="refreshEditorDecorations"
-              @comment-unresolved="refreshEditorDecorations"
-              @scroll-to-editor="$emit('scroll-to-editor', $event)"
+
             />
             <!-- Render child comments with indentation -->
             <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
@@ -43,9 +41,7 @@
                 :comment="child"
                 :ref="`comment-${child.id}`"
                 class="mb-2"
-                @comment-resolved="refreshEditorDecorations"
-                @comment-unresolved="refreshEditorDecorations"
-                @scroll-to-editor="$emit('scroll-to-editor', $event)"
+
               />
             </div>
           </div>
@@ -92,13 +88,11 @@
 
 <script>
 import commentCard from "./commentCard.vue"
-
-//TODO: 
-// - need a way to resolve comments (i.e. stop showing them inline but show in sidebar unless filtered)
+import { inject } from 'vue';
 
 
 export default {
-  emits: ['refresh-editor-decorations', 'scroll-to-editor'],
+
   components: {
     commentCard
   },
@@ -200,17 +194,6 @@ export default {
           this.newComment = '';
         }
       },
-      async editComment (id,updatedComment) {
-        await this.$refs.form.validate();
-        if (this.valid) {
-          await this.$store.dispatch('updateComment', {id, updatedComment});
-        }
-        this.$refs.form.resetValidation();
-      },
-      async deleteComment (id) {
-        await this.$store.dispatch('deleteComment', id)
-        this.$refs.form.resetValidation();
-      },
       resetForm () {
         this.$refs.form.reset()
       },
@@ -253,9 +236,6 @@ export default {
         });
       },
 
-      refreshEditorDecorations() {
-        this.$emit('refresh-editor-decorations');
-      },
 
       toggleFilter() {
         this.showResolved = this.showResolved === 'all' ? 'active' : 'all';
