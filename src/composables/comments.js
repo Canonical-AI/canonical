@@ -28,14 +28,6 @@ export const useComments = (store, eventStore) => {
       return;
     }
 
-    store.commit('addUndo', {
-      commentId: commentId,
-      selectedText: selectedText,
-      suggestion: suggestion,
-      currentEditorContent: editorContent,
-      timestamp: Date.now()
-    });
-
     // 4. Update the document content
     eventStore.emitEvent('replace-document-content', {contentfrom: selectedText, contentto: contentTo});
     

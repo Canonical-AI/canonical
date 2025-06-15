@@ -58,27 +58,7 @@
               </v-btn>
             </template>
           </v-tooltip>
-          
-          <v-tooltip 
-            v-if="$store.state.undoStore.length > 0"
-            :text="isViewingVersion ? 
-              'Undo last AI change (will navigate to live version)' : 
-              'Undo last AI change'" 
-            location="bottom"
-          >
-            <template v-slot:activator="{ props }">
-              <v-btn
-                :disabled="disabled"
-                class="text-none"
-                density="compact"
-                v-bind="props"
-                @click="handleUndoAll()"
-              >
-                <v-icon size="16" class="mr-1">mdi-undo</v-icon>
-                Undo
-              </v-btn>
-            </template>
-          </v-tooltip>
+
         </v-btn-toggle>
       </v-expansion-panel-title>
       <v-expansion-panel-text>
@@ -142,9 +122,7 @@ export default {
       const comments = this.$store.state.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
     },
-    undoStore() {
-      return this.getUndoStore ? this.getUndoStore() : [];
-    },
+
   },
 
   methods: {

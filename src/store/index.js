@@ -69,7 +69,6 @@ const store = createStore({
       templates:[],
       favorites: [],
       tasks: [],
-      undoStore: [],
     }
   },
   getters: {
@@ -630,13 +629,6 @@ const store = createStore({
       }
     },
 
-    addUndo(state, payload){
-      state.undoStore.push(payload);
-    },
-
-    clearUndo(state){
-      state.undoStore = [];
-    },
   }
 });
 
