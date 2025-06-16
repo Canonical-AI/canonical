@@ -250,6 +250,7 @@ const store = createStore({
     },
 
     async updateMarkedUpContent({ commit, state }, { versionContent, versionNumber }) {
+      if (state.selected.id === null || state.selected.currentVersion === 'live') { return };
       await Document.updateMarkedUpContent(state.selected.id, versionContent, versionNumber);
       commit('setSelectedDocument', { ...state.selected, data: { ...state.selected.data, content: versionContent } });
     },

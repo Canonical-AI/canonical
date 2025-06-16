@@ -70,7 +70,7 @@ const systemPrompts = {
         The document type is provided in the context. 
         First you should review existing documents in the project to get a sense of the style and structure of the documents the user is creating
         Always include a purpose, and overview section in the document. 
-        The template should use markdown formatting. 
+        Create the template using markdown formatting but return ONLY the raw template content without any code block wrapping or markdown indicators like \`\`\`markdown. 
         add in placeholder tags that can be filled out later. 
         Use product management best practices 
     `,
@@ -97,194 +97,22 @@ async function logUsage(userId, usageType) {
 
 // Classes
 export class Feedback {
-    // this provides feedback on the content of the doc
+    // this provides feedback on the content of the doc and document review functionality
     constructor(value){
         this.prompt = value.prompt,
         Object.assign(this, addInDefaults(this));
     }
     
-    static async generateFeedback(value){
-        // check if logged in 
-        checkUserPermission()
-
-        const feedbackModel = getGenerativeModel(vertexAI, { 
-            model: model ,
-            systemInstruction: systemPrompts.productMentorFeedback
-          });
-
-        const userId = store.state.user.uid; // Get the user ID
-        logUsage(userId, 'generateFeedback');
-
-        const result = await feedbackModel.generateContentStream(value.prompt);
-        return result
-    }
-}
-
-export class Generate{
-    constructor(value){
-        this.prompt = value.prompt,
-        Object.assign(this, addInDefaults(this));
-    }
-    
-    static async generateContent(value){
-        checkUserPermission() 
-        const documentContext = store.state.selected
-
-        const genModel = getGenerativeModel(vertexAI, { 
-            model: model ,
-            systemInstruction: {
-                role: 'system',
-                parts: [{
-                    "text": systemPrompts.assistantGenerateContent        
-                    
-                }, {
-                    "text" : JSON.stringify(documentContext)
-                }
-            ]
-            }
-          });
-
-        logUsage(store.state.user.uid, 'generateContent');
-    
-        const result = await genModel.generateContentStream(value.prompt);
-        return result
-    }
-
-    static async generateDocumentTemplate(value){
-        checkUserPermission() 
-        const genModel = getGenerativeModel(vertexAI, { 
-            model: model ,
-            systemInstruction: {
-                role: 'system',
-                parts: [{
-                    "text":  systemPrompts.assistantDocumentTemplate
-                }, {
-                    "text" : `{'documents': ${JSON.stringify(store.state.documents)}}`
-                }
-            ]
-            }
-          });
-
-        logUsage(store.state.user.uid, 'generateDocumentTemplate');
-    
-        const result = await genModel.generateContent(value.prompt);
-        return result
-    }
-}
-
-
-export class Chat {
-    // this is a back and forth chat with the "product mentor"
-
-    constructor() {
-        //this.initChat(); // Automatically initialize chat
-    }
-
-    async initChat(history = null) {
-        if (store.state.project.id === null) {
-            await store.dispatch('enter');
-        }
-
-        checkUserPermission();
-
-        let documents = null;
-
-
-        if (store.state.documents.length === 0) {
-            documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
-        } else {
-            documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
-        }
-
-        this.generativeModel = getGenerativeModel(vertexAI, { 
+    // Shared feedback model getter
+    static getFeedbackModel() {
+        return getGenerativeModel(vertexAI, { 
             model: model,
-            systemInstruction: {
-                role: 'system',
-                parts: [
-                    {"text":  systemPrompts.productMentorChat
-                },{
-                    "text": JSON.stringify(documents)
-                }
-            ],
-            }
+            systemInstruction: systemPrompts.productMentorFeedback
         });
-
-        if (history) {
-            this.chat = this.generativeModel.startChat({
-                history: history.history.data.messages.slice(1).map(message => ({
-                    role: message.sent ? 'user' : 'model',
-                    parts: [{ text: message.text }]
-                }))
-            }); // Start the chat
-        } else {
-            this.chat = this.generativeModel.startChat()
-        }
-
-        return this.chat
     }
-
-    async sendMessage(newMessage) {
-        checkUserPermission() 
-        if (!this.chat) {throw new Error("Chat has not been initialized.")}
-        logUsage(store.state.user.uid, 'requestedMessage');
-
-        const response = await this.chat.sendMessageStream(newMessage); // Return the response from the chat
-
-        logUsage(store.state.user.uid, 'sentMessage');
-        return response
-    }
-
-    async summarizeChat(message){
-        checkUserPermission() 
-
-        if (!this.chat) {
-            throw new Error("Chat has not been initialized.");
-        }
-
-        const summaryModel = getGenerativeModel(vertexAI, { 
-            model: model ,
-            systemInstruction: systemPrompts.assistantChatNamer,
-            maxOutputTokens: 25
-          });
-
-        return summaryModel.generateContent(message)
-    }
-
-}
-
-export class Message {
-    constructor(value){
-        this.parts = value.parts
-        this.role = value.role
-        this.time = new Date().toISOString()
-    }
-}
-
-export class DocumentReview {
-    constructor() {
-        // Initialize the review model with function calling capabilities
-    }
-
-    // Generate AI feedback for a document (moved from aiReviewService)
-    static async generateFeedback(document) {
-        if (!document?.data) return null
-
-        const prompt = `
-          title ${document.data.name}
-          type of doc ${document.data.type}
-          ${document.data.content}
-        `
-        
-        checkUserPermission();
-        logUsage(store.state.user.uid, 'generateFeedback');
-        
-        const result = await feedbackModel.generateContentStream(prompt);
-        return result;
-    }
-
-    // Generate AI comments using the model
-    static async GenerateComments(documentContent) {
-        // Define the function that the model can call to create comments
+    
+    // Shared review model getter with function calling capabilities
+    static getReviewModel() {
         const createCommentFunction = {
             name: "create_comments",
             description: "Identify issues in the document text that needs an inline comment",
@@ -327,11 +155,47 @@ export class DocumentReview {
             }
         };
 
-        const reviewModel = getGenerativeModel(vertexAI, { 
+        return getGenerativeModel(vertexAI, { 
             model: model,
             tools: [{ functionDeclarations: [createCommentFunction] }],
             systemInstruction: systemPrompts.productMentorReview
         });
+    }
+    
+    static async generateFeedback(value){
+        // check if logged in 
+        checkUserPermission()
+
+        const feedbackModel = this.getFeedbackModel();
+
+        const userId = store.state.user.uid; // Get the user ID
+        logUsage(userId, 'generateFeedback');
+
+        const result = await feedbackModel.generateContentStream(value.prompt);
+        return result
+    }
+
+    // Generate AI feedback for a document (moved from DocumentReview)
+    static async generateDocumentFeedback(document) {
+        if (!document?.data) return null
+
+        const prompt = `
+          title ${document.data.name}
+          type of doc ${document.data.type}
+          ${document.data.content}
+        `
+        
+        checkUserPermission();
+        logUsage(store.state.user.uid, 'generateFeedback');
+        
+        const feedbackModel = this.getFeedbackModel();
+        const result = await feedbackModel.generateContentStream(prompt);
+        return result;
+    }
+
+    // Generate AI comments using the model
+    static async GenerateComments(documentContent) {
+        const reviewModel = this.getReviewModel();
 
         const prompt = `Please review the following document and identify issues by calling the create_comments function:
 
@@ -363,8 +227,6 @@ export class DocumentReview {
             throw error;
         }
     }
-
-    // Find text positions for a comment in the editor
 
     // Create and save a comment to the store
     static async CreateComments(comment) {
@@ -490,6 +352,186 @@ export class DocumentReview {
         }
     }
 }
+
+export class Generate{
+    constructor(value){
+        this.prompt = value.prompt,
+        Object.assign(this, addInDefaults(this));
+    }
+    
+    static async generateContent(value){
+        checkUserPermission() 
+        const documentContext = store.state.selected
+
+        const genModel = getGenerativeModel(vertexAI, { 
+            model: model ,
+            systemInstruction: {
+                role: 'system',
+                parts: [{
+                    "text": systemPrompts.assistantGenerateContent        
+                    
+                }, {
+                    "text" : JSON.stringify(documentContext)
+                }
+            ]
+            }
+          });
+
+        logUsage(store.state.user.uid, 'generateContent');
+    
+        const result = await genModel.generateContentStream(value.prompt);
+        return result
+    }
+
+    static async generateDocumentTemplate(value){
+        checkUserPermission() 
+        const genModel = getGenerativeModel(vertexAI, { 
+            model: model ,
+            systemInstruction: {
+                role: 'system',
+                parts: [{
+                    "text":  systemPrompts.assistantDocumentTemplate
+                }, {
+                    "text" : `{'documents': ${JSON.stringify(store.state.documents)}}`
+                }
+            ]
+            }
+          });
+
+        logUsage(store.state.user.uid, 'generateDocumentTemplate');
+    
+        const result = await genModel.generateContent(value.prompt);
+        
+        // Clean up the response to remove any markdown code block wrapping
+        const originalText = result.response.text();
+        const cleanedText = this._cleanMarkdownCodeBlocks(originalText);
+        
+        // Return a modified result object with the cleaned text
+        return {
+            ...result,
+            response: {
+                ...result.response,
+                text: () => cleanedText
+            }
+        };
+    }
+
+    // Helper method to clean markdown code blocks from template responses
+    static _cleanMarkdownCodeBlocks(text) {
+        if (!text) return text;
+        
+        // Remove markdown code blocks with various language identifiers
+        let cleaned = text
+            // Remove opening code blocks: ```markdown, ```md, ```text, or just ```
+            .replace(/^```(?:markdown|md|text)?\s*\n?/gim, '')
+            // Remove closing code blocks
+            .replace(/\n?```\s*$/gim, '')
+            // Also handle cases where there might be multiple code block patterns
+            .replace(/```(?:markdown|md|text)?\s*\n?([\s\S]*?)\n?```/gim, '$1');
+        
+        // Trim any extra whitespace
+        cleaned = cleaned.trim();
+        
+        // Remove first line if it starts with markdown heading (# or ##)
+        const lines = cleaned.split('\n');
+        if (lines.length > 0 && lines[0].trim().match(/^#{1,6}\s/)) {
+            lines.shift(); // Remove the first line
+            cleaned = lines.join('\n').trim();
+        }
+        
+        return cleaned;
+    }
+}
+
+
+export class Chat {
+    // this is a back and forth chat with the "product mentor"
+
+    constructor() {
+        //this.initChat(); // Automatically initialize chat
+    }
+
+    async initChat(history = null) {
+        if (store.state.project.id === null) {
+            await store.dispatch('enter');
+        }
+
+        checkUserPermission();
+
+        let documents = null;
+
+
+        if (store.state.documents.length === 0) {
+            documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
+        } else {
+            documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
+        }
+
+        this.generativeModel = getGenerativeModel(vertexAI, { 
+            model: model,
+            systemInstruction: {
+                role: 'system',
+                parts: [
+                    {"text":  systemPrompts.productMentorChat
+                },{
+                    "text": JSON.stringify(documents)
+                }
+            ],
+            }
+        });
+
+        if (history) {
+            this.chat = this.generativeModel.startChat({
+                history: history.history.data.messages.slice(1).map(message => ({
+                    role: message.sent ? 'user' : 'model',
+                    parts: [{ text: message.text }]
+                }))
+            }); // Start the chat
+        } else {
+            this.chat = this.generativeModel.startChat()
+        }
+
+        return this.chat
+    }
+
+    async sendMessage(newMessage) {
+        checkUserPermission() 
+        if (!this.chat) {throw new Error("Chat has not been initialized.")}
+        logUsage(store.state.user.uid, 'requestedMessage');
+
+        const response = await this.chat.sendMessageStream(newMessage); // Return the response from the chat
+
+        logUsage(store.state.user.uid, 'sentMessage');
+        return response
+    }
+
+    async summarizeChat(message){
+        checkUserPermission() 
+
+        if (!this.chat) {
+            throw new Error("Chat has not been initialized.");
+        }
+
+        const summaryModel = getGenerativeModel(vertexAI, { 
+            model: model ,
+            systemInstruction: systemPrompts.assistantChatNamer,
+            maxOutputTokens: 25
+          });
+
+        return summaryModel.generateContent(message)
+    }
+
+}
+
+export class Message {
+    constructor(value){
+        this.parts = value.parts
+        this.role = value.role
+        this.time = new Date().toISOString()
+    }
+}
+
+
 
 
 export {vertexAI }

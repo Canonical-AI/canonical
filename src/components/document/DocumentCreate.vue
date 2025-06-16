@@ -66,18 +66,44 @@
     </div>
   </v-navigation-drawer>
 
+
+
   <v-app-bar
     class="input-container z-10"
     elevation="0"
     style="padding-bottom: 0"
   >
+    <!-- Show version modal for existing documents -->
     <VersionModal
+      v-if="document.id !== null"
       class="-mr-5"
       :disabled="isDisabled"
       :key="document.id"
       :versions="document.versions"
       :current-version="$route.query.v || 'live'"
     />
+    
+    <!-- Show template button for new documents -->
+    <div v-else-if="$store.getters.canAccessAi && !isEditorModified">
+      <v-tooltip 
+        text="Generate a template to start your document" 
+        location="bottom"
+      >
+        <template v-slot:activator="{ props }">
+          <v-btn
+            :disabled="isDisabled"
+            class="gen-btn text-none m-2 animated-border-btn"
+            density="compact"
+            v-bind="props"
+            @click="showTemplateInput = true"
+            prepend-icon="mdi-star-four-points-outline"
+          >
+            Create from template
+          </v-btn>
+        </template>
+      </v-tooltip>
+    </div>
+    
     <v-spacer />
 
     <div
@@ -111,7 +137,7 @@
       </template>
     </v-tooltip>
     <v-tooltip 
-      v-if="$store.getters.canAccessAi" 
+      v-if="$store.getters.canAccessAi && document.id !== null" 
       text="Feedback from your AI coach" 
       location="bottom"
     >
@@ -163,6 +189,7 @@
         :key="editorKey"
       >
         <div
+          v-if="!showTemplateInput"
           class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
           contenteditable="true"
           :style="{ minHeight: '1em', outline: 'none' }"
@@ -175,7 +202,55 @@
           {{ document.data.name }}
         </div>
 
-        <div v-if="!isLoading">
+        <!-- Template Input Section -->
+        <div v-if="!isLoading && showTemplateInput" class="template-input-wrapper">
+          <div class="template-input-container animated-border-container">
+            <div class="template-input-content">
+              <h3 class="text-h5 mb-3">Create from template</h3>
+              <p class="text-body-2 mb-4 text-medium-emphasis">
+                Describe the document type you want to create
+              </p>
+              
+              <v-textarea
+                v-model="templatePrompt"
+                label="Describe your document"
+                placeholder="e.g., Product Requirements Document, Meeting Notes, Project Plan..."
+                rows="3"
+                variant="outlined"
+                :disabled="isGeneratingTemplate"
+                class="mb-3"
+                density="compact"
+                clearable
+              ></v-textarea>
+              
+              <div class="d-flex justify-end gap-2">
+                <v-btn 
+                  variant="outlined"
+                  @click="cancelTemplateInput"
+                  :disabled="isGeneratingTemplate"
+                  class="text-none"
+                  size="small"
+                >
+                  Cancel
+                </v-btn>
+                <v-btn 
+                  color="primary" 
+                  @click="generateTemplate"
+                  :loading="isGeneratingTemplate"
+                  :disabled="!templatePrompt.trim()"
+                  class="text-none"
+                  size="small"
+                >
+                  <v-icon size="14" class="mr-1">mdi-star-four-points-outline</v-icon>
+                  Generate
+                </v-btn>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Editor Section -->
+        <div v-if="!isLoading && !showTemplateInput">
           <MilkdownProvider v-if="showEditor">
             <ProsemirrorAdapterProvider>
               <MilkdownEditor
@@ -204,6 +279,7 @@ import ReviewPanel from "./ReviewPanel.vue";
 import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers";
 import { useEventWatcher } from "../../composables/useEventWatcher";
 import { useComments } from "../../composables/comments";
+import { Generate } from "../../services/vertexAiService";
 
 export default {
   components: {
@@ -253,6 +329,9 @@ export default {
     showEditor: true,
     eventWatcher: null,
     previousVersion: null,
+    showTemplateInput: false,
+    templatePrompt: '',
+    isGeneratingTemplate: false,
   }),
   async created() {
     this.isLoading = true;
@@ -562,6 +641,56 @@ export default {
           }
         }, 300); 
       });
+    },
+
+    // Template generation methods
+    cancelTemplateInput() {
+      this.showTemplateInput = false;
+      this.templatePrompt = '';
+      this.isGeneratingTemplate = false;
+    },
+
+    async generateTemplate() {
+      if (!this.templatePrompt.trim()) return;
+      
+      this.isGeneratingTemplate = true;
+      
+      try {
+        const result = await Generate.generateDocumentTemplate({
+          prompt: this.templatePrompt
+        });
+        
+        const templateContent = result.response.text();
+        
+        // Update the document with the generated template
+        this.document.data.content = templateContent;
+        this.document.data.name = `[DRAFT] - ${this.templatePrompt.trim()}...`;
+        this.isEditorModified = true;
+        
+        // Force the editor to update with the new content
+        this.editorContent = templateContent;
+        if (this.$refs.milkdownEditor) {
+          this.$refs.milkdownEditor.forceUpdateContent(templateContent);
+        }
+        
+        this.showTemplateInput = false;
+        
+        this.$store.commit('alert', { 
+          type: 'success', 
+          message: 'Template generated successfully!', 
+          autoClear: true 
+        });
+        
+      } catch (error) {
+        console.error('Error generating template:', error);
+        this.$store.commit('alert', { 
+          type: 'error', 
+          message: 'Failed to generate template. Please try again.', 
+          autoClear: true 
+        });
+      } finally {
+        this.isGeneratingTemplate = false;
+      }
     },
 
 
@@ -1050,6 +1179,172 @@ input.h1 {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Animated border for template button */
+.animated-border-btn {
+  position: relative;
+  overflow: visible !important;
+}
+
+.animated-border-btn::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, 
+    black, 
+    #8338ec, 
+    #3a86ff, 
+    #fb5607, 
+    black
+  );
+  filter: blur(3px);
+  background-size: 300% 300%;
+  border-radius: 6px;
+  z-index: -1;
+  animation: gradient-rotate 3s ease infinite;
+}
+
+.animated-border-btn::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: linear-gradient(45deg, 
+    rgba(255, 0, 110, 0.8), 
+    rgba(131, 56, 236, 0.8), 
+    rgba(58, 134, 255, 0.8), 
+    rgba(6, 255, 165, 0.8), 
+    rgba(255, 190, 11, 0.8), 
+    rgba(251, 86, 7, 0.8), 
+    rgba(255, 0, 110, 0.8)
+  );
+  background-size: 300% 300%;
+  border-radius: 6px;
+  z-index: -1;
+  animation: gradient-rotate 3s ease infinite reverse;
+  filter: blur(1px);
+}
+
+@keyframes gradient-rotate {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Hover effect to make animation faster */
+.animated-border-btn:hover::before,
+.animated-border-btn:hover::after {
+  animation-duration: 1.5s;
+}
+
+/* Disabled state - remove animation */
+.animated-border-btn:disabled::before,
+.animated-border-btn:disabled::after {
+  animation: none;
+  background: rgba(var(--v-theme-outline), 0.3);
+}
+
+/* Template input wrapper and container */
+.template-input-wrapper {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 2rem;
+  padding-top: 1rem;
+}
+
+.template-input-container {
+  width: 400px;
+  max-width: 90vw;
+}
+
+.animated-border-container {
+  position: relative;
+  border-radius: 12px;
+  overflow: visible;
+}
+
+.animated-border-container::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  background: linear-gradient(45deg, 
+    black, 
+    #8338ec, 
+    #3a86ff, 
+    #fb5607, 
+    black
+  );
+  filter: blur(3px);
+  background-size: 300% 300%;
+  border-radius: 15px;
+  z-index: -1;
+  animation: gradient-rotate 3s ease infinite;
+}
+
+.animated-border-container::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, 
+    rgba(0, 0, 0, 0.8), 
+    rgba(131, 56, 236, 0.8), 
+    rgba(58, 134, 255, 0.8), 
+    rgba(251, 86, 7, 0.8), 
+    rgba(0, 0, 0, 0.8)
+  );
+  background-size: 300% 300%;
+  border-radius: 14px;
+  z-index: -1;
+  animation: gradient-rotate 3s ease infinite reverse;
+  filter: blur(2px);
+}
+
+.template-input-content {
+  background-color: rgb(var(--v-theme-surface));
+  border-radius: 12px;
+  padding: 1.5rem;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  border: 1px solid rgba(var(--v-theme-outline), 0.2);
+}
+
+@media (max-width: 768px) {
+  .template-input-wrapper {
+    padding: 1rem;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  
+  .template-input-container {
+    width: 100%;
+    max-width: none;
+  }
+  
+  .template-input-content {
+    padding: 1rem;
+  }
 }
 
 </style>
