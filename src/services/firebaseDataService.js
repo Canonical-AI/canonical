@@ -311,9 +311,13 @@ export class Comment {
   constructor(value) {
     this.comment = value.comment; 
     this.documentVersion = value.documentVersion || null;
-    this.editorID = value.editorID || null;
     this.resolved = value.resolved || false;
     this.parentId = value.parentId || null; // For thread support
+    this.aiGenerated = value.aiGenerated || false;
+    this.issueType = value.issueType || null;
+    this.severity = value.severity || null;
+    this.suggestion = value.suggestion || null;
+    this.selectedText = value.selectedText || null;
     Object.assign(this, addInDefaults(this));
   }
 }
@@ -543,7 +547,6 @@ export class Document {
   /// DOC VERSIONS
   ///-----------------------------------  
   static async getDocVersion(docID, versionNumber){
-    console.log('getDocVersion', docID, versionNumber)
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
     const q = query(versionsRef, where("versionNumber", "==", versionNumber));
@@ -576,7 +579,8 @@ export class Document {
       content: versionContent,
       createdBy: store.state.user.uid,
       createDate: serverTimestamp(),
-      versionNumber: versionNumber
+      versionNumber: versionNumber,
+      released: false,
     };
 
     // Add the new version to the versions subcollection
@@ -603,6 +607,36 @@ export class Document {
     }
 
   } 
+
+
+  static async updateMarkedUpContent(docID, versionContent , versionNumber) {
+    checkUserLoggedIn();
+    const documentRef = doc(db, "documents", docID);
+    const versionsRef = collection(documentRef, "versions");
+    const q = query(versionsRef, where("versionNumber", "==", versionNumber));
+    const versionSnapshot = await getDocs(q);
+    if (!versionSnapshot.empty) {
+      const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
+      await updateDoc(versionDocRef, {markedUpContent: versionContent});
+    } else {
+      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+    }
+  }
+
+  static async toggleVersionReleased(docID, versionNumber, released) {
+    checkUserLoggedIn();
+    const documentRef = doc(db, "documents", docID);
+    const versionsRef = collection(documentRef, "versions");
+    const q = query(versionsRef, where("versionNumber", "==", versionNumber));
+    const versionSnapshot = await getDocs(q);
+    if (!versionSnapshot.empty) {
+      const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
+      await updateDoc(versionDocRef, {released: released});
+    } else {
+      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+    }
+  }
+
 }
 
 export class Template {

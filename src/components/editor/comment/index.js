@@ -1,253 +1,622 @@
-import { Plugin, PluginKey } from 'prosemirror-state';
-import { DecorationSet, Decoration } from 'prosemirror-view';
-import { customAlphabet } from 'nanoid';
+import { $mark, $inputRule } from '@milkdown/utils';
+import { InputRule } from 'prosemirror-inputrules';
+import { editorViewCtx, serializerCtx } from '@milkdown/core';
 import store from '../../../store';
 
-
-const nanoid = customAlphabet('abcdefg', 8);
-
-// Store comments in memory for quick access
-const commentStore = new Map();
-
-// Plugin key for accessing the plugin state
-export const commentPluginKey = new PluginKey('commentPlugin');
-
-// Export the decoration creation function for external use
-export const createCommentDecoration = (from, to, id) => {
-    return Decoration.inline(from, to, {
-        'data-comment-id': id,
-        class: 'canonical-comment',
-        style: 'background-color: rgba(255, 255, 0, 0.15); cursor: pointer; border-radius: 4px; border: 1px solid rgba(255, 255, 0, 0.3);'
-    }, {
-        // Store the comment ID in the spec for easy access
-        commentId: id
-    });
-};
-
-
-export const commentFunctions =  {
-   createComment: async (view, from, to, comment, originalText) => {
-
-        const documentId = store?.state?.selected?.id || 'unknown';
-        const currentVersion = store?.state?.selected?.currentVersion || 'live';
-        const documentVersion = currentVersion === 'live' ? null : currentVersion;
-
-        const commentData = {
-            comment,
-            documentId,
-            documentVersion,
-            createdAt: new Date().toISOString(),
-            resolved: false,
-            editorID: {
-                from,
-                to,
-                selectedText: originalText
-            }
-        };
-
-        const commentObject = await store.dispatch('addComment', commentData);
-
-        // Store comment data
-        commentStore.set(commentObject.id, commentObject);
-
-        // Create transaction to add decoration
-        const tr = view.state.tr;
-        tr.setMeta(commentPluginKey, {
-            type: 'ADD_DECORATION',
-            id: commentObject.id,
-            from,
-            to
-        });
-
-        view.dispatch(tr);
-        return ;
+export const commentMark = $mark('comment', (ctx) => {
+  return {
+    inclusive: true,
+    attrs: { 
+      id: { default: null },
+      resolved: { default: false }
     },
+    parseDOM: [
+      {
+        tag: 'span[data-comment-id]',
+        getAttrs: (dom) => {
+          if (!(dom instanceof HTMLElement))
+            throw expectDomTypeError(dom)
 
-    addDecoration: (view, from, to, commentData) => {
-        // Store comment data if not already stored
-        if (!commentStore.has(commentData.id)) {
-            commentStore.set(commentData.id, commentData);
-        }
-
-        // Create transaction to add decoration
-        const tr = view.state.tr;
-        tr.setMeta(commentPluginKey, {
-            type: 'ADD_DECORATION',
-            id: commentData.id,
-            from,
-            to
-        });
-
-        view.dispatch(tr);
-    },
-
-    removeComment: (view, id) => {
-        // Remove from store
-        commentStore.delete(id);
-
-        // Create transaction to remove decoration
-        const tr = view.state.tr;
-        tr.setMeta(commentPluginKey, {
-            type: 'REMOVE_DECORATION',
-            id
-        });
-
-        view.dispatch(tr);
-    },
-
-    // Clear all decorations and rebuild from store data
-    refreshAllDecorations: (view ) => {
-        // Get fresh data from store
-
-
-        const allComments = store.state.selected.comments;
-        const activeComments = allComments.filter(comment => 
-            comment.editorID && 
-            comment.resolved !== true &&
-            comment.editorID.from !== comment.editorID.to
-        );
-        
-        // Clear the in-memory store
-        commentStore.clear();
-        
-        // Store active comments data
-        activeComments.forEach(comment => {
-            commentStore.set(comment.id, comment);
-        });
-        
-        // Create transaction to refresh decorations
-        const tr = view.state.tr;
-        tr.setMeta(commentPluginKey, {
-            type: 'REFRESH_DECORATIONS',
-            activeComments: activeComments
-        });
-
-        view.dispatch(tr);
-    },
-
-    updateCommentPositions: (view) => {
-        const comments = store.state.selected.comments;
-
-        const { state } = view;
-        const commentPluginState = commentPluginKey.getState(state);
-                    
-        if (!commentPluginState) return;
-        const positionUpdates = [];
-
-                    // Try different ways to access decorations
-        if (commentPluginState.find) {
-        const decorations = commentPluginState.find();
-                        
-        decorations.forEach((decoration, index) => {
-                            
-                            // Get the comment ID from the spec (now properly stored there)
-        const commentId = decoration.spec.commentId || 
-                                decoration.spec['data-comment-id'] || 
-                                decoration.attrs?.['data-comment-id'];                       
-
-                if (commentId) {
-                    const comment = comments.find(c => c.id === commentId);
-
-                    if (comment && comment.editorID) {
-                        const currentFrom = decoration.from;
-                        const currentTo = decoration.to;
-                        if (currentFrom === comment.editorID.from && currentTo === comment.editorID.to) return;
-                        
-                        // Always add to updates for now to test saving
-                        positionUpdates.push({
-                            commentId: commentId,
-                            newFrom: currentFrom,
-                            newTo: currentTo,
-                            oldFrom: comment.editorID.from,
-                            oldTo: comment.editorID.to
-                        });
-                    }
-                } 
-            });
-        } 
-
-        store.dispatch('updateCommentPositions', positionUpdates);  
-
-    }
-};
-
-// Create the comment plugin
-export const createCommentPlugin = () => {
-    return new Plugin({
-        key: commentPluginKey,
-        
-        state: {
-            init() {
-                return DecorationSet.empty;
-            },
-            
-            apply(tr, decorationSet, oldState, newState) {
-                // Map decorations through document changes
-                decorationSet = decorationSet.map(tr.mapping, tr.doc);
-                
-                // Handle plugin-specific actions
-                const meta = tr.getMeta(commentPluginKey);
-                if (meta) {
-                    switch (meta.type) {
-                        case 'ADD_DECORATION':
-                            const decoration = createCommentDecoration(meta.from, meta.to, meta.id);
-                            decorationSet = decorationSet.add(tr.doc, [decoration]);
-                            break;
-                            
-                        case 'REMOVE_DECORATION':
-                            const decorationsToRemove = decorationSet.find(null, null, spec => 
-                                spec.commentId === meta.id || spec['data-comment-id'] === meta.id
-                            );
-                            if (decorationsToRemove.length > 0) {
-                                decorationSet = decorationSet.remove(decorationsToRemove);
-                            }
-                            break;
-                            
-                        case 'CLEAR_ALL_DECORATIONS':
-                            decorationSet = DecorationSet.empty;
-                            break;
-                            
-                        case 'REFRESH_DECORATIONS':
-                            decorationSet = DecorationSet.empty;
-                            const activeComments = meta.activeComments || [];
-                            const newDecorations = activeComments.map(comment => 
-                                createCommentDecoration(comment.editorID.from, comment.editorID.to, comment.id)
-                            );
-                            if (newDecorations.length > 0) {
-                                decorationSet = decorationSet.add(tr.doc, newDecorations);
-                            }
-                            break;
-                    }
-                }
-                return decorationSet;
-            }
+          return {
+            id: dom?.getAttribute('data-comment-id') ?? null,
+            resolved: dom?.getAttribute('data-resolved') === 'true' ?? false
+          }
         },
+      },
+    ],
+    toDOM: (mark) => [
+      'span',
+      {
+        class: `comment-mark ${mark?.attrs?.resolved ? 'comment-resolved' : ''}`,
+        ref: `comment-mark-${mark?.attrs?.id}`,
+        'data-comment-id': mark?.attrs?.id,
+        'data-resolved': mark?.attrs?.resolved?.toString(),
+      },
+      0,
+    ],
+    parseMarkdown: {
+      match: (node) => {
+        // Match text nodes that contain the comment pattern
+        return node.type === 'textDirective' && node.name === 'comment';
+      },
+      runner: (state, node, markType) => {
+        const id = node.attributes?.id || '';
+        const resolved = node.attributes?.resolved === 'true';
+        state.openMark(markType, {id, resolved});
+        state.next(node.children[0]); // recurse into text inside
+        state.closeMark(markType);
+      },
+    },
+    toMarkdown: {
+      match: (mark) => mark.type.name === 'comment',
+      runner: (state, mark, node) => {
+        state.withMark(mark, 'textDirective', undefined, { 
+          name: 'comment', 
+          attributes: { 
+            id: mark.attrs.id,
+            resolved: mark.attrs.resolved.toString()
+          } });
+      },
+    },
+  };
+});
+
+/**
+ * Utility function to add a comment mark to text in the editor
+ * This can be imported and used by other parts of the codebase (e.g., vertexAiService)
+ * 
+ * @param {Object} editorView - The ProseMirror editor view instance
+ * @param {string} textToMark - The exact text to mark with the comment
+ * @param {string} commentContent - The comment text content
+ * @param {number} startPos - Optional starting position in the document (if not provided, will search for text)
+ * @param {string} parentId - Optional parent comment ID for threaded comments
+ * @param {string} versionId - Optional version ID for the comment
+ * @param {boolean} aiGenerated - Optional boolean to indicate if the comment was generated by AI
+ * @returns {boolean} - True if comment mark was successfully added, false otherwise
+ */
+export const addComment = async (editorView, textToMark, commentContent, startPos = null, parentId = null, versionId = null, aiGenerated = false) => {
+  if (!editorView || !commentContent) {
+    console.error('addComment: Missing required parameters');
+    return false;
+  }
+  
+  const commentData = {
+    comment: commentContent,
+    documentVersion: versionId || (store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion),
+    selectedText: textToMark || '',
+    parentId: parentId || null,
+    resolved: false,
+    aiGenerated: aiGenerated || false
+  };
+
+  try {
+    const comment = await store.dispatch('addComment', commentData);
+
+    // Try to add the comment mark to text, but don't fail if it doesn't work
+    if (textToMark || startPos !== null) {
+      const markSuccess = await addCommentMarkToText(editorView, textToMark, comment.id, startPos, comment.resolved);
+      if (!markSuccess) {
+        console.warn('addComment: Failed to add comment mark to text, but comment was created successfully');
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('addComment: Error creating comment:', error);
+    return false;
+  }
+}
+
+export async function addCommentMarkToText(editorView, textToMark, commentId, startPos = null, resolved = false) {
+  if (!editorView || !commentId) {
+    console.error('addCommentMarkToText: Missing required parameters');
+    return false;
+  }
+
+  const { state, dispatch } = editorView;
+  const { schema } = state;
+  const commentMarkType = schema.marks.comment;
+
+  if (!commentMarkType) {
+    console.error('addCommentMarkToText: Comment mark type not found in schema');
+    return false;
+  }
+
+  let from = startPos;
+  let to = startPos;
+
+  // If startPos is provided, use it directly
+  if (startPos !== null) {
+    to = startPos + (textToMark ? textToMark.length : 0);
+    console.log(`addCommentMarkToText: Using provided position ${from}-${to} for text "${textToMark}"`);
+  } else if (textToMark) {
+    // Try to find the text with proper ProseMirror node traversal
+    const found = findTextInDocument(state, textToMark);
+    if (found) {
+      from = found.from;
+      to = found.to;
+      console.log(`addCommentMarkToText: Found text "${textToMark}" at position ${from}-${to}`);
+    } else {
+      console.warn(`addCommentMarkToText: Could not find text "${textToMark}" in document. Comment will be created without text marking.`);
+      findTextInDocument(state, textToMark);
+      // Return true to allow comment creation without text marking
+      return true;
+    }
+  } else {
+    console.warn('addCommentMarkToText: No text to mark and no position provided');
+    return true;
+  }
+
+  // Validate positions are within document bounds
+  if (from < 0 || to > state.doc.content.size || from >= to) {
+    console.warn(`addCommentMarkToText: Invalid position range ${from}-${to} for document size ${state.doc.content.size}`);
+    return true; // Allow comment creation without marking
+  }
+
+  // Check if there's already a comment mark in this range
+  if (state.doc.rangeHasMark(from, to, commentMarkType)) {
+    console.warn(`addCommentMarkToText: Comment mark already exists for range ${from}-${to}`);
+    return false;
+  }
+
+  try {
+    const commentMark = commentMarkType.create({ id: commentId, resolved });
+    const transaction = state.tr.addMark(from, to, commentMark);
+
+    if (dispatch) {
+      dispatch(transaction);
+    }
+
+    console.log(`addCommentMarkToText: Successfully added comment mark for ID "${commentId}" at position ${from}-${to} (resolved: ${resolved})`);
+    return true;
+  } catch (error) {
+    console.error('addCommentMarkToText: Error creating or applying mark:', error);
+    return false;
+  }
+}
+
+/**
+ * Helper function to find text in document with proper ProseMirror node traversal
+ * @param {Object} state - ProseMirror state
+ * @param {string} searchText - Text to search for
+ * @returns {Object|null} - {from, to} positions or null if not found
+ */
+function findTextInDocument(state, searchText) {
+  if (!searchText || !searchText.trim()) {
+    return null;
+  }
+
+  const normalizedSearchText = normalizeText(searchText);
+  const searchLength = normalizedSearchText.length;
+  
+  // Minimum length for fuzzy matching
+  const MIN_LENGTH = 4;
+  // Maximum edit distance for fuzzy matching (as a percentage of search text length)
+  const MAX_EDIT_DISTANCE_RATIO = 0.2;
+  
+  let bestMatch = null;
+  let bestDistance = Infinity;
+  
+  // Single traversal of the document
+  state.doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    
+    const nodeText = node.text;
+    const normalizedNodeText = normalizeText(nodeText);
+    
+    // Try exact match first
+    const exactIndex = normalizedNodeText.indexOf(normalizedSearchText);
+    if (exactIndex !== -1) {
+      bestMatch = {
+        from: pos + exactIndex,
+        to: pos + exactIndex + searchLength,
+        distance: 0
+      };
+      return false; // Stop traversal on exact match
+    }
+    
+    // For longer search texts, try fuzzy matching
+    if (searchLength >= MIN_LENGTH) {
+      // Slide a window of searchLength through the node text
+      for (let i = 0; i <= normalizedNodeText.length - searchLength; i++) {
+        const windowText = normalizedNodeText.slice(i, i + searchLength);
+        const distance = levenshteinDistance(normalizedSearchText, windowText);
+        const maxAllowedDistance = Math.floor(searchLength * MAX_EDIT_DISTANCE_RATIO);
         
-        props: {
-            decorations(state) {
-                return this.getState(state);
-            },
-            
-            handleDOMEvents: {
-                click: (view, event) => {
-                    const target = event.target;
-                    // Check if the clicked element or its parent has the comment class
-                    const commentElement = target.closest('.canonical-comment');
-                    if (commentElement) {
-                        const commentId = commentElement.getAttribute('data-comment-id');
-                        if (commentId) {
-                            // Dispatch custom event
-                            const customEvent = new CustomEvent('comment-clicked', {
-                                detail: { commentId },
-                                bubbles: true
-                            });
-                            view.dom.dispatchEvent(customEvent);
-                            return true; // Prevent default handling
-                        }
-                    }
-                    return false;
-                }
-            }
+        if (distance <= maxAllowedDistance && distance < bestDistance) {
+          bestMatch = {
+            from: pos + i,
+            to: pos + i + searchLength,
+            distance
+          };
+          bestDistance = distance;
         }
+      }
+    }
+  });
+
+  if (!bestMatch) {
+    console.warn(`findTextInDocument: No match found for "${normalizedSearchText}"`);
+  }
+  
+  return bestMatch ? { from: bestMatch.from, to: bestMatch.to } : null;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ * @param {string} a - First string
+ * @param {string} b - Second string
+ * @returns {number} - Edit distance between strings
+ */
+function levenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+
+  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1, // deletion
+        matrix[j - 1][i] + 1, // insertion
+        matrix[j - 1][i - 1] + substitutionCost // substitution
+      );
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+/**
+ * Helper function to normalize text for comparison
+ * @param {string} text - Text to normalize
+ * @returns {string} - Normalized text
+ */
+function normalizeText(text) {
+  return text
+    .replace(/\s+/g, ' ') // Replace multiple whitespace with single space
+    .replace(/[\r\n\t]/g, ' ') // Replace line breaks and tabs with spaces
+    .trim();
+}
+
+export async function resolveComment(editorView, commentId) {
+  try{
+    await store.dispatch('updateCommentData', {
+      id: commentId,
+      data: { resolved: true }
     });
+
+    // Add a small delay to ensure the editor state is stable
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    updateCommentMarkResolved(editorView, commentId, true);
+
+    store.commit('alert', {
+        type: 'success',
+        message: 'Comment resolved',
+        autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('resolveComment: Error updating comment mark:', error);
+    return false;
+  }
+}
+
+export async function unresolveComment(editorView, commentId) {
+  try{
+    await store.dispatch('updateCommentData', {
+      id: commentId,
+      data: { resolved: false }
+    });
+
+    // Add a small delay to ensure the editor state is stable
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    updateCommentMarkResolved(editorView, commentId, false);
+
+    store.commit('alert', {
+        type: 'success',
+        message: 'Comment unresolved',
+        autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('unresolveComment: Error updating comment mark:', error);
+    return false;
+  }
+}
+
+export async function deleteComment(editorView, commentId) {
+  try{
+    await store.dispatch('deleteComment', commentId);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    removeCommentMarkById(editorView, commentId);
+    store.commit('alert', {
+      type: 'success',
+      message: 'Comment deleted',
+      autoClear: true
+    });
+    return true;
+  } catch (error) {
+    console.error('deleteComment: Error deleting comment:', error);
+    return false;
+  }
+}
+
+/**
+ * Utility function to remove a comment mark from text in the editor
+ * 
+ * @param {Object} editorView - The ProseMirror editor view instance
+ * @param {string} commentId - The comment ID to remove
+ * @returns {boolean} - True if comment mark was successfully removed, false otherwise
+ */
+export function removeCommentMarkById(editorView, commentId) {
+  if (!editorView || !commentId) {
+    console.error('removeCommentMarkById: Missing required parameters');
+    return false;
+  }
+
+  const { state, dispatch } = editorView;
+  const { schema } = state;
+  const commentMarkType = schema.marks.comment;
+
+  if (!commentMarkType) {
+    console.error('removeCommentMarkById: Comment mark type not found in schema');
+    return false;
+  }
+
+  try {
+    // 1. Collect all ranges that contain the target mark.
+    const ranges = [];
+
+    state.doc.descendants((node, pos) => {
+      if (!node.isText) return;
+      node.marks.forEach(mark => {
+        if (mark.type === commentMarkType && mark.attrs.id === commentId) {
+          ranges.push({ from: pos, to: pos + node.nodeSize });
+        }
+      });
+    });
+
+    if (ranges.length === 0) {
+      console.warn(`removeCommentMarkById: No comment mark found with ID "${commentId}"`);
+      return false;
+    }
+
+    // 2. Remove marks using mapping so every subsequent range is remapped
+    let tr = state.tr;
+    ranges.forEach(({ from, to }) => {
+      const mappedFrom = tr.mapping.map(from);
+      const mappedTo   = tr.mapping.map(to);
+      tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
+    });
+
+    dispatch(tr);
+    console.log(`removeCommentMarkById: Successfully removed comment mark with ID "${commentId}"`);
+    return true;
+  } catch (error) {
+    console.error('removeCommentMarkById: Error applying transaction:', error);
+    return false;
+  }
+}
+
+export function scrollToCommentInEditor(commentId, editorView = null) {
+    // If editorView is provided, use it to find the element within the editor
+    if (editorView && editorView.dom) {
+        const commentElement = editorView.dom.querySelector(`[data-comment-id="${commentId}"]`);
+        if (commentElement) {
+            // Find the scrollable container - the main content area
+            const scrollContainer = document.querySelector('main[style*="overflow-y: auto"]') || 
+                                  document.querySelector('.v-main') ||
+                                  commentElement.closest('.ProseMirror') ||
+                                  editorView.dom;
+            
+            if (scrollContainer && scrollContainer !== document.body) {
+                // Calculate scroll position to center the comment element
+                const containerRect = scrollContainer.getBoundingClientRect();
+                const commentRect = commentElement.getBoundingClientRect();
+                
+                const scrollTop = scrollContainer.scrollTop + 
+                    (commentRect.top - containerRect.top) - 
+                    (containerRect.height / 2) + 
+                    (commentRect.height / 2);
+                
+                // Scroll within the container
+                scrollContainer.scrollTo({
+                    top: scrollTop,
+                    behavior: 'smooth'
+                });
+            } else {
+                // Fallback to scrollIntoView if no suitable container found
+                commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            // Add a visual highlight effect
+            commentElement.classList.add('comment-highlight');
+            
+            // Remove the highlight after a delay
+            setTimeout(() => {
+                commentElement.classList.remove('comment-highlight');
+            }, 2000);
+            
+            return true;
+        }
+    } else {
+        // Fallback: search the entire document for the comment element
+        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
+        if (commentElement) {
+            // Find the scrollable container - the main content area
+            const scrollContainer = document.querySelector('main[style*="overflow-y: auto"]') || 
+                                  document.querySelector('.v-main') ||
+                                  commentElement.closest('.ProseMirror');
+            
+            if (scrollContainer && scrollContainer !== document.body) {
+                // Calculate scroll position to center the comment element
+                const containerRect = scrollContainer.getBoundingClientRect();
+                const commentRect = commentElement.getBoundingClientRect();
+                
+                const scrollTop = scrollContainer.scrollTop + 
+                    (commentRect.top - containerRect.top) - 
+                    (containerRect.height / 2) + 
+                    (commentRect.height / 2);
+                
+                // Scroll within the container
+                scrollContainer.scrollTo({
+                    top: scrollTop,
+                    behavior: 'smooth'
+                });
+            } else {
+                // Fallback to scrollIntoView if no suitable container found
+                commentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            
+            // Add a visual highlight effect
+            commentElement.classList.add('comment-highlight');
+            
+            // Remove the highlight after a delay
+            setTimeout(() => {
+                commentElement.classList.remove('comment-highlight');
+            }, 2000);
+            
+            return true;
+        }
+    }
+    
+    console.warn(`scrollToCommentInEditor: No comment element found with ID "${commentId}"`);
+    return false;
+}
+
+/**
+ * Utility function to update the resolved state of a comment mark
+ * 
+ * @param {Object} editorView - The ProseMirror editor view instance
+ * @param {string} commentId - The comment ID to update
+ * @param {boolean} resolved - The new resolved state
+ * @returns {boolean} - True if comment mark was successfully updated, false otherwise
+ */
+export function updateCommentMarkResolved(editorView, commentId, resolved) {
+  if (!editorView || !commentId) {
+    console.error('updateCommentMarkResolved: Missing required parameters');
+    return false;
+  }
+
+  const { state, dispatch } = editorView;
+  const { schema } = state;
+  const commentMarkType = schema.marks.comment;
+
+  if (!commentMarkType) {
+    console.error('updateCommentMarkResolved: Comment mark type not found in schema');
+    return false;
+  }
+
+  try {
+    // Find all ranges that contain the target mark
+    const ranges = [];
+    state.doc.descendants((node, pos) => {
+      if (!node.isText) return;
+      node.marks.forEach(mark => {
+        if (mark.type === commentMarkType && mark.attrs.id === commentId) {
+          ranges.push({ from: pos, to: pos + node.nodeSize });
+        }
+      });
+    });
+
+    if (ranges.length === 0) {
+      console.warn(`updateCommentMarkResolved: No comment mark found with ID "${commentId}"`);
+      return false;
+    }
+
+    // Update marks using mapping so every subsequent range is remapped
+    let tr = state.tr;
+    ranges.forEach(({ from, to }) => {
+      const mappedFrom = tr.mapping.map(from);
+      const mappedTo = tr.mapping.map(to);
+      
+      // Remove the old mark
+      tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
+      
+      // Add the new mark with updated resolved state
+      const newCommentMark = commentMarkType.create({ id: commentId, resolved });
+      tr = tr.addMark(mappedFrom, mappedTo, newCommentMark);
+    });
+
+    dispatch(tr);
+    return true;
+  } catch (error) {
+    console.error('updateCommentMarkResolved: Error applying transaction:', error);
+    return false;
+  }
+}
+
+export function changeCommentText(editorView, commentId, newText) {
+
+}
+
+/**
+ * Helper function to get the current markdown from the Milkdown editor
+ * Since we're in a comment plugin context, we need to access the editor instance
+ * from the component that has the Milkdown context
+ * 
+ * @param {Function} editorInstance - The get function from useInstance() in the MilkdownEditor component
+ * @returns {string} - The current markdown content
+ */
+export const getCurrentMarkdown = (editorInstance) => {
+  if (!editorInstance) {
+    console.warn('getCurrentMarkdown: No editor instance provided');
+    return '';
+  }
+
+  try {
+    let markdown = '';
+    editorInstance().action((ctx) => {
+      const { editorViewCtx, serializerCtx } = require('@milkdown/core');
+      const editorView = ctx.get(editorViewCtx);
+      const serializer = ctx.get(serializerCtx);
+      markdown = serializer(editorView.state.doc);
+    });
+    return markdown;
+  } catch (error) {
+    console.error('getCurrentMarkdown: Error getting markdown:', error);
+    return '';
+  }
 };
+
+// Add CSS styles for comment marks
+const style = document.createElement('style');
+style.textContent = `
+  .comment-mark {
+    background-color: rgba(255, 255, 0, 0.20) !important;
+    border: 1px solid rgba(255, 255, 0, 0.50) !important;
+    border-radius: 8px !important;
+    padding: 1px 2px !important;
+    cursor: pointer !important;
+    transition: background-color 0.2s ease !important;
+  }
+  
+  .comment-mark:hover {
+    background-color: rgba(255, 255, 0, 0.35) !important;
+  }
+  
+  .comment-mark.comment-resolved {
+    background-color: rgba(76, 175, 80, 0.05) !important;
+    border: 1px solid rgba(76, 175, 80, 0.20) !important;
+    opacity: 0.7 !important;
+  }
+  
+  .comment-mark.comment-resolved:hover {
+    background-color: rgba(76, 175, 80, 0.25) !important;
+  }
+  
+  .comment-highlight {
+    background-color: rgba(255, 255, 0, 0.60) !important;
+    border: 2px solid rgba(255, 255, 0, 0.80) !important;
+    box-shadow: 0 0 8px rgba(255, 255, 0, 0.40) !important;
+    transition: all 0.3s ease !important;
+  }
+`;
+document.head.appendChild(style);

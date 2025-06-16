@@ -12,6 +12,25 @@
     color: white;
 }
 
+/* Apply gradient to the entire toggle group */
+.gen-btn.v-btn-toggle {
+    background: linear-gradient(132deg, rgb(139,70,198), rgb(var(--v-theme-primary))) !important;
+    border-radius: 4px !important;
+    overflow: hidden;
+}
+
+/* Style the individual buttons within the toggle group */
+.gen-btn.v-btn-toggle .v-btn {
+    background: transparent !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Optional: Add hover effects for individual buttons */
+.gen-btn.v-btn-toggle .v-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
 .gen-icon {
     background: linear-gradient(132deg, rgb(139,70,198), rgb(var(--v-theme-primary)));
     -webkit-background-clip: text;

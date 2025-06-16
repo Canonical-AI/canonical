@@ -1,6 +1,6 @@
 {
 	"name": "canonical",
-	"version": "0.2.0",
+	"version": "0.8.0",
 	"private": true,
 	"scripts": {
 		"dev": "vite",
@@ -10,11 +10,14 @@
 	},
 	"dependencies": {
 		"@mdi/font": "5.9.55",
+		"@milkdown/core": "^7.13.1",
 		"@milkdown/crepe": "^7.5.7",
 		"@milkdown/kit": "^7.5.5",
-		"@milkdown/plugin-diagram": "^7.5.0",
+		"@milkdown/plugin-diagram": "^7.7.0",
 		"@milkdown/plugin-slash": "^7.5.0",
-		"@milkdown/theme-nord": "^7.5.0",
+		"@milkdown/preset-commonmark": "^7.13.1",
+		"@milkdown/theme-nord": "^7.13.1",
+		"@milkdown/utils": "^7.13.1",
 		"@milkdown/vue": "^7.5.0",
 		"@prosemirror-adapter/vue": "^0.4.1",
 		"@tailwindcss/typography": "^0.5.15",
