@@ -3,7 +3,10 @@
     <v-expansion-panel>
       <v-expansion-panel-title>
         <v-btn-toggle class="gen-btn" density="compact">
-          <v-tooltip text="Get AI feedback on your document's overall quality, clarity, and structure" location="bottom">
+          <v-tooltip 
+            text="Get AI feedback on your document's overall quality, clarity, and structure" 
+            location="bottom"
+          >
             <template v-slot:activator="{ props }">
               <v-btn
                 :disabled="disabled"
@@ -45,7 +48,11 @@
             </template>
           </v-tooltip>
           
-          <v-tooltip v-if="hasAiComments" text="Clear AI comments" location="bottom">
+          <v-tooltip 
+            v-if="hasAiComments" 
+            text="Clear AI comments" 
+            location="bottom"
+          >
             <template v-slot:activator="{ props }">
               <v-btn
                 :disabled="disabled"
@@ -304,6 +311,16 @@ export default {
         this.expandedModel = 0;
       }
     },
+  },
+
+  beforeUnmount() {
+    // Force close any open tooltips when component is unmounted
+    const tooltips = document.querySelectorAll('.v-overlay--active');
+    tooltips.forEach(tooltip => {
+      if (tooltip.classList.contains('v-overlay--tooltip')) {
+        tooltip.remove();
+      }
+    });
   },
 };
 </script>

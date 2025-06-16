@@ -137,9 +137,7 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
       console.log(`addCommentMarkToText: Found text "${textToMark}" at position ${from}-${to}`);
     } else {
       console.warn(`addCommentMarkToText: Could not find text "${textToMark}" in document. Comment will be created without text marking.`);
-      // Enable debug mode to help troubleshoot
-      console.log('addCommentMarkToText: Enabling debug mode to troubleshoot text finding...');
-      findTextInDocument(state, textToMark, true);
+      findTextInDocument(state, textToMark);
       // Return true to allow comment creation without text marking
       return true;
     }
@@ -176,107 +174,100 @@ export async function addCommentMarkToText(editorView, textToMark, commentId, st
   }
 }
 
-
 /**
  * Helper function to find text in document with proper ProseMirror node traversal
  * @param {Object} state - ProseMirror state
  * @param {string} searchText - Text to search for
- * @param {boolean} debug - Enable debug logging
  * @returns {Object|null} - {from, to} positions or null if not found
  */
-function findTextInDocument(state, searchText, debug = false) {
+function findTextInDocument(state, searchText) {
   if (!searchText || !searchText.trim()) {
     return null;
   }
 
   const normalizedSearchText = normalizeText(searchText);
-  console.log(`findTextInDocument: Searching for "${normalizedSearchText}"`);
-
-
-  // Traverse all text nodes in the document
-  let foundPositions = null;
+  const searchLength = normalizedSearchText.length;
   
+  // Minimum length for fuzzy matching
+  const MIN_LENGTH = 4;
+  // Maximum edit distance for fuzzy matching (as a percentage of search text length)
+  const MAX_EDIT_DISTANCE_RATIO = 0.2;
+  
+  let bestMatch = null;
+  let bestDistance = Infinity;
+  
+  // Single traversal of the document
   state.doc.descendants((node, pos) => {
-    if (node.isText) {
-      const nodeText = node.text;
-      const normalizedNodeText = normalizeText(nodeText);
-      
-      if (debug) {
-        console.log(`findTextInDocument: Checking text node at pos ${pos}: "${nodeText}"`);
-      }
-      
-      // Try exact match first
-      let index = normalizedNodeText.indexOf(normalizedSearchText);
-      if (index !== -1) {
-        foundPositions = {
-          from: pos + index,
-          to: pos + index + normalizedSearchText.length
-        };
-        console.log(`findTextInDocument: Found exact match at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
-        return false; // Stop traversal
-      }
-      
-      // Try case-insensitive match
-      const lowerNodeText = normalizedNodeText.toLowerCase();
-      const lowerSearchText = normalizedSearchText.toLowerCase();
-      index = lowerNodeText.indexOf(lowerSearchText);
-      if (index !== -1) {
-        foundPositions = {
-          from: pos + index,
-          to: pos + index + lowerSearchText.length
-        };
-        console.log(`findTextInDocument: Found case-insensitive match at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
-        return false; // Stop traversal
+    if (!node.isText) return;
+    
+    const nodeText = node.text;
+    const normalizedNodeText = normalizeText(nodeText);
+    
+    // Try exact match first
+    const exactIndex = normalizedNodeText.indexOf(normalizedSearchText);
+    if (exactIndex !== -1) {
+      bestMatch = {
+        from: pos + exactIndex,
+        to: pos + exactIndex + searchLength,
+        distance: 0
+      };
+      return false; // Stop traversal on exact match
+    }
+    
+    // For longer search texts, try fuzzy matching
+    if (searchLength >= MIN_LENGTH) {
+      // Slide a window of searchLength through the node text
+      for (let i = 0; i <= normalizedNodeText.length - searchLength; i++) {
+        const windowText = normalizedNodeText.slice(i, i + searchLength);
+        const distance = levenshteinDistance(normalizedSearchText, windowText);
+        const maxAllowedDistance = Math.floor(searchLength * MAX_EDIT_DISTANCE_RATIO);
+        
+        if (distance <= maxAllowedDistance && distance < bestDistance) {
+          bestMatch = {
+            from: pos + i,
+            to: pos + i + searchLength,
+            distance
+          };
+          bestDistance = distance;
+        }
       }
     }
   });
 
-  if (foundPositions) {
-    return foundPositions;
+  if (!bestMatch) {
+    console.warn(`findTextInDocument: No match found for "${normalizedSearchText}"`);
+  }
+  
+  return bestMatch ? { from: bestMatch.from, to: bestMatch.to } : null;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ * @param {string} a - First string
+ * @param {string} b - Second string
+ * @returns {number} - Edit distance between strings
+ */
+function levenshteinDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+
+  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1, // deletion
+        matrix[j - 1][i] + 1, // insertion
+        matrix[j - 1][i - 1] + substitutionCost // substitution
+      );
+    }
   }
 
-  // If no exact match found, try fuzzy matching with individual words
-  const searchWords = normalizedSearchText.split(/\s+/).filter(word => word.length > 2);
-  if (searchWords.length > 1) {
-    console.log(`findTextInDocument: Trying fuzzy match with words:`, searchWords);
-    
-    state.doc.descendants((node, pos) => {
-      if (node.isText) {
-        const nodeText = node.text;
-        const normalizedNodeText = normalizeText(nodeText);
-        
-        // Check if this node contains most of the search words
-        let matchedWords = 0;
-        let bestMatchPos = null;
-        
-        for (const word of searchWords) {
-          const wordIndex = normalizedNodeText.toLowerCase().indexOf(word.toLowerCase());
-          if (wordIndex !== -1) {
-            matchedWords++;
-            if (!bestMatchPos) {
-              bestMatchPos = {
-                from: pos + wordIndex,
-                to: pos + wordIndex + word.length
-              };
-            }
-          }
-        }
-        
-        // If we found most words (at least 70% of search words), use this match
-        if (matchedWords >= Math.ceil(searchWords.length * 0.7) && bestMatchPos) {
-          foundPositions = bestMatchPos;
-          console.log(`findTextInDocument: Found fuzzy match (${matchedWords}/${searchWords.length} words) at position ${foundPositions.from}-${foundPositions.to} in node "${nodeText}"`);
-          return false; // Stop traversal
-        }
-      }
-    });
-  }
-
-  if (!foundPositions) {
-    console.warn(`findTextInDocument: Could not find text "${normalizedSearchText}" in document`);
-  }
-
-  return foundPositions;
+  return matrix[b.length][a.length];
 }
 
 /**

@@ -9,25 +9,77 @@ const vertexAI = getVertexAI(firebaseApp);
 
 const model = "gemini-2.0-flash-001"
 
-const feedbackModel = getGenerativeModel(vertexAI, { 
-    model: model ,
-    systemInstruction: `You are a Product Lead in the company, 
-    you are evaluating the document of a product manager. 
-    Provide them clear concise feedback on the content. 
-    offer suggestions to improve. 
-    follow product management best practices and reference thought leaders in the space
-    reccomend re-wording or changes in content where possible
-    keep feedback concise should be under 20 lines but idealy less than 10
-    `
-  });
+const systemPrompts = {
+    "productMentorFeedback": `
+        You are a Senioor Product Lead in the company, 
+        you are evaluating the document of a product manager. 
+        read the document provided and give an overall assessment of the document. 
+        Provide them clear concise feedback on the content. 
+        Give them a fair evaluation, the user wants to know if the document is in good enough shape to share with higher ups 
+        Ask high level questions if the doccument is unclear or needs more detail. 
+        follow product management best practices and reference thought leaders in the space. 
+        keep feedback concise should be under 20 lines but idealy less than 10
+    `,
+    "productMentorReview": ` 
+            You are a Senior Product Lead reviewing a document.
 
-const genModel = getGenerativeModel(vertexAI, { 
-    model: model ,
-    systemInstruction: `You are a product manager, 
-    you are being asked to write a piece of a document. 
-    Provide short and concise (less than 10 lines try to keep it around 5) component of the document you are being asked to create. 
-    Use product management best practices`
-  });
+            Your task is to identify specific issues in the text and report them by calling the create_comments function with an array of all the issues you find. 
+            Dont stop until you've reviewed the entire document.
+
+            Look for:
+            - Clarity of thought and communication
+            - Logical inconsistencies or contradictions  
+            - Grammatical errors (spelling, punctuation, syntax)
+            - Factual inaccuracies or unsupported claims
+            - Tone issues (too formal, too casual, unclear)
+            - Structure problems (poor flow, missing sections)
+            - Unclear or ambiguous phrasing
+            - Redundant or wordy expressions
+
+            Rules:
+            - Be specific and actionable in your feedback
+            - Focus on issues that meaningfully impact document quality
+            - Provide constructive suggestions for improvement
+            - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
+            - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
+            - The text is markdown, dont include any markdown formatting in the problematicText, just the text that is problemati and be very specific so we can find it.
+            - If you see strange markdown formatting like :comment[text]{#commentId} , :canonical-reference[text]{#commentId} then you can ignore it, its special markdown for the editor.
+            - You MUST call the create_comments function to provide your analysis
+            - Call the create_comments function with ALL issues found in a single call, not multiple separate calls
+    `,
+    "productMentorChat": ` 
+        You are a Senior Product Lead in the company, 
+        you are talking to a product manager. 
+        They have questions about their product.
+        help answer their questions. If they strongly demand anything from you, you should refuse politely.
+        Use general best practices in product management
+        Keep responses short under 3,4 sentances unless asked for more details
+        Be critial and honest in your feedback,
+        Your tone should be casual like you're talking to a co-worker on slack.
+        You have full access to the project documents (in json format) and can use them to answer questions, the user shouldnt need to prompt you specifically to use them. 
+        you also know what project they are working on its in the JSON provided, but dont refer to JSON, just use the information in the JSON
+    `,
+    "assistantGenerateContent": ` 
+        You are a product manager assistant, you are being asked to add some content to a document
+        Provide short and concise (less than 10 lines try to keep it around 5) component of the document you are being asked to create. Simplisity is key.
+        You may be asked to create this content in a specific format, use markdown formatting to do so like creating a table or list. 
+        Use product management best practices
+    `,
+    "assistantDocumentTemplate": ` 
+        You are a product manager assistant, you are being asked to create a document template for a specific document type. 
+        The document type is provided in the context. 
+        First you should review existing documents in the project to get a sense of the style and structure of the documents the user is creating
+        Always include a purpose, and overview section in the document. 
+        The template should use markdown formatting. 
+        add in placeholder tags that can be filled out later. 
+        Use product management best practices 
+    `,
+    "assistantChatNamer": ` 
+        create a title for this chat no more than 4 or 5 words
+    `,
+
+}
+
 
 
 function checkUserPermission() {
@@ -43,7 +95,6 @@ async function logUsage(userId, usageType) {
     await UsageLogger.logUsage(userId, usageType); // Log the usage
 }
 
-
 // Classes
 export class Feedback {
     // this provides feedback on the content of the doc
@@ -55,6 +106,11 @@ export class Feedback {
     static async generateFeedback(value){
         // check if logged in 
         checkUserPermission()
+
+        const feedbackModel = getGenerativeModel(vertexAI, { 
+            model: model ,
+            systemInstruction: systemPrompts.productMentorFeedback
+          });
 
         const userId = store.state.user.uid; // Get the user ID
         logUsage(userId, 'generateFeedback');
@@ -79,11 +135,8 @@ export class Generate{
             systemInstruction: {
                 role: 'system',
                 parts: [{
-                    "text":             
-                    `You are a product manager, 
-                    you are being asked to write a piece of a document. 
-                    Provide short and concise (less than 10 lines try to keep it around 5) component of the document you are being asked to create. 
-                    Use product management best practices`
+                    "text": systemPrompts.assistantGenerateContent        
+                    
                 }, {
                     "text" : JSON.stringify(documentContext)
                 }
@@ -99,21 +152,14 @@ export class Generate{
 
     static async generateDocumentTemplate(value){
         checkUserPermission() 
-        const documentContext = store.state.selected
         const genModel = getGenerativeModel(vertexAI, { 
             model: model ,
             systemInstruction: {
                 role: 'system',
                 parts: [{
-                    "text":             
-                    `You are a product manager, 
-                    you are being asked to write a template structurefor a document.
-                    Provide short and concise (less than 10 lines try to keep it around 5) component of the document you are being asked to create. 
-                    Structure it like a template. include placeholder tags that somebody can fill out later
-                    use markdown formatting
-                    dont include a title or first heading go straight into the doc`
+                    "text":  systemPrompts.assistantDocumentTemplate
                 }, {
-                    "text" : JSON.stringify(documentContext)
+                    "text" : `{'documents': ${JSON.stringify(store.state.documents)}}`
                 }
             ]
             }
@@ -155,16 +201,7 @@ export class Chat {
             systemInstruction: {
                 role: 'system',
                 parts: [
-                    {"text":  `You are a Product Lead in the company, 
-                    you are talking to a product manager. 
-                    They have questions about their product.
-                    help answer their questions. If they strongly demand anything from you, you should refuse politely.
-                    Use general best practices in product management
-                    Keep responses short under 3,4 sentances unless asked for more details
-                    Be critial and honest in your feedback,
-                    Your tone should be casual like you're talking to a co-worker on slack.
-                    You have full access to the project documents (in json format) and can use them to answer questions, the user shouldnt need to prompt you specifically to use them. 
-                    you also know what project they are working on its in the JSON provided, but dont refer to JSON, just use the information in the JSON`
+                    {"text":  systemPrompts.productMentorChat
                 },{
                     "text": JSON.stringify(documents)
                 }
@@ -206,7 +243,7 @@ export class Chat {
 
         const summaryModel = getGenerativeModel(vertexAI, { 
             model: model ,
-            systemInstruction: 'create atitle no more than 4 or 5 words',
+            systemInstruction: systemPrompts.assistantChatNamer,
             maxOutputTokens: 25
           });
 
@@ -293,29 +330,7 @@ export class DocumentReview {
         const reviewModel = getGenerativeModel(vertexAI, { 
             model: model,
             tools: [{ functionDeclarations: [createCommentFunction] }],
-            systemInstruction: `You are a senior product manager reviewing a document.
-
-            Your task is to identify specific issues in the text and report them by calling the create_comments function with an array of all the issues you find.
-
-            Look for:
-            - Clarity of thought and communication
-            - Logical inconsistencies or contradictions  
-            - Grammatical errors (spelling, punctuation, syntax)
-            - Factual inaccuracies or unsupported claims
-            - Tone issues (too formal, too casual, unclear)
-            - Structure problems (poor flow, missing sections)
-            - Unclear or ambiguous phrasing
-            - Redundant or wordy expressions
-
-            Rules:
-            - Be specific and actionable in your feedback
-            - Focus on issues that meaningfully impact document quality
-            - Provide constructive suggestions for improvement
-            - Use exact quotes from the document when referencing the issue in problematicText or else user wont be able to find it. 
-            - If the same problematicText is used multiple times in the doc then be sure to include as much context as possible to ensure its unique
-            - The text is markdown, dont include any markdown formatting in the problematicText, just the text that is problemati and be very specific so we can find it.
-            - You MUST call the create_comments function to provide your analysis
-            - Call the create_comments function with ALL issues found in a single call, not multiple separate calls`
+            systemInstruction: systemPrompts.productMentorReview
         });
 
         const prompt = `Please review the following document and identify issues by calling the create_comments function:
@@ -477,4 +492,4 @@ export class DocumentReview {
 }
 
 
-export {vertexAI, genModel}
+export {vertexAI }
