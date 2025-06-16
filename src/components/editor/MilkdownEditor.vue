@@ -353,7 +353,6 @@ export default {
                 return;
             }
 
-
             this.get().action((ctx) => {
                 try {
                     const view = ctx.get(editorViewCtx);
@@ -372,11 +371,9 @@ export default {
                         relevantComments = allComments.filter(comment => comment.documentVersion === currentVersion);
                     }
                     
-                    const commentsWithText = relevantComments.filter(comment => 
-                        comment.selectedText && 
-                        comment.selectedText.trim().length > 0
-                    );
-
+                    // Create a set of valid comment IDs for the current version
+                    const validCommentIds = new Set(relevantComments.map(comment => comment.id));
+                    
                     // Map existing marks by comment ID with their current state
                     const existingMarks = new Map();
                     view.state.doc.descendants((node, pos) => {
@@ -396,7 +393,21 @@ export default {
 
                     let marksUpdated = false;
 
-                    // Process each comment that has text
+                    // First, remove marks for deleted comments
+                    existingMarks.forEach((markData, commentId) => {
+                        if (!validCommentIds.has(commentId)) {
+                            // Comment has been deleted, remove its mark
+                            this.removeCommentMark(view, markData.from, markData.to, commentId);
+                            marksUpdated = true;
+                        }
+                    });
+
+                    // Then process each comment that has text
+                    const commentsWithText = relevantComments.filter(comment => 
+                        comment.selectedText && 
+                        comment.selectedText.trim().length > 0
+                    );
+
                     commentsWithText.forEach(comment => {
                         const existingMark = existingMarks.get(comment.id);
 
@@ -428,6 +439,25 @@ export default {
                     console.warn('Error syncing comment marks:', error);
                 }
             });
+        },
+
+        // Method to remove a comment mark from the editor
+        removeCommentMark(view, from, to, commentId) {
+            try {
+                const { state, dispatch } = view;
+                const { schema } = state;
+                const commentMarkType = schema.marks.comment;
+
+                if (!commentMarkType) return false;
+
+                // Remove the mark
+                const tr = state.tr.removeMark(from, to, commentMarkType);
+                dispatch(tr);
+                return true;
+            } catch (error) {
+                console.warn('Error removing comment mark:', error);
+                return false;
+            }
         },
 
         // Method to save marked up content when viewing a version
