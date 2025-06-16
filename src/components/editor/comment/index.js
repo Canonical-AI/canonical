@@ -1,5 +1,6 @@
 import { $mark, $inputRule } from '@milkdown/utils';
 import { InputRule } from 'prosemirror-inputrules';
+import { editorViewCtx, serializerCtx } from '@milkdown/core';
 import store from '../../../store';
 
 export const commentMark = $mark('comment', (ctx) => {
@@ -556,6 +557,34 @@ export function changeCommentText(editorView, commentId, newText) {
 
 }
 
+/**
+ * Helper function to get the current markdown from the Milkdown editor
+ * Since we're in a comment plugin context, we need to access the editor instance
+ * from the component that has the Milkdown context
+ * 
+ * @param {Function} editorInstance - The get function from useInstance() in the MilkdownEditor component
+ * @returns {string} - The current markdown content
+ */
+export const getCurrentMarkdown = (editorInstance) => {
+  if (!editorInstance) {
+    console.warn('getCurrentMarkdown: No editor instance provided');
+    return '';
+  }
+
+  try {
+    let markdown = '';
+    editorInstance().action((ctx) => {
+      const { editorViewCtx, serializerCtx } = require('@milkdown/core');
+      const editorView = ctx.get(editorViewCtx);
+      const serializer = ctx.get(serializerCtx);
+      markdown = serializer(editorView.state.doc);
+    });
+    return markdown;
+  } catch (error) {
+    console.error('getCurrentMarkdown: Error getting markdown:', error);
+    return '';
+  }
+};
 
 // Add CSS styles for comment marks
 const style = document.createElement('style');

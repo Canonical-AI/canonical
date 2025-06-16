@@ -17,7 +17,7 @@ import { nord } from '@milkdown/theme-nord'
 import { clipboard } from '@milkdown/plugin-clipboard';
 import { usePluginViewFactory , useWidgetViewFactory, useNodeViewFactory } from '@prosemirror-adapter/vue';
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
-import { rootCtx , editorViewOptionsCtx, editorViewCtx , parserCtx } from '@milkdown/core';
+import { rootCtx , editorViewOptionsCtx, editorViewCtx , parserCtx, serializerCtx } from '@milkdown/core';
 import { schemaCtx } from '@milkdown/core';
 import { $view , $prose, $nodeSchema ,} from '@milkdown/utils';
 import { Slice } from 'prosemirror-model';
@@ -347,6 +347,267 @@ export default {
             });
         },
 
+        // Method to sync comment marks to reflect current comment states
+        syncCommentMarks() {
+            if (!this.get || this.loading) {
+                return;
+            }
+
+
+            this.get().action((ctx) => {
+                try {
+                    const view = ctx.get(editorViewCtx);
+                    if (!view) return;
+
+                    const allComments = this.$store.state.selected.comments || [];
+                    const currentVersion = this.$store.state.selected.currentVersion;
+                    
+                    // Filter comments based on current version
+                    let relevantComments;
+                    if (!currentVersion || currentVersion === 'live') {
+                        // If viewing 'live' version, show ALL comments (from all versions)
+                        relevantComments = allComments;
+                    } else {
+                        // If viewing a specific version, show only comments for that version
+                        relevantComments = allComments.filter(comment => comment.documentVersion === currentVersion);
+                    }
+                    
+                    const commentsWithText = relevantComments.filter(comment => 
+                        comment.selectedText && 
+                        comment.selectedText.trim().length > 0
+                    );
+
+                    // Map existing marks by comment ID with their current state
+                    const existingMarks = new Map();
+                    view.state.doc.descendants((node, pos) => {
+                        if (node.isText) {
+                            node.marks.forEach(mark => {
+                                if (mark.type.name === 'comment' && mark.attrs.id) {
+                                    existingMarks.set(mark.attrs.id, {
+                                        from: pos,
+                                        to: pos + node.nodeSize,
+                                        resolved: mark.attrs.resolved,
+                                        mark: mark
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    let marksUpdated = false;
+
+                    // Process each comment that has text
+                    commentsWithText.forEach(comment => {
+                        const existingMark = existingMarks.get(comment.id);
+
+                        if (existingMark) {
+                            // Check if resolved state needs updating
+                            if (existingMark.resolved !== comment.resolved) {
+                                this.updateCommentMarkResolved(view, existingMark.from, existingMark.to, comment.id, comment.resolved);
+                                marksUpdated = true;
+                            }
+                        } else {
+                            // Comment mark doesn't exist, try to add it
+                            const searchText = comment.selectedText.trim();
+                            const found = this.findTextInDocument(view.state, searchText);
+                            
+                            if (found) {
+                                this.addCommentMarkToFoundText(view, found.from, found.to, comment.id, comment.resolved);
+                                marksUpdated = true;
+                            }
+                        }
+                    });
+
+                    // If viewing a version and marks were updated, save the markedUpContent
+                    if (marksUpdated && this.$store.state.selected.currentVersion !== 'live') {
+                        this.$nextTick(() => {
+                            this.saveMarkedUpContent();
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Error syncing comment marks:', error);
+                }
+            });
+        },
+
+        // Method to save marked up content when viewing a version
+        saveMarkedUpContent() {
+            if (!this.get || this.loading || this.$store.state.selected.currentVersion === 'live') {
+                return;
+            }
+
+            try {
+                this.get().action((ctx) => {
+                    const view = ctx.get(editorViewCtx);
+                    const parser = ctx.get(parserCtx);
+                    
+                    // Get the current markdown content including comment marks
+                    const currentMarkdown = this.getCurrentMarkdown();
+                    
+                    if (currentMarkdown) {
+                        this.$store.dispatch('updateMarkedUpContent', {
+                            docID: this.$store.state.selected.id,
+                            versionContent: currentMarkdown,
+                            versionNumber: this.$store.state.selected.currentVersion
+                        });
+                    }
+                });
+            } catch (error) {
+                console.warn('Error saving marked up content:', error);
+            }
+        },
+
+        // Method to get current markdown content
+        getCurrentMarkdown() {
+            if (!this.get || this.loading) return null;
+            
+            try {
+                let markdown = null;
+                this.get().action((ctx) => {
+                    const serializer = ctx.get(serializerCtx);
+                    const view = ctx.get(editorViewCtx);
+                    markdown = serializer(view.state.doc);
+                });
+                return markdown;
+            } catch (error) {
+                console.warn('Error getting current markdown:', error);
+                return null;
+            }
+        },
+
+        // Method to update an existing comment mark's resolved state
+        updateCommentMarkResolved(view, from, to, commentId, resolved) {
+            try {
+                const { state, dispatch } = view;
+                const { schema } = state;
+                const commentMarkType = schema.marks.comment;
+
+                if (!commentMarkType) return false;
+
+                // Remove the old mark
+                let tr = state.tr.removeMark(from, to, commentMarkType);
+                
+                // Add the new mark with updated resolved state
+                const newCommentMark = commentMarkType.create({ id: commentId, resolved });
+                tr = tr.addMark(from, to, newCommentMark);
+                
+                dispatch(tr);
+                return true;
+            } catch (error) {
+                console.warn('Error updating comment mark resolved state:', error);
+                return false;
+            }
+        },
+
+        // Helper method to find text in the document
+        findTextInDocument(state, searchText) {
+            if (!searchText || !searchText.trim()) {
+                return null;
+            }
+
+            const normalizedSearchText = this.normalizeText(searchText);
+            let bestMatch = null;
+            let bestDistance = Infinity;
+            const maxEditDistance = Math.ceil(normalizedSearchText.length * 0.2); // 20% edit distance
+
+            state.doc.descendants((node, pos) => {
+                if (node.isText) {
+                    const nodeText = this.normalizeText(node.text);
+                    
+                    // First try exact match
+                    const exactIndex = nodeText.indexOf(normalizedSearchText);
+                    if (exactIndex !== -1) {
+                        bestMatch = {
+                            from: pos + exactIndex,
+                            to: pos + exactIndex + searchText.length // Use original length
+                        };
+                        bestDistance = 0;
+                        return false; // Stop searching
+                    }
+                    
+                    // If no exact match and text is long enough, try fuzzy matching
+                    if (normalizedSearchText.length >= 10) {
+                        const distance = this.levenshteinDistance(nodeText, normalizedSearchText);
+                        if (distance <= maxEditDistance && distance < bestDistance) {
+                            bestMatch = {
+                                from: pos,
+                                to: pos + node.nodeSize
+                            };
+                            bestDistance = distance;
+                        }
+                    }
+                }
+            });
+
+            return bestMatch;
+        },
+
+        // Helper method to add comment mark to found text
+        addCommentMarkToFoundText(view, from, to, commentId, resolved = false) {
+            try {
+                const { state, dispatch } = view;
+                const { schema } = state;
+                const commentMarkType = schema.marks.comment;
+
+                if (!commentMarkType) {
+                    console.warn('Comment mark type not found in schema');
+                    return false;
+                }
+
+                // Validate positions
+                if (from < 0 || to > state.doc.content.size || from >= to) {
+                    console.warn(`Invalid position range ${from}-${to} for document size ${state.doc.content.size}`);
+                    return false;
+                }
+
+                // Check if there's already a comment mark in this range
+                if (state.doc.rangeHasMark(from, to, commentMarkType)) {
+                    return false;
+                }
+
+                const commentMark = commentMarkType.create({ id: commentId, resolved });
+                const transaction = state.tr.addMark(from, to, commentMark);
+                dispatch(transaction);
+                return true;
+            } catch (error) {
+                console.warn('Error adding comment mark:', error);
+                return false;
+            }
+        },
+
+        // Helper method to normalize text for searching
+        normalizeText(text) {
+            return text
+                .replace(/\s+/g, ' ')
+                .replace(/[^\w\s]/g, '')
+                .toLowerCase()
+                .trim();
+        },
+
+        // Helper method to calculate edit distance for fuzzy matching
+        levenshteinDistance(a, b) {
+            if (a.length === 0) return b.length;
+            if (b.length === 0) return a.length;
+
+            const matrix = Array(b.length + 1).fill().map(() => Array(a.length + 1).fill(0));
+
+            for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+            for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+            for (let j = 1; j <= b.length; j++) {
+                for (let i = 1; i <= a.length; i++) {
+                    const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+                    matrix[j][i] = Math.min(
+                        matrix[j][i - 1] + 1,
+                        matrix[j - 1][i] + 1,
+                        matrix[j - 1][i - 1] + substitutionCost
+                    );
+                }
+            }
+
+            return matrix[b.length][a.length];
+        },
+
     },
     emits:['update:modelValue', 'comment-clicked'],
     expose: ['createComment', 'getEditorView', 'forceUpdateContent'],
@@ -377,17 +638,12 @@ export default {
         // Watch both comments and version changes to filter comments by version
         '$store.state.selected.comments': {
             handler(oldVal, newVal) {
-                if (oldVal === newVal) return;
-                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS to update if comments are resolved or unresolved
+                if (oldVal === newVal && this.loading) return;
+                // Sync comment marks when comments change
+                this.syncCommentMarks();
             },
             immediate: true,
             deep: true
-        },
-        '$store.state.selected.currentVersion': {
-            handler() {
-                //TODO: RE-IMPLEMENT COMMENT FUNCTIONS if version changes
-            },
-            immediate: true
         },
 
         modelValue: {
@@ -400,6 +656,19 @@ export default {
                     this.processContentBeforeRender(newVal);
                 }
 
+                if (this.$store.state.selected.currentVersion !== 'live' && !this.loading) {
+                    this.$store.dispatch('updateMarkedUpContent', {
+                        docID: this.$store.state.selected.id, 
+                        versionContent: this.$store.state.selected.data.content, 
+                        versionNumber: this.$store.state.selected.currentVersion});
+                    }
+
+                // Sync comment marks when document content changes
+                if (!this.loading) {
+                    this.$nextTick(() => {
+                        this.syncCommentMarks();
+                    });
+                }
             }
         }
     },
@@ -446,6 +715,10 @@ export default {
     mounted() {
         this.$nextTick(() => {
             this.setupCommentClickHandler();
+            // Initial sync of comment marks after component is mounted
+            setTimeout(() => {
+                this.syncCommentMarks();
+            }, 1000);
         });
     },
     beforeUnmount() {

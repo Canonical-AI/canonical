@@ -133,6 +133,12 @@ export default {
         },
 
         async createVersion() {
+            if (this.newVersion === 'live') {
+                console.warn('cannont name version live');
+                this.$store.commit('alert', {type: 'error', message: 'Cannot name version live', autoClear: true});
+                return;
+            }
+                
             await this.$store.dispatch('createVersion', this.newVersion);
             this.$router.push({ query: { v: this.newVersion }});
             this.creatingVersion = false;

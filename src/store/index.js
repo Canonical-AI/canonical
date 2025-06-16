@@ -190,7 +190,12 @@ const store = createStore({
         if (version) {
           let selectedBase = await Document.getDocById(id);
           let selectedVersion = await Document.getDocVersion(id, version);
+
           selectedBase.data = selectedVersion.content;
+          if (selectedVersion.markedUpContent) {
+            selectedBase.data.content = selectedVersion.markedUpContent;
+            selectedBase.viewingMarkup = true;
+          }
           selectedBase.viewingVersion = version;
           selectedData = selectedBase;
         } else {
@@ -242,6 +247,11 @@ const store = createStore({
     async deleteVersion({ commit, state }, selectedVersion) {
       await Document.deleteVersion(state.selected.id, selectedVersion);
       commit('setSelectedDocument', { ...state.selected, versions: state.selected.versions.filter(version => version !== selectedVersion) });
+    },
+
+    async updateMarkedUpContent({ commit, state }, { versionContent, versionNumber }) {
+      await Document.updateMarkedUpContent(state.selected.id, versionContent, versionNumber);
+      commit('setSelectedDocument', { ...state.selected, data: { ...state.selected.data, content: versionContent } });
     },
 
     async toggleDraft({ commit, state }) {
