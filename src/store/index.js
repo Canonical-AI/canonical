@@ -235,7 +235,7 @@ const store = createStore({
       const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
       const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
       
-      if (!arraysAreEqual || (state.selected.data.draft === true && state.selected.data.releasedVersion.length > 0)) {
+      if (!arraysAreEqual || (state.selected.data.draft === true && state.selected.data.releasedVersion && state.selected.data.releasedVersion.length > 0)) {
         await Document.updateDocField(id, 'releasedVersion', releasedVersions);
         await Document.updateDocField(id, 'draft', false);
         // Update the local state immediately
