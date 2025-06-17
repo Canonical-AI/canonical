@@ -235,22 +235,41 @@ const store = createStore({
       const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
       const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
       
-      if (!arraysAreEqual) {
+      if (!arraysAreEqual || (state.selected.data.draft === true && state.selected.data.releasedVersion.length > 0)) {
         await Document.updateDocField(id, 'releasedVersion', releasedVersions);
+        await Document.updateDocField(id, 'draft', false);
         // Update the local state immediately
         commit('updateSelectedDocument', { 
-          data: { ...state.selected.data, releasedVersion: releasedVersions } 
+          data: { 
+            ...state.selected.data, 
+            releasedVersion: releasedVersions , 
+            draft: false } 
         });
         
         // Update the document in the documents array to reflect changes
         const updatedDocuments = state.documents.map(doc => 
           doc.id === id 
-            ? { ...doc, data: { ...doc.data, releasedVersion: releasedVersions } }
+            ? { ...doc, data: { 
+              ...doc.data, 
+              releasedVersion: releasedVersions ,
+              draft: false
+            }}
             : doc
         );
         commit('setDocuments', updatedDocuments);
-
-      } 
+      }  else if (state.selected.data.draft === false && (!state.selected.data.releasedVersion || state.selected.data.releasedVersion.length === 0)) {
+        //this is something to protect backwards compatibility, before version releases were implemented
+        console.log('setting draft to true')
+        await Document.updateDocField(id, 'releasedVersion', []);
+        await Document.updateDocField(id, 'draft', true);
+        commit('updateSelectedDocument', { 
+          data: { 
+            ...state.selected.data, 
+            releasedVersion: [],
+            draft: true 
+          } 
+        });
+      }
     },
 
     async deleteDocument({ commit }, { id }) {
