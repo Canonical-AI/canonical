@@ -191,11 +191,11 @@
         <div
           v-if="!showTemplateInput"
           class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
-          contenteditable="true"
+          :contenteditable="isEditable"
           :style="{ minHeight: '1em', outline: 'none' }"
-          @blur="updateDocumentNameOnBlur"
-          @keydown.enter="finishEditingTitle"
-          @focus="ensureContent"
+          @blur="isEditable && updateDocumentNameOnBlur"
+          @keydown.enter="isEditable && finishEditingTitle"
+          @focus="isEditable && ensureContent"
           @click.stop
           ref="editableDiv"
         >
@@ -301,38 +301,43 @@ export default {
       default: null,
     },
   },
-  data: () => ({
-    valid: true,
-    isEditorModified: false,
-    isLoading: false,
-    isLoadingTimeout: false,
-    isCreatingDocument: false,
-    isEditable: true,
-
-    document: {
-      id: null,
-      data: {
-        name: "[DRAFT] - My New Doc..",
-        content: "",
-        draft: true,
+  data() {
+    return {
+      valid: true,
+      isEditorModified: false,
+      isLoading: false,
+      isLoadingTimeout: false,
+      isCreatingDocument: false,
+      isEditable: true,
+      isSwitchingVersion: false,
+      document: {
+        id: null,
+        data: {
+          name: "[DRAFT] - My New Doc..",
+          content: "",
+          draft: true,
+        },
+        comments: [],
       },
-    },
-    drawer: false,
-    previousType: null,
-    previousContent: null,
-    previousTitle: null,
-    debounceSave: null,
-    isFavorite: false,
-    editorKey: 0,
-    fadeTransition: fadeTransition,
-    isGenPanelExpanded: null,
-    showEditor: true,
-    eventWatcher: null,
-    previousVersion: null,
-    showTemplateInput: false,
-    templatePrompt: '',
-    isGeneratingTemplate: false,
-  }),
+      drawer: false,
+      previousType: null,
+      previousContent: null,
+      previousTitle: null,
+      debounceSave: null,
+      isFavorite: false,
+      editorKey: 0,
+      fadeTransition: fadeTransition,
+      isGenPanelExpanded: null,
+      showEditor: true,
+      eventWatcher: null,
+      previousVersion: null,
+      showTemplateInput: false,
+      templatePrompt: '',
+      isGeneratingTemplate: false,
+      documentTemplate: null,
+      documentContentWatcher: null,
+    };
+  },
   async created() {
     this.isLoading = true;
     
@@ -429,6 +434,9 @@ export default {
           return;
         }
         
+        // Reset modification tracking BEFORE updating document data to prevent false modification detection
+        this.isEditorModified = false;
+        
         this.previousTitle = selectedDocument.data.name || "";
         this.previousContent = selectedDocument.data.content || "";
         this.previousType = selectedDocument.data.type || "";
@@ -438,7 +446,6 @@ export default {
         };
         
         this.isFavorite = this.$store.getters.isFavorite(this.document.id);
-        this.isEditorModified = false;
         
         // Set editable state based on whether we're viewing a version
         if (version) {
@@ -735,6 +742,11 @@ export default {
           return;
         }
 
+        // Skip modification detection if we're switching versions
+        if (this.isSwitchingVersion) {
+          return;
+        }
+
         if (!this.isLoading && this.document.data.name !== this.previousTitle) {
           this.previousTitle = this.document.data.name;
           this.isEditorModified = true;
@@ -796,6 +808,12 @@ export default {
             return;
           }
 
+          // Set version switching flag to prevent false modification detection
+          // Only set flag if we're switching between versions, not on initial load
+          if (isVersionChange && from?.query?.v !== undefined) {
+            this.isSwitchingVersion = true;
+          }
+
           // If switching from version to live (or vice versa), don't save
           if (isVersionChange && this.isEditorModified) {
             console.log('Version change detected - not saving, will reload');
@@ -852,10 +870,18 @@ export default {
               }
             }, 200);
           }
+
+          // Clear version switching flag after a short delay to allow document.data watcher to settle
+          if (isVersionChange && from?.query?.v !== undefined) {
+            setTimeout(() => {
+              this.isSwitchingVersion = false;
+            }, 100);
+          }
         } catch (error) {
           console.error("Error during route navigation:", error);
           this.isLoading = false;
           this.showEditor = true;
+          this.isSwitchingVersion = false; // Ensure flag is cleared on error
         }
       },
       immediate: true,
@@ -900,6 +926,11 @@ export default {
     const isVersionChange = to.query?.v !== from.query?.v;
     const isSameDocument = to.params.id === from.params.id && to.path === from.path;
     
+    // Set version switching flag if this is a version change (not initial load)
+    if (isVersionChange && from.query?.v !== undefined) {
+      this.isSwitchingVersion = true;
+    }
+    
     // Only save if we're not switching versions and have modifications
     if (this.isEditorModified && !isVersionChange) {
       this.saveDocument();
@@ -925,7 +956,7 @@ export default {
     const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
     
     // Only save if we're not viewing a version and have modifications
-    if (this.isEditorModified && !isViewingVersion) {
+    if (this.isEditorModified && !isViewingVersion && !this.isSwitchingVersion) {
       this.saveDocument();
     }
     

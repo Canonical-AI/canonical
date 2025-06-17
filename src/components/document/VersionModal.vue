@@ -24,6 +24,23 @@
                             </v-btn>
                         </template>
                     </v-tooltip>
+                    <v-tooltip 
+                        v-else
+                        text="release status" 
+                        location="bottom">
+                        <template v-slot:activator="{ props: tooltip }">
+                            <v-btn 
+                                :disabled="true" 
+                                variant="tonal" 
+                                density="compact" 
+                                v-bind="tooltip" 
+                                :color="$store.state.selected.data?.releasedVersion?.length > 0 ? undefined : 'orange'" 
+                                :text-color="$store.state.selected.data?.releasedVersion?.length > 0 ? undefined : 'white'" 
+                                class="mx-1 mr-0 text-none rounded-s-pill" >
+                                {{ $store.state.selected.data?.releasedVersion?.length > 0 ? 'Released' : 'Staged' }}
+                            </v-btn>
+                        </template>
+                    </v-tooltip>
                     <v-tooltip text="switch version" location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-btn 

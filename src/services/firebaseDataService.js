@@ -337,7 +337,6 @@ export class Document {
   }
   
   static async getAll(includeArchived = false, includeDraft = false) {
- 
     
     // Check if project.id exists before using it in the query
     if (!store.state.project?.id) {
@@ -356,7 +355,7 @@ export class Document {
     }
 
     if (!store.state.user.uid && !includeDraft) {
-
+      conditions.push(where("draft", "==", false));
     }
 
     const q = query(documentsRef, ...conditions);
@@ -366,6 +365,7 @@ export class Document {
       id: doc.id,
       data: doc.data()
     })));
+
 
     return documents;
   }
