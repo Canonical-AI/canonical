@@ -1,82 +1,91 @@
 <template>
-  <v-expansion-panels v-model="expandedModel" variant="accordion">
-    <v-expansion-panel>
-      <v-expansion-panel-title>
-        <v-btn-toggle class="gen-btn" density="compact">
-          <v-tooltip 
-            text="Get AI feedback on your document's overall quality, clarity, and structure" 
-            location="bottom"
-          >
-            <template v-slot:activator="{ props }">
-              <v-btn
-                :disabled="disabled"
-                class="text-none"
-                density="compact"
-                v-bind="props"
-                @click="handleFeedback"
-              >
-                <v-icon size="16" class="mr-1">mdi-comment-quote</v-icon>
-                {{ hasAiComments ? '' : 'Feedback' }}
-              </v-btn>
-            </template>
-          </v-tooltip>
-          
-          <v-tooltip 
-            :text="isViewingVersion ? 
-              'Review this document version with AI - suggestions will be applied to the live version' : 
-              'Generate detailed inline comments with specific suggestions for improvement'" 
-            location="bottom"
-          >
-            <template v-slot:activator="{ props }">
-              <v-btn
-                :disabled="disabled || isReviewLoading"
-                class="text-none"
-                density="compact"
-                v-bind="props"
-                @click="handleReview"
-              >
-                <v-progress-circular
-                  v-if="isReviewLoading"
-                  indeterminate
-                  size="16"
-                  width="2"
-                  class="mr-1"
-                ></v-progress-circular>
-                <v-icon v-else size="16" class="mr-1">mdi-file-search</v-icon>
-                {{ hasAiComments ? '' : 'Review' }}
-              </v-btn>
-            </template>
-          </v-tooltip>
-          
-          <v-tooltip 
-            v-if="hasAiComments" 
-            text="Clear AI comments" 
-            location="bottom"
-          >
-            <template v-slot:activator="{ props }">
-              <v-btn
-                :disabled="disabled"
-                class="text-none"
-                density="compact"
-                v-bind="props"
-                @click="handleClear"
-              >
-                <v-icon size="16" class="mr-1">mdi-broom</v-icon>
-              </v-btn>
-            </template>
-          </v-tooltip>
+  <div class="review-panel">
+    <!-- Button toolbar -->
+    <div class="d-flex align-center gap-1 my-2 px-4">
+      <v-btn-toggle class="gen-btn" density="compact py-0">
+        <v-tooltip 
+          text="Get AI feedback on your document's overall quality, clarity, and structure" 
+          location="bottom"
+        >
+          <template v-slot:activator="{ props }">
+            <v-btn
+              :disabled="disabled"
+              class="text-none text-sm"
+              density="compact"
+              v-bind="props"
+              @click="handleFeedback"
+            >
+              <v-icon size="16" class="mr-1">mdi-comment-quote</v-icon>
+              Feedback
+            </v-btn>
+          </template>
+        </v-tooltip>
+        
+        <v-tooltip 
+          :text="isViewingVersion ? 
+            'Review this document version with AI - suggestions will be applied to the live version' : 
+            'Generate detailed inline comments with specific suggestions for improvement'" 
+          location="bottom"
+        >
+          <template v-slot:activator="{ props }">
+            <v-btn
+              :disabled="disabled || isReviewLoading"
+              class="text-none text-sm"
+              density="compact"
+              v-bind="props"
+              @click="handleReview"
+            >
+              <v-progress-circular
+                v-if="isReviewLoading"
+                indeterminate
+                size="16"
+                width="2"
+                class="mr-1"
+              ></v-progress-circular>
+              <v-icon v-else size="16" class="mr-1">mdi-file-search</v-icon>
+              Review
+            </v-btn>
+          </template>
+        </v-tooltip>
+        
+        <v-tooltip 
+          v-if="hasAiComments" 
+          text="Clear AI comments" 
+          location="bottom"
+        >
+          <template v-slot:activator="{ props }">
+            <v-btn
+              :disabled="disabled"
+              class="text-none"
+              density="compact"
+              v-bind="props"
+              @click="handleClear"
+            >
+              <v-icon size="16" class="mr-1">mdi-broom</v-icon>
+            </v-btn>
+          </template>
+        </v-tooltip>
+      </v-btn-toggle>
 
-        </v-btn-toggle>
-      </v-expansion-panel-title>
-      <v-expansion-panel-text>
-        <p
-          class="generative-feedback text-sm ma-1 pa-1"
-          v-if="generativeFeedback !== null"
-          v-html="renderMarkdown(generativeFeedback)"
-        ></p>
-      </v-expansion-panel-text>
-    </v-expansion-panel>
-  </v-expansion-panels>
+      <!-- Show/Hide button for feedback -->
+      <v-btn
+        v-if="generativeFeedback !== null"
+        :disabled="disabled"
+        class="text-none"
+        density="compact"
+        @click="showFeedback = !showFeedback"
+        :icon="showFeedback ? 'mdi-eye-off' : 'mdi-eye'"
+      >
+      </v-btn>
+    </div>
+
+    <!-- Feedback content -->
+    <div
+      v-if="generativeFeedback !== null && showFeedback"
+      class="generative-feedback text-sm ma-1 pa-3"
+      v-html="renderMarkdown(generativeFeedback)"
+    ></div>
+  </div>
 </template>
 
 <script>
@@ -90,13 +99,10 @@ export default {
     return {
       isReviewLoading: false,
       generativeFeedback: null,
+      showFeedback: true,
     };
   },
   props: {
-    isExpanded: {
-      type: Number,
-      default: null,
-    },
     isViewingVersion: {
       type: Boolean,
       default: false,
@@ -114,21 +120,12 @@ export default {
       default: null,
     },
   },
-  emits: ["update:isExpanded", "update-document-content"],
+  emits: ["update-document-content"],
   computed: {
-    expandedModel: {
-      get() {
-        return this.isExpanded;
-      },
-      set(value) {
-        this.$emit('update:isExpanded', value);
-      },
-    },
     hasAiComments() {
       const comments = this.$store.state.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
     },
-
   },
 
   methods: {
@@ -145,9 +142,6 @@ export default {
           const chunkText = chunk.text();
           this.generativeFeedback += chunkText;
         }
-        
-        // Expand panel to show feedback
-        this.expandedModel = 0;
       } catch (error) {
         console.error('Error generating feedback:', error);
         showAlert(this.$store, 'error', 'Failed to generate feedback. Please try again.');
@@ -254,11 +248,6 @@ export default {
         if (inlineResult.status === 'fulfilled') {
           inlineResults = inlineResult.value;
           inlineSuccess = true;
-        }
-
-        // Expand panel to show feedback if we have it
-        if (feedbackSuccess) {
-          this.expandedModel = 0;
         }
 
         // Show success messages
@@ -378,7 +367,7 @@ export default {
   watch: {
     generativeFeedback(newValue) {
       if (newValue !== null) {
-        this.expandedModel = 0;
+        this.showFeedback = true;
       }
     },
     

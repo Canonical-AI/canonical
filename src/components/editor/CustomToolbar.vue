@@ -1,6 +1,6 @@
 <template>
     <Teleport to="body">
-        <div class="custom-toolbar border border-surface-light" v-if="show" ref="toolbar" :class="{ 'comment-only': !isEditable }">
+        <div class="custom-toolbar border" v-if="show" ref="toolbar" :class="{ 'comment-only': !isEditable }">
         <div class="toolbar-content">
             <!-- Text Formatting (only when editable) -->
             <template v-if="isEditable">
@@ -9,6 +9,7 @@
                         icon="mdi-format-bold"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleBold"
                         :class="{ active: isActive.bold }"
@@ -18,6 +19,7 @@
                         size="small"
                         variant="text"
                         :disabled="disabled"
+                        density="compact"
                         @click="toggleItalic"
                         :class="{ active: isActive.italic }"
                     ></v-btn>
@@ -26,6 +28,7 @@
                         size="small"
                         variant="text"
                         :disabled="disabled"
+                        density="compact"
                         @click="toggleStrike"
                         :class="{ active: isActive.strike }"
                     ></v-btn>
@@ -33,6 +36,7 @@
                         icon="mdi-link"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleLink"
                         :class="{ active: isActive.link }"
@@ -47,6 +51,7 @@
                         icon="mdi-format-list-bulleted"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleBulletList"
                         :class="{ active: isActive.bulletList }"
@@ -55,6 +60,7 @@
                         icon="mdi-format-list-numbered"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleOrderedList"
                         :class="{ active: isActive.orderedList }"
@@ -69,6 +75,7 @@
                         icon="mdi-format-quote-close"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleBlockquote"
                         :class="{ active: isActive.blockquote }"
@@ -77,6 +84,7 @@
                         icon="mdi-code-tags"
                         size="small"
                         variant="text"
+                        density="compact"
                         :disabled="disabled"
                         @click="toggleCodeBlock"
                         :class="{ active: isActive.codeBlock }"
@@ -92,6 +100,7 @@
                     icon="mdi-comment-plus"
                     size="small"
                     variant="text"
+                    density="compact"
                     :disabled="disabled || !hasSelection"
                     @click="startAddingComment"
                     @contextmenu.prevent="removeComment"
@@ -666,10 +675,8 @@ export default {
 <style scoped>
 .custom-toolbar {
     background: rgba(var(--v-theme-surface), 0.95);
-    border: 1px solid rgba(var(--v-theme-outline), 0.2);
     border-radius: 8px;
-    padding: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.60);
     backdrop-filter: blur(8px);
     pointer-events: auto;
     width: max-content;

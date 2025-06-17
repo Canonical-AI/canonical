@@ -1,5 +1,5 @@
 <template>
-  <div class="">
+  <div class="pb-24">
     <!-- Filter controls -->
     <div class="mx-2 mb-2 d-flex gap-2">
       <v-btn
@@ -34,14 +34,12 @@
 
             />
             <!-- Render child comments with indentation -->
-            <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
+            <div v-if="event.value.children && event.value.children.length > 0" class="ml-4">
               <commentCard 
                 v-for="child in event.value.children"
                 :key="child.id"
                 :comment="child"
                 :ref="`comment-${child.id}`"
-                class="mb-2"
-
               />
             </div>
           </div>
@@ -60,15 +58,17 @@
       ref="form"
       v-model="valid"
       lazy-validation
-      
+      class="comment-input flex-shrink-0 pa-3"
     >
       <v-textarea
         v-model="newComment"
         :counter="250"
         :rules="[rules.counter]"
-        rows="3"
+        rows="2"
+        auto-grow
         density="compact"
         label="leave a comment"
+        hide-details
         clearable
         v-if="$store.getters.isUserLoggedIn"
       >
@@ -263,10 +263,6 @@ export default {
   overflow-x: hidden;
 }
 
-:deep(.v-list-item__content) {
-  padding: 0.5rem !important;
-}
-
 /* Ensure cards within list don't cause horizontal overflow */
 :deep(.v-card) {
   max-width: 100%;
@@ -281,5 +277,15 @@ export default {
 
 :deep(.v-textarea) {
   max-width: 100%;
+}
+
+.comment-input {
+  background-color: rgb(var(--v-theme-surface));
+  flex-shrink: 0; /* Prevent shrinking */
+  min-height: 0; /* Allow content to determine height */
+  position: fixed;
+  bottom: 48px;
+  width: 100%;
+  z-index: 100;
 }
 </style>

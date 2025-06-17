@@ -75,11 +75,10 @@ const systemPrompts = {
         Use product management best practices 
     `,
     "assistantChatNamer": ` 
-        create a title for this chat no more than 4 or 5 words
+        create a title for this chat no more than 4 or 5 words. return the title only, no other text. dont use markdown formatting.
     `,
 
 }
-
 
 
 function checkUserPermission() {
@@ -482,10 +481,12 @@ export class Chat {
 
         if (history) {
             this.chat = this.generativeModel.startChat({
-                history: history.history.data.messages.slice(1).map(message => ({
-                    role: message.sent ? 'user' : 'model',
-                    parts: [{ text: message.text }]
-                }))
+                history: history.history.data.messages.slice(1)
+                    .filter(message => !message.isSystemMessage) // Filter out system messages
+                    .map(message => ({
+                        role: message.sent ? 'user' : 'model',
+                        parts: [{ text: message.text }]
+                    }))
             }); // Start the chat
         } else {
             this.chat = this.generativeModel.startChat()
