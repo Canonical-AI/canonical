@@ -108,7 +108,7 @@
 
     <div
       v-if="document.data.updatedDate && !$vuetify.display.mobile"
-      class="text-medium-emphasis mr-4"
+      class="text-medium-emphasis mr-4 timestamp-div"
     >
       last update:
       {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
@@ -964,6 +964,7 @@ export default {
   ) !important;
   padding-bottom: 24px;
   z-index: 100 !important;
+  container-type: inline-size;
 }
 
 .document-create {
@@ -1268,6 +1269,14 @@ input.h1 {
   
   .template-input-content {
     padding: 1rem;
+  }
+}
+
+/* Hide timestamp when input-container width is less than 600px */
+@container (max-width: 600px) {
+  .input-container .timestamp-div,
+  .drawer-header .timestamp-div {
+    display: none !important;
   }
 }
 

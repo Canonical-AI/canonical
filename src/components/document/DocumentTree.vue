@@ -115,7 +115,7 @@
                             >
 
                             <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="child.data?.draft" color="warning"></v-icon>
+                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(child)" color="warning"></v-icon>
                             <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
                               <template v-slot:activator="{ props }">
                                 <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
@@ -152,7 +152,7 @@
                     >
 
                     <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="el.data?.draft" color="warning"></v-icon>
+                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(el)" color="warning"></v-icon>
                     
                     <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
                       <template v-slot:activator="{ props }">
@@ -244,6 +244,10 @@ export default {
                 return el.children.some(child => this.isSelected(child));
             }
             return false;
+        },
+
+        isDraft(el) {
+            return !el.data?.releasedVersion || el.data?.releasedVersion?.length === 0;
         },
 
         toggle(el) {

@@ -332,7 +332,7 @@ export class Document {
       draft: value.draft || true,
       children: value.children || [],
       order: value.order || 1000,
-      version: value.version || [],
+      releasedVersion: value.releasedVersion || [],
     }
   }
   
@@ -356,15 +356,7 @@ export class Document {
     }
 
     if (!store.state.user.uid && !includeDraft) {
-      const versionsRef = collectionGroup(db, "versions");
-      const releasedVersionsQuery = query(
-        versionsRef,
-        where("released", "==", true)
-      );
-      
-      const releasedVersionsSnapshot = await getDocs(releasedVersionsQuery);
-      const releasedVersionIds = releasedVersionsSnapshot.docs.map(doc => doc.id);
-      conditions.push(where("id", "in", releasedVersionIds));
+
     }
 
     const q = query(documentsRef, ...conditions);
@@ -476,9 +468,11 @@ export class Document {
   static async updateDocField(id, field, value) {
     checkUserLoggedIn()
     const documentRef = doc(db, "documents", id);
-    await updateDoc(documentRef, {[field]: value});
+    await updateDoc(documentRef, {
+      [field]: value,
+      updatedDate: serverTimestamp()
+    });
     store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
-    return await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   
@@ -620,7 +614,6 @@ export class Document {
     } else {
         store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
     }
-
   } 
 
 
