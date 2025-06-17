@@ -34,14 +34,12 @@
 
             />
             <!-- Render child comments with indentation -->
-            <div v-if="event.value.children && event.value.children.length > 0" class="ml-4 mt-2">
+            <div v-if="event.value.children && event.value.children.length > 0" class="ml-4">
               <commentCard 
                 v-for="child in event.value.children"
                 :key="child.id"
                 :comment="child"
                 :ref="`comment-${child.id}`"
-                class="mb-2"
-
               />
             </div>
           </div>
@@ -263,10 +261,6 @@ export default {
 :deep(.v-list-item) {
   max-width: 100%;
   overflow-x: hidden;
-}
-
-:deep(.v-list-item__content) {
-  padding: 0.5rem !important;
 }
 
 /* Ensure cards within list don't cause horizontal overflow */
