@@ -4,20 +4,20 @@
     location="right"
     width="400"
     :temporary="!drawer"
-    class="h-100 d-flex flex-column"
+    class="h-100 d-flex flex-column sidepanel-container"
   >
     <!-- Fixed header section -->
     <div class="drawer-header flex-shrink-0">
-      <v-card-actions>
-        <v-btn flat icon="mdi-close" @click="drawer = false"></v-btn>
+      <v-card-actions class="py-0" density="compact" style="min-height: 32px;">
+        <v-btn flat icon="mdi-close" @click="drawer = false" density="compact"></v-btn>
         <v-spacer></v-spacer>
         <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
           last update:
           {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
         </div>
-        <v-menu v-if="document.id" class="border border-surface-light">
+        <v-menu v-if="document.id" class="border border-surface-light" density="compact">
           <template v-slot:activator="{ props }">
-            <v-btn :disabled="isDisabled" v-bind="props" icon>
+            <v-btn :disabled="isDisabled" v-bind="props" icon density="compact">
               <v-icon>mdi-dots-vertical</v-icon>
             </v-btn>
           </template>
@@ -44,29 +44,63 @@
       </v-card-actions>
       <v-divider></v-divider>
 
-      <ReviewPanel
-        ref="reviewPanel"
-        v-model:isExpanded="isGenPanelExpanded"
-        :is-viewing-version="isViewingVersion"
-        :disabled="isDisabled"
-        :document="document"
-        :editor-ref="$refs.milkdownEditor"
-      />
+      <!-- Tab Navigation -->
+      <v-tabs
+        v-model="activeTab"
+        density="compact"
+        class="sidepanel-tabs"
+        color="primary"
+      >
+        <v-tab value="review" class="text-none">
+          <v-icon size="16" class="mr-1">mdi-file-search</v-icon>
+          Review
+        </v-tab>
+        <v-tab 
+          v-if="$store.getters.canAccessAi" 
+          value="chat" 
+          class="text-none"
+        >
+          <v-icon size="16" class="mr-1">mdi-robot</v-icon>
+          Chat
+        </v-tab>
+      </v-tabs>
     </div>
 
-    <!-- Scrollable comments section -->
-    <div class="comments-container flex-grow-1 overflow-y-auto">
-      <comment
-        v-if="document.id && $store.getters.isUserLoggedIn"
-        :doc-id="document.id"
-        :doc-type="'document'"
-        ref="commentComponent"
-        @scroll-to-comment="openDrawerAndScrollToComment"
-      />
+    <!-- Sidepanel Content -->
+    <div class="sidepanel-content flex-grow-1 overflow-hidden">
+      <!-- Review Tab Content -->
+      <div v-if="activeTab === 'review'" class="review-tab-content h-100">
+        <ReviewPanel
+          ref="reviewPanel"
+          v-model:isExpanded="isGenPanelExpanded"
+          :is-viewing-version="isViewingVersion"
+          :disabled="isDisabled"
+          :document="document"
+          :editor-ref="$refs.milkdownEditor"
+        />
+        
+        <!-- Comments Section -->
+        <div class="comments-container flex-grow-1 overflow-y-auto">
+          <comment
+            v-if="document.id && $store.getters.isUserLoggedIn"
+            :doc-id="document.id"
+            :doc-type="'document'"
+            ref="commentComponent"
+            @scroll-to-comment="openDrawerAndScrollToComment"
+          />
+        </div>
+      </div>
+      
+      <!-- Chat Tab Content -->
+      <div v-else-if="activeTab === 'chat'" class="chat-tab-content h-100">
+        <ChatSidepanel
+          :document-id="document.id"
+          :document-content="editorContent"
+          @close="activeTab = 'review'"
+        />
+      </div>
     </div>
   </v-navigation-drawer>
-
-
 
   <v-app-bar
     class="input-container z-10"
@@ -148,6 +182,21 @@
           v-bind="props"
           @click="triggerFeedbackFromToolbar()"
           icon="mdi-comment-quote"
+        />
+      </template>
+    </v-tooltip>
+    <v-tooltip 
+      v-if="$store.getters.canAccessAi" 
+      text="Chat with your product mentor" 
+      location="bottom"
+    >
+      <template v-slot:activator="{ props }">
+        <v-icon
+          :disabled="isDisabled"
+          class="mx-1"
+          v-bind="props"
+          @click="openChatSidepanel()"
+          icon="mdi-robot"
         />
       </template>
     </v-tooltip>
@@ -280,6 +329,7 @@ import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers
 import { useEventWatcher } from "../../composables/useEventWatcher";
 import { useComments } from "../../composables/comments";
 import { Generate } from "../../services/vertexAiService";
+import ChatSidepanel from "../chat/ChatSidepanel.vue";
 
 export default {
   components: {
@@ -289,6 +339,7 @@ export default {
     MilkdownProvider,
     VersionModal,
     ReviewPanel,
+    ChatSidepanel,
   },
   emits: ["scrollToBottom"],
   props: {
@@ -336,6 +387,7 @@ export default {
       isGeneratingTemplate: false,
       documentTemplate: null,
       documentContentWatcher: null,
+      activeTab: 'review',
     };
   },
   async created() {
@@ -584,6 +636,12 @@ export default {
       }
     },
 
+    openChatSidepanel() {
+      // Open the drawer and switch to chat sidepanel
+      this.drawer = true;
+      this.activeTab = 'chat';
+    },
+
     toggleFavorite() {
       this.$store.commit("toggleFavorite", this.document.id);
       this.isFavorite = !this.isFavorite;
@@ -699,7 +757,6 @@ export default {
         this.isGeneratingTemplate = false;
       }
     },
-
 
   },
   computed: {
@@ -1210,6 +1267,39 @@ input.h1 {
 .drawer-header {
   border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
   overflow-x: hidden; /* Prevent horizontal overflow in header */
+}
+
+.sidepanel-container {
+  padding-bottom: 48px!important;
+}
+
+/* Sidepanel tabs */
+.sidepanel-tabs {
+  background-color: rgb(var(--v-theme-surface));
+}
+
+.sidepanel-tabs .v-tab {
+  text-transform: none;
+  font-weight: 500;
+}
+
+/* Sidepanel content container */
+.sidepanel-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Allow flexbox to shrink this container */
+}
+
+/* Review tab content */
+.review-tab-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chat tab content */
+.chat-tab-content {
+  display: flex;
+  flex-direction: column;
 }
 
 /* Ensure the entire drawer doesn't overflow horizontally */

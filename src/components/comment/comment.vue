@@ -1,5 +1,5 @@
 <template>
-  <div class="">
+  <div class="pb-24">
     <!-- Filter controls -->
     <div class="mx-2 mb-2 d-flex gap-2">
       <v-btn
@@ -60,15 +60,17 @@
       ref="form"
       v-model="valid"
       lazy-validation
-      
+      class="comment-input flex-shrink-0 pa-3"
     >
       <v-textarea
         v-model="newComment"
         :counter="250"
         :rules="[rules.counter]"
-        rows="3"
+        rows="2"
+        auto-grow
         density="compact"
         label="leave a comment"
+        hide-details
         clearable
         v-if="$store.getters.isUserLoggedIn"
       >
@@ -281,5 +283,15 @@ export default {
 
 :deep(.v-textarea) {
   max-width: 100%;
+}
+
+.comment-input {
+  background-color: rgb(var(--v-theme-surface));
+  flex-shrink: 0; /* Prevent shrinking */
+  min-height: 0; /* Allow content to determine height */
+  position: fixed;
+  bottom: 48px;
+  width: 100%;
+  z-index: 100;
 }
 </style>
