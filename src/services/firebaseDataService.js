@@ -1,5 +1,5 @@
 import {firebaseApp} from "../firebase";
-import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
+import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment, collectionGroup } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
 import store from "../store";
@@ -337,7 +337,14 @@ export class Document {
   }
   
   static async getAll(includeArchived = false, includeDraft = false) {
-    'getting documents'
+ 
+    
+    // Check if project.id exists before using it in the query
+    if (!store.state.project?.id) {
+      console.warn('No project ID available, returning empty array');
+      return [];
+    }
+    
     const documentsRef = collection(db, "documents");
 
     const conditions = [
@@ -349,7 +356,15 @@ export class Document {
     }
 
     if (!store.state.user.uid && !includeDraft) {
-      conditions.push(where("draft", "==", false));
+      const versionsRef = collectionGroup(db, "versions");
+      const releasedVersionsQuery = query(
+        versionsRef,
+        where("released", "==", true)
+      );
+      
+      const releasedVersionsSnapshot = await getDocs(releasedVersionsQuery);
+      const releasedVersionIds = releasedVersionsSnapshot.docs.map(doc => doc.id);
+      conditions.push(where("id", "in", releasedVersionIds));
     }
 
     const q = query(documentsRef, ...conditions);
@@ -671,6 +686,14 @@ export class ChatHistory {
   }
   
   static async getAll() {
+    checkUserLoggedIn()
+    
+    // Ensure user.uid exists before using it in the query
+    if (!store.state.user?.uid) {
+      console.warn('No user ID available, returning empty array');
+      return [];
+    }
+    
     const chatsRef = collection(db, "chats");
     const q = query(chatsRef,
       where("archived", "==", false),
@@ -730,8 +753,6 @@ export class ChatHistory {
 }
 
 export class UsageLogger {
-
-  
   static async logUsage(userId, functionName) {
       const usageRef = doc(db, "usageLogs", userId);
       const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
@@ -783,6 +804,13 @@ export class Favorites {
 export class Task {
   static async getAll() {
     checkUserLoggedIn()
+    
+    // Check if project.id exists before using it in the query
+    if (!store.state.project?.id) {
+      console.warn('No project ID available for tasks, returning empty array');
+      return [];
+    }
+    
     const tasksRef = collection(db, "tasks");
     const q = query(tasksRef, where("project", "==", store.state.project.id));
     const snapshot = await getDocs(q);

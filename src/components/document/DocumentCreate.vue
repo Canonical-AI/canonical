@@ -92,7 +92,7 @@
         <template v-slot:activator="{ props }">
           <v-btn
             :disabled="isDisabled"
-            class="gen-btn text-none m-2 animated-border-btn"
+            class="gen-btn text-none m-2 ml-10 animated-border-btn"
             density="compact"
             v-bind="props"
             @click="showTemplateInput = true"
@@ -1013,13 +1013,58 @@ export default {
   margin-bottom: 0px !important;
 }
 
-/* More specific selector to override Nord theme padding */
-:deep(.milkdown .ProseMirror) {
-  padding: 24px !important;
-}
 
 :deep(.milkdown .ProseMirror.editor) {
   padding: 24px !important;
+  padding-bottom: 0px !important;
+  padding-top: 0px !important;
+}
+
+/* Custom heading styles for Milkdown editor */
+:deep(.milkdown h1) {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  margin: 1.5rem 0 1rem 0 !important;
+}
+
+:deep(.milkdown h2) {
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  margin: 1.25rem 0 0.75rem 0 !important;
+}
+
+:deep(.milkdown h3) {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  font-style: italic !important;
+  line-height: 1.4 !important;
+  margin: 1rem 0 0.5rem 0 !important;
+}
+
+:deep(.milkdown h4) {
+  font-size: 1.1rem !important;
+  font-weight: 500 !important;
+  font-style: italic !important;
+  line-height: 1.4 !important;
+  margin: 0.875rem 0 0.5rem 0 !important;
+}
+
+:deep(.milkdown h5) {
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  font-style: italic !important;
+  line-height: 1.4 !important;
+  margin: 0.75rem 0 0.5rem 0 !important;
+}
+
+:deep(.milkdown h6) {
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  font-style: italic !important;
+  line-height: 1.4 !important;
+  margin: 0.75rem 0 0.5rem 0 !important;
 }
 
 .document-title{
@@ -1181,81 +1226,6 @@ input.h1 {
   to { transform: rotate(360deg); }
 }
 
-/* Animated border for template button */
-.animated-border-btn {
-  position: relative;
-  overflow: visible !important;
-}
-
-.animated-border-btn::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(45deg, 
-    black, 
-    #8338ec, 
-    #3a86ff, 
-    #fb5607, 
-    black
-  );
-  filter: blur(3px);
-  background-size: 300% 300%;
-  border-radius: 6px;
-  z-index: -1;
-  animation: gradient-rotate 3s ease infinite;
-}
-
-.animated-border-btn::after {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  background: linear-gradient(45deg, 
-    rgba(255, 0, 110, 0.8), 
-    rgba(131, 56, 236, 0.8), 
-    rgba(58, 134, 255, 0.8), 
-    rgba(6, 255, 165, 0.8), 
-    rgba(255, 190, 11, 0.8), 
-    rgba(251, 86, 7, 0.8), 
-    rgba(255, 0, 110, 0.8)
-  );
-  background-size: 300% 300%;
-  border-radius: 6px;
-  z-index: -1;
-  animation: gradient-rotate 3s ease infinite reverse;
-  filter: blur(1px);
-}
-
-@keyframes gradient-rotate {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-/* Hover effect to make animation faster */
-.animated-border-btn:hover::before,
-.animated-border-btn:hover::after {
-  animation-duration: 1.5s;
-}
-
-/* Disabled state - remove animation */
-.animated-border-btn:disabled::before,
-.animated-border-btn:disabled::after {
-  animation: none;
-  background: rgba(var(--v-theme-outline), 0.3);
-}
-
 /* Template input wrapper and container */
 .template-input-wrapper {
   width: 100%;
@@ -1272,53 +1242,7 @@ input.h1 {
   max-width: 90vw;
 }
 
-.animated-border-container {
-  position: relative;
-  border-radius: 12px;
-  overflow: visible;
-}
 
-.animated-border-container::before {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  right: -3px;
-  bottom: -3px;
-  background: linear-gradient(45deg, 
-    black, 
-    #8338ec, 
-    #3a86ff, 
-    #fb5607, 
-    black
-  );
-  filter: blur(3px);
-  background-size: 300% 300%;
-  border-radius: 15px;
-  z-index: -1;
-  animation: gradient-rotate 3s ease infinite;
-}
-
-.animated-border-container::after {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(45deg, 
-    rgba(0, 0, 0, 0.8), 
-    rgba(131, 56, 236, 0.8), 
-    rgba(58, 134, 255, 0.8), 
-    rgba(251, 86, 7, 0.8), 
-    rgba(0, 0, 0, 0.8)
-  );
-  background-size: 300% 300%;
-  border-radius: 14px;
-  z-index: -1;
-  animation: gradient-rotate 3s ease infinite reverse;
-  filter: blur(2px);
-}
 
 .template-input-content {
   background-color: rgb(var(--v-theme-surface));
