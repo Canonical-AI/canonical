@@ -81,9 +81,8 @@
 
 <script>
 import { marked } from "marked";
-import { DocumentReview } from "../../services/vertexAiService";
+import { Feedback } from "../../services/vertexAiService";
 import { showAlert } from "../../utils/uiHelpers";
-import { inject } from 'vue';
 
 export default {
   name: "ReviewPanel",
@@ -139,7 +138,7 @@ export default {
 
     async handleFeedback() {
       try {
-        const result = await DocumentReview.generateFeedback(this.document);
+        const result = await Feedback.generateDocumentFeedback(this.document);
         this.generativeFeedback = "";
         
         for await (const chunk of result.stream) {
@@ -185,54 +184,125 @@ export default {
         if (!editorView) {
           throw new Error('Editor view not available after multiple attempts. Please try again.');
         }
-        
-        const maxRetries = 2;
-        let results = null;
-        
-        // Retry loop for better reliability
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            results = await DocumentReview.createInlineComments(documentContent, editorView);
+
+        // Run both overall feedback and inline comments in parallel
+        const [feedbackResult, inlineResult] = await Promise.allSettled([
+          // Generate overall feedback
+          (async () => {
+            try {
+              const result = await Feedback.generateDocumentFeedback(this.document);
+              let newFeedback = "";
+              
+              for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                newFeedback += chunkText;
+                // Only update the UI after we start getting content
+                if (newFeedback.trim()) {
+                  this.generativeFeedback = newFeedback;
+                }
+              }
+              
+              // Ensure final content is set
+              this.generativeFeedback = newFeedback;
+              return { success: true };
+            } catch (error) {
+              console.error('Error generating overall feedback:', error);
+              return { success: false, error };
+            }
+          })(),
+          
+          // Generate inline comments with retry logic
+          (async () => {
+            const maxRetries = 2;
+            let results = null;
             
-            if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
-              break;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                results = await Feedback.createInlineComments(documentContent, editorView);
+                
+                if (results.success && (results.commentsCreated > 0 || documentContent.trim().length < 100)) {
+                  break;
+                }
+                
+                if (results.success && results.commentsCreated === 0 && attempt < maxRetries) {
+                  console.log(`AI review attempt ${attempt} generated no comments, retrying...`);
+                  continue;
+                }
+                break;
+                
+              } catch (attemptError) {
+                if (attempt === maxRetries) throw attemptError;
+                console.log(`AI review attempt ${attempt} failed, retrying...`, attemptError);
+              }
+            }
+
+            if (!results || !results.success) {
+              throw new Error(results?.error || 'AI review failed to generate results');
+            }
+
+            return results;
+          })()
+        ]);
+
+        // Handle feedback result
+        const feedbackSuccess = feedbackResult.status === 'fulfilled' && feedbackResult.value.success;
+        
+        // Handle inline comments result
+        let inlineSuccess = false;
+        let inlineResults = null;
+        
+        if (inlineResult.status === 'fulfilled') {
+          inlineResults = inlineResult.value;
+          inlineSuccess = true;
+        }
+
+        // Expand panel to show feedback if we have it
+        if (feedbackSuccess) {
+          this.expandedModel = 0;
+        }
+
+        // Show success messages
+        let messages = [];
+        
+        if (feedbackSuccess) {
+          messages.push('Overall feedback generated');
+        }
+        
+        if (inlineSuccess && inlineResults) {
+          if (inlineResults.commentsCreated > 0) {
+            let inlineMessage = `${inlineResults.commentsCreated} inline comments created`;
+            
+            if (inlineResults.marksAdded > 0) {
+              inlineMessage += ` (${inlineResults.marksAdded} visual marks added)`;
             }
             
-            if (results.success && results.commentsCreated === 0 && attempt < maxRetries) {
-              console.log(`AI review attempt ${attempt} generated no comments, retrying...`);
-              continue;
+            if (inlineResults.marksFailed > 0) {
+              inlineMessage += ` (${inlineResults.marksFailed} marks failed)`;
             }
-            break;
             
-          } catch (attemptError) {
-            if (attempt === maxRetries) throw attemptError;
-            console.log(`AI review attempt ${attempt} failed, retrying...`, attemptError);
+            messages.push(inlineMessage);
+          } else {
+            const noCommentsMessage = documentContent.trim().length < 100 
+              ? 'Document too short for inline review' 
+              : 'No inline issues found';
+            messages.push(noCommentsMessage);
           }
         }
 
-        if (!results || !results.success) {
-          throw new Error(results?.error || 'AI review failed to generate results');
+        // Show combined success message
+        if (messages.length > 0) {
+          showAlert(this.$store, 'success', `AI review completed! ${messages.join('. ')}.`);
         }
 
-
-        // Show detailed success message with mark information
-        if (results.commentsCreated > 0) {
-          let message = `AI review completed! ${results.commentsCreated} comments created.`;
-          
-          if (results.marksAdded > 0) {
-            message += ` ${results.marksAdded} visual marks added to the editor.`;
-          }
-          
-          if (results.marksFailed > 0) {
-            message += ` ${results.marksFailed} comments couldn't be visually marked (text may have changed).`;
-          }
-          
-          showAlert(this.$store, 'success', message);
-        } else {
-          const message = documentContent.trim().length < 100 
-            ? 'Document is too short for meaningful review.' 
-            : 'Great! No issues found in your document.';
-          showAlert(this.$store, 'info', message);
+        // Handle any errors
+        if (!feedbackSuccess && !inlineSuccess) {
+          throw new Error('Both feedback generation and inline review failed');
+        } else if (!feedbackSuccess) {
+          console.error('Feedback generation failed:', feedbackResult.reason);
+          showAlert(this.$store, 'warning', 'Inline review completed, but overall feedback failed');
+        } else if (!inlineSuccess) {
+          console.error('Inline review failed:', inlineResult.reason);
+          showAlert(this.$store, 'warning', 'Overall feedback generated, but inline review failed');
         }
 
       } catch (error) {
@@ -311,6 +381,23 @@ export default {
         this.expandedModel = 0;
       }
     },
+    
+    // Clear feedback when document changes
+    '$route': {
+      handler(from, to) {
+        if (from.query.id === to.query.id || from.query.v === to.query.v) {
+          return;
+        }
+        this.generativeFeedback = null;
+      },
+      deep: true
+    },
+
+    
+    // Clear feedback when switching to/from version view
+    isViewingVersion() {
+      this.generativeFeedback = null;
+    },
   },
 
   beforeUnmount() {
@@ -326,6 +413,11 @@ export default {
 </script>
 
 <style scoped>
+.generative-feedback {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 .generative-feedback :deep(ul),
 .generative-feedback :deep(ol) {
   padding-left: 1em;
