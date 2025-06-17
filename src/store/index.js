@@ -213,6 +213,7 @@ const store = createStore({
         selectedData.currentVersion = version || 'live';
 
         commit('setSelectedDocument', { ...selectedData, isLoading: false });
+        await store.dispatch('checkDocumentVersionsStatus', { id: state.selected.id });
         return selectedData; // Return the selected data
       } catch (error) {
         console.error("Error selecting document:", error);
@@ -222,6 +223,34 @@ const store = createStore({
         }
         return null;
       }
+    },
+    
+    async checkDocumentVersionsStatus({ commit, state }, { id }) {
+ 
+      const releasedVersions = state.selected.versions.filter(version => version?.released === true).map(version => version.versionNumber)
+      const currentReleasedVersions = state.selected.data.releasedVersion || [];
+
+      // Compare arrays by value using JSON.stringify (with sorting for consistent comparison)
+      const releasedVersionsSorted = [...releasedVersions].sort();
+      const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
+      const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
+      
+      if (!arraysAreEqual) {
+        await Document.updateDocField(id, 'releasedVersion', releasedVersions);
+        // Update the local state immediately
+        commit('updateSelectedDocument', { 
+          data: { ...state.selected.data, releasedVersion: releasedVersions } 
+        });
+        
+        // Update the document in the documents array to reflect changes
+        const updatedDocuments = state.documents.map(doc => 
+          doc.id === id 
+            ? { ...doc, data: { ...doc.data, releasedVersion: releasedVersions } }
+            : doc
+        );
+        commit('setDocuments', updatedDocuments);
+
+      } 
     },
 
     async deleteDocument({ commit }, { id }) {
@@ -253,6 +282,18 @@ const store = createStore({
       if (state.selected.id === null || state.selected.currentVersion === 'live') { return };
       await Document.updateMarkedUpContent(state.selected.id, versionContent, versionNumber);
       commit('setSelectedDocument', { ...state.selected, data: { ...state.selected.data, content: versionContent } });
+    },
+
+    async toggleVersionReleased({ commit, state }, { versionNumber, released }) {
+      await Document.toggleVersionReleased(state.selected.id, versionNumber, released);
+      commit('setSelectedDocument', { 
+        ...state.selected, versions: state.selected.versions.map(version => 
+          version.versionNumber === versionNumber ? { 
+            ...version, released: released
+          } : version) 
+        });
+
+      await store.dispatch('checkDocumentVersionsStatus', { id: state.selected.id });
     },
 
     async toggleDraft({ commit, state }) {
@@ -498,12 +539,18 @@ const store = createStore({
 
     async saveSelectedDocument(state) {
       if (state.selected.id === null) return;
+      // Set updatedDate locally to current time (Firestore format)
+      const now = { seconds: Math.floor(Date.now() / 1000) };
+      state.selected.data.updatedDate = now;
+      // Also update in documents array for consistency
+      const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
+      if (docIndex !== -1) {
+        state.documents[docIndex].data.updatedDate = now;
+      }
       await Document.updateDoc(state.selected.id, state.selected.data);
       const newTasks = await Task.updateTasks(state.selected.id, state.selected.data);
       state.tasks = state.tasks.filter(task => task.docID !== state.selected.id).concat(newTasks);
-      
       // Update the document in the documents array to reflect changes
-      const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
       if (docIndex !== -1) {
         state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data };
       }

@@ -5,7 +5,10 @@
             :close-on-content-click="false">
             <template v-slot:activator="{ props: menu }">
                 <div>
-                    <v-tooltip text="toggle draft mode" location="bottom">
+                    <v-tooltip 
+                        v-if="$store.state.selected.isVersion"
+                        text="toggle released status" 
+                        location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-btn 
                                 v-if="$store.state.selected.data" 
@@ -13,11 +16,11 @@
                                 variant="tonal" 
                                 density="compact" 
                                 v-bind="tooltip" 
-                                :color="$store.state.selected.data.draft ? 'orange' : undefined" 
-                                :text-color="$store.state.selected.data.draft ? 'white' : undefined" 
+                                :color="!versionReleasedStatus ? 'orange' : undefined" 
+                                :text-color="!versionReleasedStatus ? 'white' : undefined" 
                                 class="mx-1 mr-0 text-none rounded-s-pill" 
                                 @click="toggleDraft()">
-                                {{ $store.state.selected.data.draft ? 'Staged' : 'Released' }}
+                                {{ !versionReleasedStatus ? 'Staged' : 'Released' }}
                             </v-btn>
                         </template>
                     </v-tooltip>
@@ -43,11 +46,26 @@
                 :items="computedVersions"
                 :item-title="item => item.versionNumber"
                 :item-value="item => item.versionNumber"
+                :key="JSON.stringify(versions)"
                 label="Select Version"
                 @update:modelValue="selectVersion"
                 density="compact"
                 hide-details="auto"
-            ></v-select>
+            >
+              <template v-slot:item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <template v-slot:append>
+                    <v-icon 
+                      v-if="!(item.raw?.released)" 
+                      color="warning" 
+                      size="small"
+                    >
+                    mdi-pencil
+                    </v-icon>
+                  </template>
+                </v-list-item>
+              </template>
+            </v-select>
             <v-text-field v-if="versions.length === 0 || creatingVersion === true"
                 v-model="newVersion"
                 label="New Version"
@@ -95,13 +113,18 @@ export default {
     },
     computed: {
         computedVersions() {
-            return ['live', ...this.versions]
+            const versions = this.$store.state.selected.versions;
+            return ['live', ...(Array.isArray(versions) ? versions : [])]
         }, 
-
         disableVersionManagement() {
             return !this.$store.getters.isUserLoggedIn
+        },
+        versionData() {
+            return this.$store.state.selected?.versions?.find(version => version.versionNumber === this.currentVersion)
+        },
+        versionReleasedStatus() {
+            return this.versionData?.released ?? false
         }
-
     },
     data() {
         return {
@@ -156,7 +179,7 @@ export default {
         },
 
         async toggleDraft() {
-            await this.$store.dispatch('toggleDraft');
+            await this.$store.dispatch('toggleVersionReleased', { versionNumber: this.currentVersion, released: !this.versionReleasedStatus });
         },
     }
 }

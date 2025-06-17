@@ -25,6 +25,14 @@ export const helloWorld = onRequest((request, response) => {
 export const deleteUser = onCall(async (request)=> {
   const userId = request.data.userId;
 
+  // Validate userId is provided and not undefined
+  if (!userId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "userId is required and cannot be undefined"
+    );
+  }
+
   try {
     // Delete user document
     await admin.firestore().collection("users").doc(userId).delete();

@@ -1,5 +1,5 @@
 import {firebaseApp} from "../firebase";
-import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
+import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment, collectionGroup } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
 import store from "../store";
@@ -332,12 +332,19 @@ export class Document {
       draft: value.draft || true,
       children: value.children || [],
       order: value.order || 1000,
-      version: value.version || [],
+      releasedVersion: value.releasedVersion || [],
     }
   }
   
   static async getAll(includeArchived = false, includeDraft = false) {
-    'getting documents'
+ 
+    
+    // Check if project.id exists before using it in the query
+    if (!store.state.project?.id) {
+      console.warn('No project ID available, returning empty array');
+      return [];
+    }
+    
     const documentsRef = collection(db, "documents");
 
     const conditions = [
@@ -349,7 +356,7 @@ export class Document {
     }
 
     if (!store.state.user.uid && !includeDraft) {
-      conditions.push(where("draft", "==", false));
+
     }
 
     const q = query(documentsRef, ...conditions);
@@ -461,9 +468,11 @@ export class Document {
   static async updateDocField(id, field, value) {
     checkUserLoggedIn()
     const documentRef = doc(db, "documents", id);
-    await updateDoc(documentRef, {[field]: value});
+    await updateDoc(documentRef, {
+      [field]: value,
+      updatedDate: serverTimestamp()
+    });
     store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
-    return await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   
@@ -605,7 +614,6 @@ export class Document {
     } else {
         store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
     }
-
   } 
 
 
@@ -671,6 +679,14 @@ export class ChatHistory {
   }
   
   static async getAll() {
+    checkUserLoggedIn()
+    
+    // Ensure user.uid exists before using it in the query
+    if (!store.state.user?.uid) {
+      console.warn('No user ID available, returning empty array');
+      return [];
+    }
+    
     const chatsRef = collection(db, "chats");
     const q = query(chatsRef,
       where("archived", "==", false),
@@ -730,8 +746,6 @@ export class ChatHistory {
 }
 
 export class UsageLogger {
-
-  
   static async logUsage(userId, functionName) {
       const usageRef = doc(db, "usageLogs", userId);
       const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
@@ -783,6 +797,13 @@ export class Favorites {
 export class Task {
   static async getAll() {
     checkUserLoggedIn()
+    
+    // Check if project.id exists before using it in the query
+    if (!store.state.project?.id) {
+      console.warn('No project ID available for tasks, returning empty array');
+      return [];
+    }
+    
     const tasksRef = collection(db, "tasks");
     const q = query(tasksRef, where("project", "==", store.state.project.id));
     const snapshot = await getDocs(q);
