@@ -698,6 +698,7 @@ export default {
     // Method to open drawer and scroll to specific comment
     openDrawerAndScrollToComment(commentId) {
       this.drawer = true;
+      this.activeTab = 'review';
 
       this.$nextTick(() => {
         setTimeout(() => {
