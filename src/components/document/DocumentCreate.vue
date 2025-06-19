@@ -237,19 +237,17 @@
         v-if="!isLoading"
         :key="editorKey"
       >
-        <div
+        <input
           v-if="!showTemplateInput"
-          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
-          :contenteditable="isEditable"
-          :style="{ minHeight: '1em', outline: 'none' }"
-          @blur="isEditable && updateDocumentNameOnBlur"
-          @keydown.enter="isEditable && finishEditingTitle"
-          @focus="isEditable && ensureContent"
+          v-model="document.data.name"
+          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded border-0 p-0"
+          :style="{ minHeight: '1em', outline: 'none', resize: 'none' }"
+          :disabled="!isEditable"
+          @input="updateDocumentNameFromInput"
           @click.stop
-          ref="editableDiv"
-        >
-          {{ document.data.name }}
-        </div>
+          ref="titleInput"
+          type="text"
+        />
 
         <!-- Template Input Section -->
         <div v-if="!isLoading && showTemplateInput" class="template-input-wrapper">
@@ -658,20 +656,11 @@ export default {
       textarea.style.height = `${textarea.scrollHeight}px`; // Set it to the scroll height
     },
 
-    updateDocumentNameOnBlur(event) {
-      const newName = event.target.innerText.trim();
-      if (newName !== this.document.data.name) {
-        this.document.data.name = newName;
+    updateDocumentNameFromInput(event) {
+      if (event.target.value !== this.document.data.name) {
+        this.document.data.name = event.target.value;
+        this.isEditorModified = true;
       }
-    },
-
-    finishEditingTitle(event) {
-      event.preventDefault(); // Prevent adding a new line
-      const newName = event.target.innerText.trim();
-      if (newName !== this.document.data.name) {
-        this.document.data.name = newName;
-      }
-      event.target.blur(); // Remove focus from the title
     },
 
     async toggleDraft() {
@@ -680,12 +669,7 @@ export default {
       await this.$store.dispatch("getDocuments");
     },
 
-    ensureContent() {
-      const el = this.$refs.editableDiv;
-      if (!el.innerText.trim()) {
-        el.innerHTML = "<br>"; // Ensure there's always a line break to maintain focus
-      }
-    },
+
 
     activateEditor() {
       activateEditor({
@@ -829,7 +813,7 @@ export default {
 
         if (this.isEditorModified) {
           console.log("trying to save....");
-          // Only pass document data, not comments, to avoid overwriting store's comment state
+          // Only pass document data, not comments or versions, to avoid overwriting store's comment state
           const documentUpdateData = {
             id: this.document.id,
             data: this.document.data
