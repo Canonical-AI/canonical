@@ -404,7 +404,7 @@ export default {
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     // Set up comments composable
-    const { handleAcceptSuggestion, handleUndo } = useComments(this.$store, this.$eventStore);
+    const { handleAcceptSuggestion, handleUndo } = useComments(this.$eventStore);
     
     this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
       

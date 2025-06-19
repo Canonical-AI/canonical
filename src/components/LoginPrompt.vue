@@ -86,8 +86,9 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount, watch, inject } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch} from 'vue';
 import { useRouter } from 'vue-router';
+import { useMainStore } from '../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -101,7 +102,7 @@ import { firebaseApp } from '../firebase';
 export default {
   setup() {
     const router = useRouter();
-    const store = inject('store');
+    const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
     const email = ref('');

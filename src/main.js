@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
-import storePlugin from './plugins/store'
+import piniaPlugin from './plugins/piniaPlugin'
 import { eventStore } from './store/eventStore'
 import { useMainStore } from './store/index.js';
 import VueGtag from "vue-gtag";
@@ -49,7 +49,7 @@ const app = createApp(App)
   .use(router)
   .use(vuetify)
   .use(pinia)
-  .use(storePlugin)
+  .use(piniaPlugin)
   .use(dayjs)
   .use(VueGtag, {
     config: { id: "G-C3BP9PBDB0" },
@@ -65,10 +65,15 @@ app.config.globalProperties.$slideFadeTransition = slideFadeTransition
 app.config.globalProperties.$marked = marked
 app.config.globalProperties.$eventStore = eventStore
 
-// Initialize store after app is ready
+// Mount the app first
 app.mount('#app')
 
-// Initialize user session
+// Initialize user session after app is mounted - WAIT for it to complete
 const store = useMainStore()
-store.user.enter()
+console.log('Starting user initialization...')
+store.userEnter().then(() => {
+  console.log('User initialization complete')
+}).catch(error => {
+  console.error('User initialization failed:', error)
+})
 

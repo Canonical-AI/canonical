@@ -190,7 +190,7 @@ export default {
     },
     computed:{
         items() {
-            return this.store.projectFolderTree; 
+            return this.$store.projectFolderTree; 
         },
         filteredItems() {
         // Filter out items without proper IDs first to prevent dragging issues

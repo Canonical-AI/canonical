@@ -93,7 +93,7 @@
 <script>
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useStore } from 'vuex';
+import { useMainStore } from '../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -108,7 +108,7 @@ import { firebaseApp } from '../firebase';
 export default {
   setup() {
     const router = useRouter();
-    const store = useStore();
+    const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
     const email = ref('');
@@ -117,7 +117,7 @@ export default {
     const error = ref('');
     const showEmailForm = ref(false);
     
-    const isLoggedIn = computed(() => store.isLoggedIn);
+    const isLoggedIn = computed(() => store.isUserLoggedIn);
     const userEmail = computed(() => store.user?.email || '');
     
     const handleAuth = async () => {

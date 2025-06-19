@@ -161,12 +161,32 @@ export const useMainStore = defineStore('main', {
     // User Management
     async userEnter() {
       this.loadingUser = true;
-      const user = await User.getUserAuth();
-      if (user) {
-        this.userSetData(user);
-        await this.projectSet(user.defaultProject);
-      } 
-      this.loadingUser = false;
+      try {
+        console.log('Starting user authentication...');
+        const user = await User.getUserAuth();
+        
+        if (user) {
+          console.log('User authenticated:', user.email);
+          // WAIT for user data to be set before continuing
+          this.userSetData(user);
+          console.log('User data set in store, user.uid:', this.user.uid);
+          
+          // WAIT for project to be set before continuing
+          if (user.defaultProject) {
+            console.log('Setting default project:', user.defaultProject);
+            await this.projectSet(user.defaultProject);
+            console.log('Project set complete');
+          }
+        } else {
+          console.log('No user authenticated');
+        }
+      } catch (error) {
+        console.error('Error in userEnter:', error);
+        this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
+      } finally {
+        this.loadingUser = false;
+        console.log('User authentication flow complete');
+      }
     },
 
     userSetData(payload) {
@@ -241,16 +261,40 @@ export const useMainStore = defineStore('main', {
     },
 
     async projectGetAllData() {
+      console.log('Starting projectGetAllData, user.uid:', this.user.uid);
+      
+      // Double check user is logged in before proceeding
+      if (!this.isUserLoggedIn || !this.user.uid) {
+        console.warn('User not logged in, skipping project data load');
+        return;
+      }
+
+      console.log('Loading project data...');
+      
+      // Load projects
       this.projects = await Promise.all(
         this.user.projects.map(projectId => Project.getById(projectId))
       );
+      console.log('Projects loaded:', this.projects.length);
+      
+      // Load documents  
       this.documents = await Document.getAll();
+      console.log('Documents loaded:', this.documents.length);
 
-      if (this.isUserLoggedIn) {
+      // Load user-specific data only if confirmed logged in
+      if (this.isUserLoggedIn && this.user.uid) {
+        console.log('Loading user-specific data...');
         this.tasks = await Task.getAll();
+        console.log('Tasks loaded:', this.tasks.length);
+        
         this.chats = await ChatHistory.getAll();
+        console.log('Chats loaded:', this.chats.length);
+        
         this.favorites = await Favorites.getAll();
+        console.log('Favorites loaded:', this.favorites.length);
       }
+      
+      console.log('Project data loading complete');
     },
 
     // Document Management
@@ -459,64 +503,3 @@ export const useMainStore = defineStore('main', {
   }
 })
 
-// Create a compatibility layer for the old Vuex-style access
-export default {
-  state: {
-    get user() { return useMainStore().user },
-    get project() { return useMainStore().project },
-    get selected() { return useMainStore().selected },
-    get documents() { return useMainStore().documents },
-    get chats() { return useMainStore().chats },
-    get tasks() { return useMainStore().tasks },
-    get favorites() { return useMainStore().favorites },
-    get templates() { return useMainStore().templates },
-    get globalAlerts() { return useMainStore().globalAlerts },
-    get loadingUser() { return useMainStore().loadingUser },
-  },
-  getters: {
-    get isUserLoggedIn() { return useMainStore().isUserLoggedIn },
-    get canAccessAi() { return useMainStore().canAccessAi },
-    get filteredDocuments() { return useMainStore().filteredDocuments },
-    get isFavorite() { return useMainStore().isFavorite },
-    get projectFolderTree() { return useMainStore().projectFolderTree },
-  },
-  commit(action, payload) {
-    const store = useMainStore();
-    
-    // Map old commit actions to new actions
-    switch(action) {
-      case 'alert':
-        store.ui.alert(payload);
-        break;
-      case 'logout':
-        store.user.logout();
-        break;
-      case 'setUserData':
-        store.user.setData(payload);
-        break;
-      default:
-        console.warn(`Unmapped commit action: ${action}`);
-    }
-  },
-  async dispatch(action, payload) {
-    const store = useMainStore();
-    
-    // Map old dispatch actions to new actions
-    switch(action) {
-      case 'enter':
-        return await store.user.enter();
-      case 'addComment':
-        return await store.comments.add(payload);
-      case 'updateCommentData':
-        return await store.comments.updateData(payload);
-      case 'deleteComment':
-        return await store.comments.delete(payload);
-      case 'getDocuments':
-        return await store.documents.getAll();
-      case 'checkDocumentVersionsStatus':
-        return await store.documents.checkVersionsStatus(payload);
-      default:
-        console.warn(`Unmapped dispatch action: ${action}`);
-    }
-  }
-} 
