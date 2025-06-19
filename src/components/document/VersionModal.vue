@@ -6,12 +6,12 @@
             <template v-slot:activator="{ props: menu }">
                 <div>
                     <v-tooltip 
-                        v-if="$store.state.selected.isVersion"
+                        v-if="$store.selected.isVersion"
                         text="toggle released status" 
                         location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-btn 
-                                v-if="$store.state.selected.data" 
+                                v-if="$store.selected.data" 
                                 :disabled="disabled" 
                                 variant="tonal" 
                                 density="compact" 
@@ -34,10 +34,10 @@
                                 variant="tonal" 
                                 density="compact" 
                                 v-bind="tooltip" 
-                                :color="$store.state.selected.data?.releasedVersion?.length > 0 ? undefined : 'orange'" 
-                                :text-color="$store.state.selected.data?.releasedVersion?.length > 0 ? undefined : 'white'" 
+                                :color="$store.selected.data?.releasedVersion?.length > 0 ? undefined : 'orange'" 
+                                :text-color="$store.selected.data?.releasedVersion?.length > 0 ? undefined : 'white'" 
                                 class="mx-1 mr-0 text-none rounded-s-pill" >
-                                {{ $store.state.selected.data?.releasedVersion?.length > 0 ? 'Released' : 'Staged' }}
+                                {{ $store.selected.data?.releasedVersion?.length > 0 ? 'Released' : 'Staged' }}
                             </v-btn>
                         </template>
                     </v-tooltip>
@@ -130,14 +130,14 @@ export default {
     },
     computed: {
         computedVersions() {
-            const versions = this.$store.state.selected.versions;
+            const versions = this.$store.selected.versions;
             return ['live', ...(Array.isArray(versions) ? versions : [])]
         }, 
         disableVersionManagement() {
-            return !this.$store.getters.isUserLoggedIn
+            return !this.$store.isUserLoggedIn
         },
         versionData() {
-            return this.$store.state.selected?.versions?.find(version => version.versionNumber === this.currentVersion)
+            return this.$store.selected?.versions?.find(version => version.versionNumber === this.currentVersion)
         },
         versionReleasedStatus() {
             return this.versionData?.released ?? false

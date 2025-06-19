@@ -358,8 +358,8 @@ export default {
                     const view = ctx.get(editorViewCtx);
                     if (!view) return;
 
-                    const allComments = this.$store.state.selected.comments || [];
-                    const currentVersion = this.$store.state.selected.currentVersion;
+                    const allComments = this.$store.selected.comments || [];
+                    const currentVersion = this.$store.selected.currentVersion;
                     
                     // Filter comments based on current version
                     let relevantComments;
@@ -430,7 +430,7 @@ export default {
                     });
 
                     // If viewing a version and marks were updated, save the markedUpContent
-                    if (marksUpdated && this.$store.state.selected.currentVersion !== 'live') {
+                    if (marksUpdated && this.$store.selected.currentVersion !== 'live') {
                         this.$nextTick(() => {
                             this.saveMarkedUpContent();
                         });
@@ -462,7 +462,7 @@ export default {
 
         // Method to save marked up content when viewing a version
         saveMarkedUpContent() {
-            if (!this.get || this.loading || this.$store.state.selected.currentVersion === 'live') {
+            if (!this.get || this.loading || this.$store.selected.currentVersion === 'live') {
                 return;
             }
 
@@ -476,9 +476,9 @@ export default {
                     
                     if (currentMarkdown) {
                         this.$store.dispatch('updateMarkedUpContent', {
-                            docID: this.$store.state.selected.id,
+                            docID: this.$store.selected.id,
                             versionContent: currentMarkdown,
-                            versionNumber: this.$store.state.selected.currentVersion
+                            versionNumber: this.$store.selected.currentVersion
                         });
                     }
                 });
@@ -643,7 +643,7 @@ export default {
     expose: ['createComment', 'getEditorView', 'forceUpdateContent'],
     computed: {
         isUserLoggedIn() {
-            return this.$store.getters.isUserLoggedIn;
+            return this.$store.isUserLoggedIn;
         },
         isDarkTheme() {
             return this.$vuetify.theme.global.current.dark
@@ -666,7 +666,7 @@ export default {
             }
         },
         // Watch both comments and version changes to filter comments by version
-        '$store.state.selected.comments': {
+        '$store.selected.comments': {
             handler(oldVal, newVal) {
                 if (oldVal === newVal && this.loading) return;
                 // Sync comment marks when comments change
@@ -686,11 +686,11 @@ export default {
                     this.processContentBeforeRender(newVal);
                 }
 
-                if (this.$store.state.selected.currentVersion !== 'live' && !this.loading) {
+                if (this.$store.selected.currentVersion !== 'live' && !this.loading) {
                     this.$store.dispatch('updateMarkedUpContent', {
-                        docID: this.$store.state.selected.id, 
-                        versionContent: this.$store.state.selected.data.content, 
-                        versionNumber: this.$store.state.selected.currentVersion});
+                        docID: this.$store.selected.id, 
+                        versionContent: this.$store.selected.data.content, 
+                        versionNumber: this.$store.selected.currentVersion});
                     }
 
                 // Sync comment marks when document content changes

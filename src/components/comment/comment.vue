@@ -70,7 +70,7 @@
         label="leave a comment"
         hide-details
         clearable
-        v-if="$store.getters.isUserLoggedIn"
+        v-if="$store.isUserLoggedIn"
       >
       <template v-slot:append-inner>
           <v-btn
@@ -117,12 +117,12 @@ export default {
     }),
     computed: {
       currentVersion() {
-        return this.$store.state.selected.currentVersion;
+        return this.$store.selected.currentVersion;
       },
       
       timeline() {
-        const versions = Array.isArray(this.$store.state.selected.versions) ? 
-          this.$store.state.selected.versions.map(v => ({
+        const versions = Array.isArray(this.$store.selected.versions) ? 
+          this.$store.selected.versions.map(v => ({
             type: 'version',
             value: v,
             sortDate: v.createDate?.seconds || 0,
@@ -130,7 +130,7 @@ export default {
           })) : []; // Default to an empty array if not an array
         
         // Use the threaded comments getter for organized display
-        let threadedComments = this.$store.getters.threadedCommentsByVersion;
+        let threadedComments = this.$store.threadedCommentsByVersion;
         
         // Filter comments based on showResolved setting
         if (this.showResolved === 'active') {

@@ -92,7 +92,7 @@ export default {
 
                 if (this.search === val) {
 
-                    const customNode = referenceLinkNode.type(ctx).create({ src: val, parent: this.$store.state.selected.id}); 
+                    const customNode = referenceLinkNode.type(ctx).create({ src: val, parent: this.$store.selected.id}); 
 
                     dispatch(tr
                         .replaceSelectionWith(customNode)

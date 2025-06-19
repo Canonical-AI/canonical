@@ -51,7 +51,7 @@
           
 
         <v-menu
-          v-if='$store.getters.isUserLoggedIn === false'
+          v-if='$store.isUserLoggedIn === false'
           :close-on-content-click = "false"
           v-model="loginMenuOpen"
           offset-y>
@@ -65,7 +65,7 @@
 
 
         <v-menu
-        v-if='$store.getters.isUserLoggedIn === true && $store.state.user.email'
+        v-if='$store.isUserLoggedIn === true && $store.user.email'
         class="user-menu w-auto"
         offset-overflow
         left
@@ -77,7 +77,7 @@
                   v-bind="props">
                 <span
                   class="white--text text-h5">
-                  {{$store.state.user.email[0].toUpperCase()}}</span>
+                  {{$store.user.email[0].toUpperCase()}}</span>
                 </v-avatar>
             </template>
             <v-list density="compact" variant="plain">
@@ -85,7 +85,7 @@
                 <p class="text-medium-emphasis">Signed in as</p>
               </v-list-item>
               <v-list-item>
-                <p v-if="$store.state.user.email">{{$store.state.user.email.split("@")[0]}}</p>
+                <p v-if="$store.user.email">{{$store.user.email.split("@")[0]}}</p>
                 <p v-else>No Email</p>
               </v-list-item>
               <v-list-item
@@ -93,7 +93,7 @@
                 :key="index"
                 variant="plain"
               >
-                <v-list-item-title variant="contained-text" v-if='$store.getters.isUserLoggedIn === true' @click="logout">
+                <v-list-item-title variant="contained-text" v-if='$store.isUserLoggedIn === true' @click="logout">
                     Logout
                 </v-list-item-title>
               </v-list-item>
@@ -112,7 +112,7 @@
           density="compact"
           nav>
           <v-list-item @click.stop="toggleDrawer('document')" prepend-icon="mdi-folder-multiple" value="dashboard"></v-list-item>
-          <v-list-item @click.stop="toggleDrawer('chat')" v-if="$store.getters.canAccessAi" :disabled="!$store.getters.isUserLoggedIn">
+          <v-list-item @click.stop="toggleDrawer('chat')" v-if="$store.canAccessAi" :disabled="!$store.isUserLoggedIn">
             <template v-slot:prepend>
               <v-badge dot color="success">
                 <v-icon icon="mdi-forum"/>
@@ -322,7 +322,7 @@ export default {
       },
       deep: true,
     },
-    '$store.getters.isUserLoggedIn': {
+    '$store.isUserLoggedIn': {
       handler(newValue) {
         if (newValue === true) {
           this.loginMenuOpen = false;
@@ -365,10 +365,10 @@ export default {
   },
   computed:{
     alerts_(){
-      return this.$store.state.globalAlerts
+      return this.$store.globalAlerts
     },
     project(){
-      return this.$store.state.project.id;
+      return this.$store.project.id;
     },
     themes(){
       return Object.keys(this.$vuetify.theme.themes).filter(theme => theme !== 'light' && theme !== 'dark');
@@ -428,7 +428,7 @@ export default {
       this.loginPromptTimer = setTimeout(() => {
         // Only show login menu if user is not logged in, hasn't been prompted yet,
         // and has been inactive for 5 minutes
-        if (!this.$store.getters.isUserLoggedIn && 
+        if (!this.$store.isUserLoggedIn && 
             !this.userActivity.hasShownPrompt && 
             (Date.now() - this.userActivity.lastActive) >= 300000) {
           this.loginMenuOpen = true;

@@ -1,9 +1,8 @@
-import { createStore } from 'vuex'
+import { defineStore } from 'pinia'
 import router from '../router'
-//import {product, persona} from '../services/firebaseDataService'
 import {User, Document, Template, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 
-function filterHelper(list,filter){
+function filterHelper(list, filter) {
   return [...list].filter(function(item) {
     var justTheData = [];
     Object.keys(item.data).forEach(k => {
@@ -26,115 +25,119 @@ function getCookie(name) {
   return null;
 }
 
-const store = createStore({
-  state () {
-    return {
-      user:{
-        loggedIn: false,
-        displayName: null,
-        uid:null,
-        email: null,
-        tier: null,
-        defaultProject: null,
-        projects: []
-      },
-      loadingUser: true,
-      project: {
-        id: null,
-        folders: [],
-        name: null,
-        createdBy: null,
-        users: []
-      },
-      projects: [],
-      documents: [],
-      chats:[],
-      loading:{
-        personas:{
-          loaded:false,
-          fetching:false
-        }
-      },
-      selected:{
-        id: null,
-        version: null,
-        comments: [],
-        versions: [],
-        isVersion: false,
-        currentVersion: 'live'
-      },
-      detailClose: 1,
-      globalAlerts:[],
-      filter: "",
-      templates:[],
-      favorites: [],
-      tasks: [],
-    }
-  },
+export const useMainStore = defineStore('main', {
+  state: () => ({
+    user: {
+      loggedIn: false,
+      displayName: null,
+      uid: null,
+      email: null,
+      tier: null,
+      defaultProject: null,
+      projects: []
+    },
+    loadingUser: true,
+    project: {
+      id: null,
+      folders: [],
+      name: null,
+      createdBy: null,
+      users: []
+    },
+    projects: [],
+    documents: [],
+    chats: [],
+    loading: {
+      personas: {
+        loaded: false,
+        fetching: false
+      }
+    },
+    selected: {
+      id: null,
+      version: null,
+      comments: [],
+      versions: [],
+      isVersion: false,
+      currentVersion: 'live'
+    },
+    detailClose: 1,
+    globalAlerts: [],
+    filter: "",
+    templates: [],
+    favorites: [],
+    tasks: [],
+  }),
+
   getters: {
-    isUserLoggedIn (state) {
-      return state.user.uid !== null
-    },
-    canAccessAi (state) {
-      return state.user.tier === 'pro' || state.user.tier === 'trial'
-    },
-    filteredDocuments (state){
-      return filterHelper(state.documents,state.filter)
-    },
-    isFavorite: (state) => (id) => {
-      return state.favorites.includes(id);
-    },
-    projectFolderTree(state){
+    isUserLoggedIn: (state) => state.user.uid !== null,
+    
+    canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
+    
+    filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
+    
+    isFavorite: (state) => (id) => state.favorites.includes(id),
+    
+    projectFolderTree: (state) => {
+      // Ensure documents is an array before trying to map
+      if (!Array.isArray(state.documents)) {
+        return [];
+      }
+      
       const documentMap = new Map(state.documents.map(doc => [doc.id, doc]));
+      
+      // Ensure project.folders is an array
+      if (!Array.isArray(state.project.folders)) {
+        return state.documents.sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
+      }
+      
       const updatedFolders = state.project.folders.map(folder => {
-          const updatedChildren = folder.children.map(childId => documentMap
-              .get(childId))
-              .filter(Boolean)
-              .sort((a, b) => a.data.name.localeCompare(b.data.name)); // Sort by name
-          return {
-                      id: folder.name,
-                      isOpen: folder.isOpen ?? true,
-                      children: updatedChildren, // Update children to include full document objects
-                      data: {
-                          name: folder.name,
-                          folder: true,
-                      }
-                  };
-              });
+        const updatedChildren = folder.children.map(childId => documentMap
+          .get(childId))
+          .filter(Boolean)
+          .sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
+        return {
+          id: folder.name,
+          isOpen: folder.isOpen ?? true,
+          children: updatedChildren,
+          data: {
+            name: folder.name,
+            folder: true,
+          }
+        };
+      });
 
       updatedFolders.sort((a, b) => a.id.localeCompare(b.id));
-      const documentsInFolders = new Set(state.project.folders.flatMap(folder => folder.children));
-      const ungroupedDocuments = state.documents.filter(doc => !documentsInFolders.has(doc.id)).sort((a, b) => a.data?.name.localeCompare(b.data?.name));
-      return [...updatedFolders, ...ungroupedDocuments]; // Append ungrouped documents
+      const documentsInFolders = new Set(state.project.folders.flatMap(folder => folder.children || []));
+      const ungroupedDocuments = state.documents.filter(doc => !documentsInFolders.has(doc.id)).sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
+      return [...updatedFolders, ...ungroupedDocuments];
     },
+    
     documentComments: (state) => {
       return state.selected.comments
-        .sort((a, b) => a.date.createDate - b.date.createDate);
+        .sort((a, b) => a.date?.createDate - b.date?.createDate);
     },
-    // Filter comments by version - shows all comments for 'live' version, or only version-specific comments
+    
     filteredCommentsByVersion: (state) => {
       if (!state.selected.comments) return [];
       
       const currentVersion = state.selected.currentVersion;
       
-      // If viewing 'live' version or no version specified, show ALL comments (from all versions)
       if (!currentVersion || currentVersion === 'live') {
         return state.selected.comments
           .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
       }
       
-      // If viewing a specific version, show only comments for that version
       return state.selected.comments
         .filter(comment => comment.documentVersion === currentVersion)
         .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
     },
-    // Get threaded comments organized as parent-child structure
-    threadedCommentsByVersion: (state, getters) => {
-      const filteredComments = getters.filteredCommentsByVersion;
+    
+    threadedCommentsByVersion() {
+      const filteredComments = this.filteredCommentsByVersion;
       const threaded = [];
       const commentMap = new Map();
       
-      // First pass: create map of all comments
       filteredComments.forEach(comment => {
         commentMap.set(comment.id, { 
           ...comment, 
@@ -142,48 +145,132 @@ const store = createStore({
         });
       });
       
-      // Second pass: organize into parent-child structure
       filteredComments.forEach(comment => {
         if (comment.parentId && commentMap.has(comment.parentId)) {
-          // This is a child comment
           commentMap.get(comment.parentId).children.push(commentMap.get(comment.id));
         } else if (!comment.parentId) {
-          // This is a top-level comment
           threaded.push(commentMap.get(comment.id));
         }
       });
       
       return threaded.sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
     },
-    
   },
+
   actions: {
-    async enter({ commit , state}) {
-      await commit('setLoadingUser', true);
+    // User Management
+    async userEnter() {
+      this.loadingUser = true;
       const user = await User.getUserAuth();
       if (user) {
-        await commit('setUserData', user);
-        await commit('setProject', user.defaultProject)
+        this.userSetData(user);
+        await this.projectSet(user.defaultProject);
       } 
-      await commit('setLoadingUser', false);
+      this.loadingUser = false;
     },
 
-    async createDocument({ commit, state }, { data , select = true}) {
+    userSetData(payload) {
+      this.user = {
+        loggedIn: true,
+        displayName: payload.displayName,
+        uid: payload.uid,
+        email: payload.email,
+        tier: payload.tier,
+        defaultProject: payload.defaultProject,
+        projects: payload.projects
+      };
+    },
+
+    userLogout() {
+      this.user = {
+        loggedIn: false,
+        displayName: null,
+        uid: null,
+        email: null,
+        tier: null,
+        defaultProject: null,
+        projects: []
+      };
+      this.documents = [];
+      this.selected = {
+        id: null,
+        version: null,
+        comments: [],
+        versions: [],
+        isVersion: false,
+        currentVersion: 'live'
+      };
+      this.project = {
+        id: null,
+        folders: [],
+        name: null,
+        createdBy: null,
+        users: []
+      };
+      this.projects = [];
+      this.chats = [];
+      this.tasks = [];
+      this.favorites = [];
+      this.templates = [];
+    },
+
+    async userGetData() {
+      this.loadingUser = true;
+      this.user = await User.getById(this.user.uid);
+      this.loadingUser = false;
+    },
+
+    async userSetDefaultProject(payload) {
+      await User.setDefaultProject(payload);
+      this.user.defaultProject = payload;
+    },
+
+    // Project Management
+    async projectSet(projectId) {
+      if (!projectId) return;
+      
+      this.project = await Project.getById(projectId);
+      
+      if (this.isUserLoggedIn) {
+        await this.projectGetAllData();
+      }
+    },
+
+    projectSetTemp(payload) {
+      this.project = payload;
+    },
+
+    async projectGetAllData() {
+      this.projects = await Promise.all(
+        this.user.projects.map(projectId => Project.getById(projectId))
+      );
+      this.documents = await Document.getAll();
+
+      if (this.isUserLoggedIn) {
+        this.tasks = await Task.getAll();
+        this.chats = await ChatHistory.getAll();
+        this.favorites = await Favorites.getAll();
+      }
+    },
+
+    // Document Management
+    async documentsCreate({ data, select = true }) {
       const createdDoc = await Document.create(data);
-      if (select) {commit('setSelectedDocument', { ...state.selected, ...createdDoc })}
-      commit('addDocument', { id: createdDoc.id, data: createdDoc.data })
+      if (select) {
+        this.selected = { ...this.selected, ...createdDoc };
+      }
+      this.documents.push({ id: createdDoc.id, data: createdDoc.data });
       return { id: createdDoc.id, data: createdDoc.data };
     },
 
-    async getDocuments ({ commit }) {
-      
+    async documentsGetAll() {
       const documents = await Document.getAll(); 
-      commit('setDocuments', documents);
+      this.documents = documents;
       return documents;
     },
 
-    async selectDocument({ commit, state }, { id, version = null }) {
-      commit('setSelectedDocument', { ...state.selected, isLoading: true });
+    async documentsSelect({ id, version = null }) {
+      this.selected = { ...this.selected, isLoading: true };
 
       try {
         let selectedData;
@@ -202,511 +289,234 @@ const store = createStore({
           selectedData = await Document.getDocById(id);
         }
 
-        if (typeof selectedData.data === "undefined") {
-          commit("alert", { type: "error", message: `${id} not found` });
-          commit('setSelectedDocument', { ...state.selected, isLoading: false });
-          return;
-        }
-
-        // Set version information in the selected document
-        selectedData.isVersion = !!version;
-        selectedData.currentVersion = version || 'live';
-
-        commit('setSelectedDocument', { ...selectedData, isLoading: false });
-        await store.dispatch('checkDocumentVersionsStatus', { id: state.selected.id });
-        return selectedData; // Return the selected data
+        selectedData.isLoading = false;
+        this.selected = selectedData;
       } catch (error) {
-        console.error("Error selecting document:", error);
-        commit('setSelectedDocument', { ...state.selected, isLoading: false });
-        if (error.message.includes('Permission denied')) {
-          router.push('/');
-        }
-        return null;
-      }
-    },
-    
-    async checkDocumentVersionsStatus({ commit, state }, { id }) {
- 
-      const releasedVersions = state.selected.versions.filter(version => version?.released === true).map(version => version.versionNumber)
-      const currentReleasedVersions = state.selected.data.releasedVersion || [];
-
-      // Compare arrays by value using JSON.stringify (with sorting for consistent comparison)
-      const releasedVersionsSorted = [...releasedVersions].sort();
-      const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
-      const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
-      
-      if (!arraysAreEqual || (state.selected.data.draft === true && state.selected.data.releasedVersion && state.selected.data.releasedVersion.length > 0)) {
-        await Document.updateDocField(id, 'releasedVersion', releasedVersions);
-        await Document.updateDocField(id, 'draft', false);
-        // Update the local state immediately
-        commit('updateSelectedDocument', { 
-          data: { 
-            ...state.selected.data, 
-            releasedVersion: releasedVersions , 
-            draft: false } 
-        });
-        
-        // Update the document in the documents array to reflect changes
-        const updatedDocuments = state.documents.map(doc => 
-          doc.id === id 
-            ? { ...doc, data: { 
-              ...doc.data, 
-              releasedVersion: releasedVersions ,
-              draft: false
-            }}
-            : doc
-        );
-        commit('setDocuments', updatedDocuments);
-      }  else if (state.selected.data.draft === false && (!state.selected.data.releasedVersion || state.selected.data.releasedVersion.length === 0)) {
-        //this is something to protect backwards compatibility, before version releases were implemented
-        console.log('setting draft to true')
-        await Document.updateDocField(id, 'releasedVersion', []);
-        await Document.updateDocField(id, 'draft', true);
-        commit('updateSelectedDocument', { 
-          data: { 
-            ...state.selected.data, 
-            releasedVersion: [],
-            draft: true 
-          } 
-        });
+        this.selected.isLoading = false;
+        throw error;
       }
     },
 
-    async deleteDocument({ commit }, { id }) {
-      await Document.deleteDocByID(id)
-      commit('removeDocument', id)
-    },
-
-    async archiveDocument({ commit }, { id }) {
-      await Document.archiveDoc(id)
-      commit('removeDocument', id)
-    },
-
-    async getTemplates({ commit }) {
-      const templates = await Template.getAll();
-      commit('setTemplates', templates);
-    },
-
-    async createVersion({ commit, state }, newVersion) {
-      await Document.createVersion(state.selected.id, state.selected.data, newVersion);
-      commit('setSelectedDocument', { ...state.selected, versions: state.selected.versions.push(newVersion) });
-    },
-
-    async deleteVersion({ commit, state }, selectedVersion) {
-      await Document.deleteVersion(state.selected.id, selectedVersion);
-      commit('setSelectedDocument', { ...state.selected, versions: state.selected.versions.filter(version => version !== selectedVersion) });
-    },
-
-    async updateMarkedUpContent({ commit, state }, { versionContent, versionNumber }) {
-      if (state.selected.id === null || state.selected.currentVersion === 'live') { return };
-      await Document.updateMarkedUpContent(state.selected.id, versionContent, versionNumber);
-      commit('setSelectedDocument', { ...state.selected, data: { ...state.selected.data, content: versionContent } });
-    },
-
-    async toggleVersionReleased({ commit, state }, { versionNumber, released }) {
-      await Document.toggleVersionReleased(state.selected.id, versionNumber, released);
-      commit('setSelectedDocument', { 
-        ...state.selected, versions: state.selected.versions.map(version => 
-          version.versionNumber === versionNumber ? { 
-            ...version, released: released
-          } : version) 
-        });
-
-      await store.dispatch('checkDocumentVersionsStatus', { id: state.selected.id });
-    },
-
-    async toggleDraft({ commit, state }) {
-        state.selected.data.draft = !state.selected.data.draft;
-        await Document.updateDoc(state.selected.id, state.selected.data);
+    async documentsCheckVersionsStatus({ id }) {
+      try {
+        const versions = await Document.getDocVersions(id);
+        const hasReleasedVersions = versions.some(version => version.released);
+        const docIndex = this.documents.findIndex(doc => doc.id === id);
         
-        // Update the document in the documents array to reflect changes
-        const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
         if (docIndex !== -1) {
-          state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data };
+          this.documents[docIndex].data.hasReleasedVersions = hasReleasedVersions;
         }
+        
+        if (this.selected.id === id) {
+          this.selected.data.hasReleasedVersions = hasReleasedVersions;
+        }
+      } catch (error) {
+        console.error('Error checking document versions status:', error);
+      }
     },
 
-    async addComment({state, commit}, comment) {
-      const newComment = await Document.createComment(state.selected.id, comment)
-      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) }; // Convert to seconds for Firestore timestamp format
-      commit('addCommentToState', newComment);
+    async documentsDelete({ id }) {
+      await Document.deleteDocByID(id);
+      this.documents = this.documents.filter(doc => doc.id !== id);
+    },
+
+    async documentsArchive({ id }) {
+      await Document.archiveDoc(id);
+      this.documents = this.documents.filter(doc => doc.id !== id);
+    },
+
+    async documentsSave() {
+      const updatedDoc = await Document.updateDoc(this.selected.id, this.selected.data);
+      
+      const docIndex = this.documents.findIndex(doc => doc.id === this.selected.id);
+      if (docIndex !== -1) {
+        this.documents[docIndex] = { id: this.selected.id, data: updatedDoc.data };
+      }
+      
+      this.selected = { ...this.selected, ...updatedDoc };
+      
+      return updatedDoc;
+    },
+
+    documentsUpdate(document) {
+      this.selected = { ...this.selected, ...document };
+    },
+
+    // Comments Management
+    async commentsAdd(comment) {
+      const newComment = await Document.createComment(this.selected.id, comment);
+      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) };
+      this.selected.comments.push(newComment);
       return newComment;
     },
 
-    async addReply({state, commit}, { parentId, comment }) {
+    async commentsAddReply({ parentId, comment }) {
       const replyData = {
         ...comment,
         parentId: parentId
       };
-      const newReply = await Document.createComment(state.selected.id, replyData);
+      const newReply = await Document.createComment(this.selected.id, replyData);
       newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
-      commit('addReplyToState', newReply);
+      this.selected.comments.push(newReply);
       return newReply;
     },
 
-    async updateComment({state, commit}, { id, updatedComment }) {
-      const updatedCommentData = await Document.updateComment(state.selected.id, id, updatedComment)
-      commit('updateCommentInState', {id, updatedComment: updatedCommentData});
+    async commentsUpdate({ id, updatedComment }) {
+      const updatedCommentData = await Document.updateComment(this.selected.id, id, updatedComment);
+      const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
+      if (commentIndex !== -1) {
+        this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...updatedCommentData };
+      }
       return updatedCommentData;
     },
 
-    async deleteComment({state, commit}, id) {
-      await Document.deleteComment(state.selected.id, id)
-      commit('deleteCommentInState', id);
+    async commentsDelete(id) {
+      await Document.deleteComment(this.selected.id, id);
+      this.selected.comments = this.selected.comments.filter(comment => comment.id !== id);
       return id;
     },
 
-    async renameChat({state, commit}, {id, newName}){
-      try {
-        await ChatHistory.updateChatField(id, 'name', newName);
-        const updatedChats = state.chats.map(chat => 
-          chat.id === id ? { ...chat, data: { ...chat.data, name: newName } } : chat
-        );
-        commit('setChats', updatedChats);
-      } catch (error) {
-        console.error("Failed to rename chat:", error);
+    async commentsUpdateData({ id, data }) {
+      const updatedCommentData = await Document.updateCommentData(this.selected.id, id, data);
+      const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
+      if (commentIndex !== -1) {
+        this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...data };
       }
-    },
-
-    // Action for updating comment data (replaces the async mutation)
-    async updateCommentData({ state, commit }, { id, data }) {
-      const updatedCommentData = await Document.updateCommentData(state.selected.id, id, data);
-      commit('updateCommentInState', {id, values: data});
       return updatedCommentData;
     },
 
-
-
-  },
-
-  mutations: {
-
-    ///--------------------------------------------------------------
-    /// User mutations
-
-    setUserData(state,payload){
-      if (!payload) {
-        console.warn("no user record exists")
-      } 
-
-      state.user.displayName = payload?.displayName || null;
-      state.user.uid = payload?.id || null;
-      state.user.email = payload?.email || null;
-      state.user.defaultProject = payload?.project || null;
-      state.user.tier = payload?.tier || 'free';
-      state.user.projects = payload?.projects || []
-      return
+    commentsSet(comments) {
+      this.selected.comments = comments;
     },
 
-    logout(state){
-      state.user.displayName = null;
-      state.user.uid = null;
-      state.user.email = null;
-      state.user.projects = []
-      router.push('/')
-
-      store.commit('setProject', state.user.defaultProject)
-      return
-    },
-
-    async setLoadingUser(state, payload){
-      state.loadingUser = payload
-    },
-
-    async getUserData(state){
-      state.loadingUser = true
-      state.user = await User.getById(state.user.uid)
-      await commit('setUserData', state.user);
-      state.loadingUser = false
-      return
-    },
-
-    async setProject(state, projectId){
-
-      if (!projectId || (Array.isArray(projectId) && projectId.length === 0)) {
-        console.warn("Project ID is null or empty, aborting setProject.");
-        return;
-      }
-
-      state.project = await Project.getById(projectId, { userDetails: true })
-
-      const folderStatusCookie = getCookie('folderStatus');
-      if (folderStatusCookie) {
-        const folderStatus = JSON.parse(decodeURIComponent(folderStatusCookie));
-
-        if (folderStatus.projectId === projectId) {
-          folderStatus.folders.forEach(statusFolder => {
-            const projectFolder = state.project.folders.find(folder => folder.name === statusFolder.name);
-            if (projectFolder) {
-              projectFolder.isOpen = statusFolder.isOpen;
-            }
-          });
-        }
-      }
-
-      await store.commit('getAllData')
-      return
-    },
-
-    setTempProject(state, payload){
-      state.tempProject = payload
-    },
-
-    async setDefaultProject(state,payload){
-      await User.setDefaultProject( payload)
-      state.user.defaultProject = payload
-      return
-    },
-
-    async getAllData(state){
-      state.projects = await Promise.all(
-        state.user.projects.map(projectId => Project.getById(projectId))
-      );
-      state.documents = await Document.getAll()
-
-      if (store.getters.isUserLoggedIn) {
-        state.tasks = await Task.getAll()
-        state.chats = await ChatHistory.getAll();
-        state.favorites = await Favorites.getAll();
-      }
-      return
-    },
-
-    ///--------------------------------------------------------------
-    /// Global Events
-
-    alert(state,payload){
-      //   $store.commit('alert',{type:'info',message:'HI!',autoClear:true})
-      const alert = {
-        time: Date.now(),
-        show: true,
+    // UI Management
+    uiAlert(payload) {
+      this.globalAlerts.push({
         type: payload.type,
         message: payload.message,
-      }
-      //setTimeout((...state) => {
-      const index = state.globalAlerts.length
-      if(payload.autoClear === true ){setTimeout(() => {state.globalAlerts[index].show = false;}, 5000)}
-      state.globalAlerts.push(alert)
+        autoClear: payload.autoClear,
+        timestamp: Date.now()
+      });
     },
 
-    filter(state,payload){
-      state.filter = payload
+    uiFilter(payload) {
+      this.filter = payload;
     },
 
-    resetFilter(state){
-      state.filter = null
+    uiResetFilter() {
+      this.filter = "";
     },
 
-    closeDetail(state){
-      state.detailClose = state.detailClose + 1;
-    },
-    
-
-
-    ///--------------------------------------------------------------
-    /// Chats
-
-    async getChats (state) {
-      state.chats = await ChatHistory.getAll()
-      return
+    uiCloseDetail() {
+      this.detailClose = this.detailClose + 1;
     },
 
-
-    async archiveChat(state,id){
-      await ChatHistory.archiveChat(id)
-      state.chats = await ChatHistory.getAll()
+    uiIncrement() {
+      this.detailClose++;
     },
 
-    async deleteChat(state,id){
-      await ChatHistory.deleteChat(id)
-      state.chats = await ChatHistory.getAll()
-    },
-  
-
-    setTemplates(state, templates) {
-      state.templates = templates;
-    },
-
-    ///--------------------------------------------------------------
-    /// Documents
-
-    setDocuments (state, documents) {
-      state.documents = documents
-      return
-    },
-
-    addDocument (state, document) {
-      state.documents.push(document)
-      return
-    },
-
-    removeDocument (state, document) {
-      state.documents = state.documents.filter(doc => doc.id !== document.id)
-      return
-    },
-
-    setSelectedDocument(state, document) {
-      state.selected = document;
-    },
-
-
-
-    updateSelectedDocument(state, document) {
-      if (state.selected.isLoading) {return}
-      state.selected = {...state.selected, ...document}
-    },
-
-    async saveSelectedDocument(state) {
-      if (state.selected.id === null) return;
-      // Set updatedDate locally to current time (Firestore format)
-      const now = { seconds: Math.floor(Date.now() / 1000) };
-      state.selected.data.updatedDate = now;
-      // Also update in documents array for consistency
-      const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id);
-      if (docIndex !== -1) {
-        state.documents[docIndex].data.updatedDate = now;
-      }
-      await Document.updateDoc(state.selected.id, state.selected.data);
-      const newTasks = await Task.updateTasks(state.selected.id, state.selected.data);
-      state.tasks = state.tasks.filter(task => task.docID !== state.selected.id).concat(newTasks);
-      // Update the document in the documents array to reflect changes
-      if (docIndex !== -1) {
-        state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data };
-      }
-    },
-
-    increment (state) {
-      state.count++
-    },
-
-    ///--------------------------------------------------------------
-    /// Tasks
-
-    async updateTask(state, {docID, identity, task}){
-      const doc = state.tasks.find(d => d.docID === docID);
-      if (!doc) return;
-
-      const updatedTasks = doc.tasks.map(t => 
-        t.identity === identity 
-          ? task 
-          : t
+    // Folder Management
+    foldersUpdate({docId, target, action}) {
+      const sourceFolder = this.project.folders.find(folder => 
+        folder.children.includes(docId)
       );
-
-      state.tasks = state.tasks.map(t => 
-        t.docID === docID 
-          ? { ...t, tasks: updatedTasks } 
-          : t
-      );
-      await Task.updateTask(docID, identity, task);
-    },
-
-    ///--------------------------------------------------------------
-    /// Favorites
-
-    toggleFavorite(state, id) {
-      const index = state.favorites.indexOf(id);
-      if (index === -1) {
-        state.favorites.push(id);
-      } else {
-        state.favorites.splice(index, 1);
-      }
-      Favorites.updateFavorites(state.favorites); // Update the database
-    },
-
-    ///--------------------------------------------------------------
-    /// Folders
-
-    updateFolder(state, {docId, target, action}){ // this updates the project.folder and adds removes
-      if (action === 'add') {
-        // Add docId to the 'to' folder
-        const toFolder = state.project.folders.find(folder => folder.name === target);
-        if (toFolder) {
-          toFolder.children.push(docId);
-        }
-      } else if (action === 'remove') {
-        // Remove docId from the 'from' folder
-        const fromFolder = state.project.folders.find(folder => folder.name === target);
-        if (fromFolder) {
-          fromFolder.children = fromFolder.children.filter(id => id !== docId);
+      
+      if (action === 'remove' && sourceFolder) {
+        sourceFolder.children = sourceFolder.children.filter(id => id !== docId);
+      } else if (action === 'add') {
+        const targetFolder = this.project.folders.find(folder => folder.name === target);
+        if (targetFolder) {
+          targetFolder.children.push(docId);
         }
       }
-      Project.updatefield(state.project.id, 'folders', state.project.folders);
     },
 
-    addFolder(state,folderName){
-      const existingFolder = state.project.folders.find(folder => folder.name === folderName);
-      if (!existingFolder) {
-        state.project.folders.push({ name: folderName, children: [] , isOpen: true});
-      }
-      Project.updatefield(state.project.id, 'folders', state.project.folders);
+    foldersAdd(folderName) {
+      this.project.folders.push({
+        name: folderName,
+        children: [],
+        isOpen: true
+      });
     },
 
-    removeFolder(state,folderName){
-      state.project.folders = state.project.folders.filter(folder => folder.name !== folderName);
-      Project.updatefield(state.project.id, 'folders', state.project.folders);
+    foldersRemove(folderName) {
+      this.project.folders = this.project.folders.filter(folder => folder.name !== folderName);
     },
 
-    renameFolder(state, {toFolderName, fromFolderName}) {
-      const folder = state.project.folders.find(folder => folder.name === fromFolderName);
+    foldersRename({toFolderName, fromFolderName}) {
+      const folder = this.project.folders.find(folder => folder.name === fromFolderName);
       if (folder) {
-        folder.name = toFolderName; // Rename the folder
+        folder.name = toFolderName;
       }
-      Project.updatefield(state.project.id, 'folders', state.project.folders);
     },
 
-    toggleFolderOpen(state,{FolderName,isOpen}){
-      const folder = state.project.folders.find(folder => folder.name === FolderName);
+    foldersToggleOpen({FolderName, isOpen}) {
+      const folder = this.project.folders.find(folder => folder.name === FolderName);
       if (folder) {
-        folder.isOpen = isOpen; // Rename the folder
+        folder.isOpen = isOpen;
       }
-
-      // Store the object as a JSON string in a single cookie
-      const folderStatus = {
-        projectId: state.project.id,
-        folders: state.project.folders.map(folder => ({
-          name: folder.name,
-          isOpen: folder.isOpen
-        }))
-      };
-    
-      // Store the object as a JSON string in a single cookie
-      document.cookie = `folderStatus=${encodeURIComponent(JSON.stringify(folderStatus))}; path=/;`;
-    
-    },
-
-    ///--------------------------------------------------------------
-    /// COMMENTS
- 
-    setComments(state, comments) {
-      state.selected.comments = comments;
-    },
-
-    setChats(state, chats) {
-      state.chats = chats;
-    },
-
-    addCommentToState(state, comment) {
-      state.selected.comments.push(comment);
-    },
-
-    addReplyToState(state, reply) {
-      state.selected.comments.push(reply);
-    },
-
-    deleteCommentInState(state, id) {
-      state.selected.comments = state.selected.comments.filter(comment => comment.id !== id);
-    },
-
-    updateCommentInState(state, {id, values}) {
-      const index = state.selected.comments.findIndex(comment => comment.id === id);
-      if (index === -1) return;
-      state.selected.comments[index] = {
-        ...state.selected.comments[index],
-        ...values
-      }
-    },
-
+    }
   }
-});
+})
 
-export default store;
+// Create a compatibility layer for the old Vuex-style access
+export default {
+  state: {
+    get user() { return useMainStore().user },
+    get project() { return useMainStore().project },
+    get selected() { return useMainStore().selected },
+    get documents() { return useMainStore().documents },
+    get chats() { return useMainStore().chats },
+    get tasks() { return useMainStore().tasks },
+    get favorites() { return useMainStore().favorites },
+    get templates() { return useMainStore().templates },
+    get globalAlerts() { return useMainStore().globalAlerts },
+    get loadingUser() { return useMainStore().loadingUser },
+  },
+  getters: {
+    get isUserLoggedIn() { return useMainStore().isUserLoggedIn },
+    get canAccessAi() { return useMainStore().canAccessAi },
+    get filteredDocuments() { return useMainStore().filteredDocuments },
+    get isFavorite() { return useMainStore().isFavorite },
+    get projectFolderTree() { return useMainStore().projectFolderTree },
+  },
+  commit(action, payload) {
+    const store = useMainStore();
+    
+    // Map old commit actions to new actions
+    switch(action) {
+      case 'alert':
+        store.ui.alert(payload);
+        break;
+      case 'logout':
+        store.user.logout();
+        break;
+      case 'setUserData':
+        store.user.setData(payload);
+        break;
+      default:
+        console.warn(`Unmapped commit action: ${action}`);
+    }
+  },
+  async dispatch(action, payload) {
+    const store = useMainStore();
+    
+    // Map old dispatch actions to new actions
+    switch(action) {
+      case 'enter':
+        return await store.user.enter();
+      case 'addComment':
+        return await store.comments.add(payload);
+      case 'updateCommentData':
+        return await store.comments.updateData(payload);
+      case 'deleteComment':
+        return await store.comments.delete(payload);
+      case 'getDocuments':
+        return await store.documents.getAll();
+      case 'checkDocumentVersionsStatus':
+        return await store.documents.checkVersionsStatus(payload);
+      default:
+        console.warn(`Unmapped dispatch action: ${action}`);
+    }
+  }
+} 

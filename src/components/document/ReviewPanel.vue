@@ -123,7 +123,7 @@ export default {
   emits: ["update-document-content"],
   computed: {
     hasAiComments() {
-      const comments = this.$store.state.selected?.comments || [];
+      const comments = this.$store.selected?.comments || [];
       return comments.some(comment => comment.aiGenerated === true);
     },
   },
@@ -304,7 +304,7 @@ export default {
 
     async handleClear() {
       try {
-        const allComments = this.$store.state.selected?.comments || [];
+        const allComments = this.$store.selected?.comments || [];
         const aiComments = allComments.filter(comment => comment.aiGenerated === true);
         
         if (aiComments.length === 0) {

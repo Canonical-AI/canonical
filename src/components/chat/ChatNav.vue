@@ -64,7 +64,7 @@ export default {
   }),
   computed: {
     chats() {
-      const sortedChats = this.$store.state.chats.sort((a, b) => {
+      const sortedChats = this.$store.chats.sort((a, b) => {
         return b.data.updatedDate.seconds - a.data.updatedDate.seconds;
       });
 

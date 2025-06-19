@@ -172,7 +172,7 @@ export default {
   computed: {
     recentChats() {
       // Get the last 3 most recent chats, sorted by updated date
-      return this.$store.state.chats
+      return this.$store.chats
         .filter(chat => !chat.data.archived)
         .sort((a, b) => (b.data.updatedDate?.seconds || 0) - (a.data.updatedDate?.seconds || 0))
         .slice(0, 3);
@@ -180,7 +180,7 @@ export default {
   },
   async created() {
     // Load chats if not already loaded
-    if (this.$store.state.chats.length === 0 && this.$store.getters.isUserLoggedIn) {
+    if (this.$store.chats.length === 0 && this.$store.isUserLoggedIn) {
       await this.$store.commit('getChats');
     }
     await this.initializeChat();
@@ -278,7 +278,7 @@ export default {
       };
 
       // Initialize chat instance
-      if (this.$store.getters.isUserLoggedIn) {
+      if (this.$store.isUserLoggedIn) {
         this.chatInstance = new Chat();
         await this.chatInstance.initChat();
       }

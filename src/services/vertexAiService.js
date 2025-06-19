@@ -2,7 +2,7 @@ import {firebaseApp} from "../firebase";
 
 import { getVertexAI, getGenerativeModel } from "firebase/vertexai";
 import {addInDefaults, UsageLogger, Document} from "../services/firebaseDataService"
-import store from "../store";
+import { useMainStore } from "../store/index.js";
 import { addCommentMarkToText } from "../components/editor/comment/index.js";
 
 const vertexAI = getVertexAI(firebaseApp);
@@ -82,9 +82,9 @@ const systemPrompts = {
 
 
 function checkUserPermission() {
-    if (!store.state.user.uid || (store.state.user.tier !== 'pro' && store.state.user.tier !== 'trial')) {
+    if (!useMainStore().user.uid || (useMainStore().user.tier !== 'pro' && useMainStore().user.tier !== 'trial')) {
         // TODO: we're going to bulk swap users from tial to free
-        store.commit('alert', { type: 'error', message: 'Cannot proceed: Not a Pro User', autoClear: true });
+        useMainStore().ui.alert( { type: 'error', message: 'Cannot proceed: Not a Pro User', autoClear: true });
         throw new Error('Cannot proceed: not logged in');
     }
     return true
@@ -167,7 +167,7 @@ export class Feedback {
 
         const feedbackModel = this.getFeedbackModel();
 
-        const userId = store.state.user.uid; // Get the user ID
+        const userId = useMainStore().user.uid; // Get the user ID
         logUsage(userId, 'generateFeedback');
 
         const result = await feedbackModel.generateContentStream(value.prompt);
@@ -185,7 +185,7 @@ export class Feedback {
         `
         
         checkUserPermission();
-        logUsage(store.state.user.uid, 'generateFeedback');
+        logUsage(useMainStore().user.uid, 'generateFeedback');
         
         const feedbackModel = this.getFeedbackModel();
         const result = await feedbackModel.generateContentStream(prompt);
@@ -231,8 +231,8 @@ export class Feedback {
     static async CreateComments(comment) {
         const commentData = {
             comment: comment.comment,
-            documentId: store.state.selected.id,
-            documentVersion: store.state.selected.currentVersion === 'live' ? null : store.state.selected.currentVersion,
+            documentId: useMainStore().selected.id,
+            documentVersion: useMainStore().selected.currentVersion === 'live' ? null : useMainStore().selected.currentVersion,
             createdAt: new Date().toISOString(),
             resolved: false,
             selectedText: comment.problematicText,
@@ -243,7 +243,7 @@ export class Feedback {
         };
 
         console.log('Creating comment with data:', commentData);
-        const createdComment = await store.dispatch('addComment', commentData);
+        const createdComment = await useMainStore().comments.add( commentData);
         console.log('Comment created, returned:', createdComment);
         return createdComment;
     }
@@ -333,7 +333,7 @@ export class Feedback {
                 }
             }
 
-            logUsage(store.state.user.uid, 'generatedInlineComments');
+            logUsage(useMainStore().user.uid, 'generatedInlineComments');
 
             return {
                 success: true,
@@ -360,7 +360,7 @@ export class Generate{
     
     static async generateContent(value){
         checkUserPermission() 
-        const documentContext = store.state.selected
+        const documentContext = useMainStore().selected
 
         const genModel = getGenerativeModel(vertexAI, { 
             model: model ,
@@ -376,7 +376,7 @@ export class Generate{
             }
           });
 
-        logUsage(store.state.user.uid, 'generateContent');
+        logUsage(useMainStore().user.uid, 'generateContent');
     
         const result = await genModel.generateContentStream(value.prompt);
         return result
@@ -391,13 +391,13 @@ export class Generate{
                 parts: [{
                     "text":  systemPrompts.assistantDocumentTemplate
                 }, {
-                    "text" : `{'documents': ${JSON.stringify(store.state.documents)}}`
+                    "text" : `{'documents': ${JSON.stringify(useMainStore().documents)}}`
                 }
             ]
             }
           });
 
-        logUsage(store.state.user.uid, 'generateDocumentTemplate');
+        logUsage(useMainStore().user.uid, 'generateDocumentTemplate');
     
         const result = await genModel.generateContent(value.prompt);
         
@@ -451,8 +451,8 @@ export class Chat {
     }
 
     async initChat(history = null) {
-        if (store.state.project.id === null) {
-            await store.dispatch('enter');
+        if (useMainStore().project.id === null) {
+            await useMainStore().user.enter();
         }
 
         checkUserPermission();
@@ -460,10 +460,10 @@ export class Chat {
         let documents = null;
 
 
-        if (store.state.documents.length === 0) {
-            documents = `{'documents': ${JSON.stringify(await store.dispatch('getDocuments'))}}`; // Ensure this is awaited
+        if (useMainStore().documents.length === 0) {
+            documents = `{'documents': ${JSON.stringify(await useMainStore().documents.getAll())}}`; // Ensure this is awaited
         } else {
-            documents = `{'documents': ${JSON.stringify(store.state.documents)}}`; // Get documents
+            documents = `{'documents': ${JSON.stringify(useMainStore().documents)}}`; // Get documents
         }
 
         this.generativeModel = getGenerativeModel(vertexAI, { 
@@ -498,11 +498,11 @@ export class Chat {
     async sendMessage(newMessage) {
         checkUserPermission() 
         if (!this.chat) {throw new Error("Chat has not been initialized.")}
-        logUsage(store.state.user.uid, 'requestedMessage');
+        logUsage(useMainStore().user.uid, 'requestedMessage');
 
         const response = await this.chat.sendMessageStream(newMessage); // Return the response from the chat
 
-        logUsage(store.state.user.uid, 'sentMessage');
+        logUsage(useMainStore().user.uid, 'sentMessage');
         return response
     }
 

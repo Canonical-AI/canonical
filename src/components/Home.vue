@@ -66,8 +66,8 @@ export default {
   },
   computed: {
     favoriteDocuments() {
-      const favorites = this.$store.state.documents
-        .filter(doc => this.$store.getters.isFavorite(doc.id))
+      const favorites = this.$store.documents
+        .filter(doc => this.$store.isFavorite(doc.id))
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds);
 
       if (favorites.length > 0) {
@@ -77,7 +77,7 @@ export default {
       this.title = 'Recent Documents'
 
       // If no favorites, return the 5 most recent documents only if they have content
-      return this.$store.state.documents
+      return this.$store.documents
         .filter(doc => doc.data?.content)
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds)
         .slice(0, 5);
@@ -86,7 +86,7 @@ export default {
   watch: {
     favoriteDocuments: {
       handler(docs){
-        if (this.$store.state.user.uid) {
+        if (this.$store.user.uid) {
           this.loading = docs.length === 0;
         } else {
           this.loading = false;

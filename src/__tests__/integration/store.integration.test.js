@@ -61,17 +61,17 @@ describe('Store Integration Tests', () => {
   describe('User Authentication Flow', () => {
     it('should handle user login correctly', async () => {
       // Initially not logged in
-      expect(store.getters.isUserLoggedIn).toBe(false)
-      expect(store.getters.isLoggedIn).toBe(false)
+      expect(store.isUserLoggedIn).toBe(false)
+      expect(store.isLoggedIn).toBe(false)
 
       // Login user
       const testUser = { uid: 'test-123', email: 'test@example.com' }
       await store.dispatch('enter', testUser)
 
       // Should be logged in
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.getters.isLoggedIn).toBe(true)
-      expect(store.state.user).toEqual(testUser)
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.isLoggedIn).toBe(true)
+      expect(store.user).toEqual(testUser)
     })
 
     it('should handle user logout correctly', async () => {
@@ -86,24 +86,24 @@ describe('Store Integration Tests', () => {
       await store.dispatch('logout')
 
       // Should be logged out and state cleared
-      expect(store.getters.isUserLoggedIn).toBe(false)
-      expect(store.getters.isLoggedIn).toBe(false)
-      expect(store.state.user).toBeNull()
-      expect(store.state.currentDocument).toBeNull()
+      expect(store.isUserLoggedIn).toBe(false)
+      expect(store.isLoggedIn).toBe(false)
+      expect(store.user).toBeNull()
+      expect(store.currentDocument).toBeNull()
     })
   })
 
   describe('Alert System', () => {
     it('should manage alerts correctly', async () => {
       // Initially no alerts
-      expect(store.getters.alertsCount).toBe(0)
+      expect(store.alertsCount).toBe(0)
 
       // Add an alert
       await store.dispatch('showAlert', { type: 'success', message: 'Test alert' })
 
       // Should have one alert
-      expect(store.getters.alertsCount).toBe(1)
-      expect(store.state.alerts[0]).toMatchObject({
+      expect(store.alertsCount).toBe(1)
+      expect(store.alerts[0]).toMatchObject({
         type: 'success',
         message: 'Test alert'
       })
@@ -112,7 +112,7 @@ describe('Store Integration Tests', () => {
       store.commit('clearAlerts')
 
       // Should have no alerts
-      expect(store.getters.alertsCount).toBe(0)
+      expect(store.alertsCount).toBe(0)
     })
 
     it('should handle multiple alerts', async () => {
@@ -120,8 +120,8 @@ describe('Store Integration Tests', () => {
       await store.dispatch('showAlert', { type: 'error', message: 'Alert 2' })
       await store.dispatch('showAlert', { type: 'info', message: 'Alert 3' })
 
-      expect(store.getters.alertsCount).toBe(3)
-      expect(store.state.alerts.map(a => a.message)).toEqual(['Alert 1', 'Alert 2', 'Alert 3'])
+      expect(store.alertsCount).toBe(3)
+      expect(store.alerts.map(a => a.message)).toEqual(['Alert 1', 'Alert 2', 'Alert 3'])
     })
   })
 
@@ -132,7 +132,7 @@ describe('Store Integration Tests', () => {
       // Set current document
       store.commit('setCurrentDocument', testDoc)
 
-      expect(store.getters.currentDocument).toEqual(testDoc)
+      expect(store.currentDocument).toEqual(testDoc)
     })
 
     it('should manage documents list', () => {
@@ -143,9 +143,9 @@ describe('Store Integration Tests', () => {
       store.commit('addDocument', doc1)
       store.commit('addDocument', doc2)
 
-      expect(store.getters.documents).toHaveLength(2)
-      expect(store.getters.documents[0]).toEqual(doc1)
-      expect(store.getters.documents[1]).toEqual(doc2)
+      expect(store.documents).toHaveLength(2)
+      expect(store.documents[0]).toEqual(doc1)
+      expect(store.documents[1]).toEqual(doc2)
     })
   })
 
@@ -163,18 +163,18 @@ describe('Store Integration Tests', () => {
       await store.dispatch('showAlert', { type: 'info', message: 'Document loaded' })
 
       // Verify all state is consistent
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.state.user).toEqual(user)
-      expect(store.getters.currentDocument).toEqual(document)
-      expect(store.getters.alertsCount).toBe(1)
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user).toEqual(user)
+      expect(store.currentDocument).toEqual(document)
+      expect(store.alertsCount).toBe(1)
 
       // Logout should clear user state but preserve alerts
       await store.dispatch('logout')
 
-      expect(store.getters.isUserLoggedIn).toBe(false)
-      expect(store.state.user).toBeNull()
-      expect(store.state.currentDocument).toBeNull()
-      expect(store.getters.alertsCount).toBe(1) // Alerts should persist
+      expect(store.isUserLoggedIn).toBe(false)
+      expect(store.user).toBeNull()
+      expect(store.currentDocument).toBeNull()
+      expect(store.alertsCount).toBe(1) // Alerts should persist
     })
   })
 }) 

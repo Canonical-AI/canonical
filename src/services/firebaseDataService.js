@@ -2,8 +2,11 @@ import {firebaseApp} from "../firebase";
 import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment, collectionGroup } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
-import store from "../store";
+import { useMainStore } from "../store/index.js";
 import _ from 'lodash';
+
+// Helper function to get store instance
+const getStore = () => useMainStore();
  // Load environment variables from .env file
 
 // Initialize Cloud Firestore and get a reference to the service
@@ -24,8 +27,9 @@ export const collectionMap = {
 
 
 function checkUserLoggedIn() {
-  if (!store.state.user.uid) {
-    store.commit('alert', { type: 'error', message: 'Cannot proceed: not logged in', autoClear: true });
+  const store = useMainStore();
+  if (!store.user.uid) {
+    store.ui.alert({ type: 'error', message: 'Cannot proceed: not logged in', autoClear: true });
     throw new Error('Cannot proceed: not logged in');
   }
   return true
@@ -41,7 +45,8 @@ function withTimeout(fn, timeoutDuration) {
       return await Promise.race([fn.apply(this, args), timeoutPromise]);
     } catch (error) {
       // Commit an alert to the store when a timeout occurs
-      store.commit('alert', { type: 'error', message: error.message, autoClear: true });
+      const store = useMainStore();
+      store.ui.alert({ type: 'error', message: error.message, autoClear: true });
       throw error; // Re-throw the error after committing the alert
     }
   };
@@ -73,9 +78,10 @@ function wrapAsyncMethodsWithTimeout(targetClass, timeoutDuration) {
 
 export function addInDefaults(value) {
   checkUserLoggedIn()
-  value.createdBy = value.createdBy || store.state.user.uid;
-  value.updatedBy = store.state.user.uid;
-  value.project = value.project || store.state.project.id;
+  const store = useMainStore();
+  value.createdBy = value.createdBy || store.user.uid;
+  value.updatedBy = store.user.uid;
+  value.project = value.project || store.project.id;
   value.createDate = value.createDate || serverTimestamp();
   value.updatedDate = serverTimestamp(); // Add this line
   value.archived = false;
@@ -85,10 +91,11 @@ export function addInDefaults(value) {
 // users
 export class User{
   constructor(value) {
+    const store = useMainStore();
     this.displayName = value.displayName || "";
     this.email = value.email || "";
     this.defaultProject = value.defaultProject || null;
-    this.org = value.org || store.state.user.email.split('@')[1];
+    this.org = value.org || store.user.email.split('@')[1];
     this.tier = value.tier || 'free';
     this.createDate =  serverTimestamp();
     this.updatedDate = serverTimestamp(); // Add this line
@@ -133,9 +140,10 @@ export class User{
 
   static async logout(){
     const auth = getAuth();
+    const store = useMainStore();
     await signOut(auth);
-    store.commit('logout')
-    store.commit('alert',{type:'info',message:'logged out',autoClear:true})
+    store.user.logout()
+    store.ui.alert({type:'info',message:'logged out',autoClear:true})
   }
   
   static async createUser(payload){
@@ -151,28 +159,31 @@ export class User{
 
     await setDoc(doc(db, "users", payload.uid), newUser);
 
+    const store = useMainStore();
     const userDataForStore = { ...newUser, id: payload.uid};
-    await store.commit('setUserData', userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
+    store.user.setData(userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
 
-    store.commit('alert', { type: 'info', message: 'New User Account Created!' });
+    store.ui.alert({ type: 'info', message: 'New User Account Created!' });
     // user will then be forced to setup their project. 
    return
   }
 
   static async setDefaultProject(value) {
     checkUserLoggedIn()
-    const userRef = doc(db, "users", store.state.user.uid);
+    const store = useMainStore();
+    const userRef = doc(db, "users", store.user.uid);
     await updateDoc(userRef, { defaultProject: value });
-    store.commit('alert', { type: 'info', message: 'Default project set', autoClear: true });
+    store.ui.alert({ type: 'info', message: 'Default project set', autoClear: true });
   }
 
    // USER PROJECTS
   static async addUserToProject(userId, projectId, role='user') {
     checkUserLoggedIn()
     // todo check if current user is admin of project
+    const store = useMainStore();
     const userProjectRef = collection(db, "userProjects");
     await addDoc(userProjectRef, { userId, projectId, role });
-    store.commit('alert', { type: 'info', message: 'User added to project', autoClear: true });
+    store.ui.alert({ type: 'info', message: 'User added to project', autoClear: true });
   }
 
   static async getProjectsForUser(userId) {
@@ -198,19 +209,21 @@ export class User{
 
 export class Project {
   constructor(value) {
+    const store = useMainStore();
     this.name = value.name || ""; // String
-    this.createdBy = value.createdBy || store.state.user.uid;
+    this.createdBy = value.createdBy || store.user.uid;
     this.folders = value.folders || [];
-    this.org = value.org || store.state.user.email.split('@')[1];
+    this.org = value.org || store.user.email.split('@')[1];
     Object.assign(this, addInDefaults(this));
   }
   
   static async create(value) {
     checkUserLoggedIn()
+    const store = useMainStore();
     const projectInstance = new Project(value);
     const docRef = await addDoc(collection(db, "project"), {...projectInstance});
-    await this.addUserToProject(store.state.user.uid, docRef.id, 'admin')
-    store.commit('alert', {type: 'info', message: `Project added`, autoClear: true});
+    await this.addUserToProject(store.user.uid, docRef.id, 'admin')
+    store.ui.alert({type: 'info', message: `Project added`, autoClear: true});
     return docRef;
   }
   
@@ -218,7 +231,7 @@ export class Project {
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
     let users = []
-    if (store.state.user.uid) {
+    if (getStore().user.uid) {
       users = await this.getUsersForProject(id, userDetails);
     } 
     return {
@@ -246,14 +259,14 @@ export class Project {
     checkUserLoggedIn()
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
-    store.commit('alert', {type: 'info', message: `Project archived`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `Project archived`, autoClear: true});
   }
 
   static async delete(id) {
     checkUserLoggedIn()
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
-    store.commit('alert', {type: 'info', message: `Project archived`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `Project archived`, autoClear: true});
   }
 
   // USER PROJECTS 
@@ -262,7 +275,7 @@ export class Project {
     checkUserLoggedIn();
     const userProjectRef = collection(db, "userProjects");
     await addDoc(userProjectRef, { userId, projectId, role});
-    store.commit('alert', { type: 'info', message: 'User added to project', autoClear: true });
+    const store = getStore(); store.ui.alert( { type: 'info', message: 'User added to project', autoClear: true });
   }
 
   static async getUsersForProject(projectId, details = false) {
@@ -339,7 +352,7 @@ export class Document {
   static async getAll(includeArchived = false, includeDraft = false) {
     
     // Check if project.id exists before using it in the query
-    if (!store.state.project?.id) {
+    if (!getStore().project?.id) {
       console.warn('No project ID available, returning empty array');
       return [];
     }
@@ -347,14 +360,14 @@ export class Document {
     const documentsRef = collection(db, "documents");
 
     const conditions = [
-      where("project", "==", store.state.project.id)
+      where("project", "==", getStore().project.id)
     ];
 
     if (!includeArchived) {
       conditions.push(where("archived", "==", false));
     }
 
-    if (!store.state.user.uid && !includeDraft) {
+    if (!getStore().user.uid && !includeDraft) {
       conditions.push(where("draft", "==", false));
     }
 
@@ -383,11 +396,11 @@ export class Document {
     }
     
     const docData = docSnapshot.data();
-    const isUserLoggedIn = store.getters.isUserLoggedIn;
+    const isUserLoggedIn = getStore().isUserLoggedIn;
     
     // Permission check 1: Check if user is not logged in and document is in draft mode
     if (!isUserLoggedIn && docData.draft) {
-      store.commit('alert', { 
+      const store = getStore(); store.ui.alert( { 
         type: 'error', 
         message: 'This document is not publicly available. Please sign in to view it.' 
       });
@@ -396,11 +409,11 @@ export class Document {
     
     // Permission check 2: If user is logged in, check additional permissions
     if (isUserLoggedIn) {
-      const currentUserId = store.state.user.uid;
+      const currentUserId = getStore().user.uid;
       
       // If document is in draft mode, check if user is the creator
       // if (docData.draft && docData.createdBy !== currentUserId) {
-      //   store.commit('alert', { 
+      //   const store = getStore(); store.ui.alert( { 
       //     type: 'error', 
       //     message: 'This document is a draft and can only be viewed by its creator.' 
       //   });
@@ -411,11 +424,11 @@ export class Document {
       const projectId = docData.project;
       if (projectId) {
         // Get user's projects
-        const userProjects = store.state.user.projects || [];
+        const userProjects = getStore().user.projects || [];
         
         // Check if user is in the document's project
         if (!userProjects.includes(projectId)) {
-          store.commit('alert', { 
+          const store = getStore(); store.ui.alert( { 
             type: 'error', 
             message: 'You do not have access to this document. Please contact the project administrator.' 
           });
@@ -449,7 +462,7 @@ export class Document {
     const newDoc = addInDefaults(doc.defaultValues);
     
     const docRef = await addDoc(collection(db, "documents"), newDoc);
-    store.commit('alert', {type: 'info', message: `document added`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document added`, autoClear: true});
 
     return docRef;
   }
@@ -461,7 +474,7 @@ export class Document {
     const docData = addInDefaults(value); // Add defaults including serverTimestamp()
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, docData);
-    store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document updated`, autoClear: true});
   }
 
   
@@ -472,7 +485,7 @@ export class Document {
       [field]: value,
       updatedDate: serverTimestamp()
     });
-    store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document updated`, autoClear: true});
   }
 
   
@@ -480,7 +493,7 @@ export class Document {
     checkUserLoggedIn()
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, {archived: true});
-    store.commit('alert', {type: 'info', message: `document archived`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document archived`, autoClear: true});
   }
 
   
@@ -488,7 +501,7 @@ export class Document {
     checkUserLoggedIn()
     const documentRef = doc(db, "documents", id);
     await deleteDoc(documentRef);
-    store.commit('alert', {type: 'info', message: `document deleted`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document deleted`, autoClear: true});
   }
 
 
@@ -579,14 +592,14 @@ export class Document {
     const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
 
     if (existingVersionNumbers.includes(versionNumber)) {
-      store.commit('alert', { type: 'info', message: `Version ${versionNumber} already exists`, autoClear: true, color: 'error' });
+      const store = getStore(); store.ui.alert( { type: 'info', message: `Version ${versionNumber} already exists`, autoClear: true, color: 'error' });
       throw new Error(`Version number ${versionNumber} already exists for this document.`);
     }
 
     // Create a new version
     const newVersion = {
       content: versionContent,
-      createdBy: store.state.user.uid,
+      createdBy: getStore().user.uid,
       createDate: serverTimestamp(),
       versionNumber: versionNumber,
       released: false,
@@ -595,7 +608,7 @@ export class Document {
     // Add the new version to the versions subcollection
     const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
 
-    store.commit('alert', { type: 'info', message: `Version ${newVersion.versionNumber} created`, autoClear: true });
+    const store = getStore(); store.ui.alert( { type: 'info', message: `Version ${newVersion.versionNumber} created`, autoClear: true });
     return versionRef;
   }
 
@@ -610,9 +623,9 @@ export class Document {
     if (!versionSnapshot.empty) {
         const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
         await deleteDoc(versionDocRef); // Delete the specific version document
-        store.commit('alert', {type: 'info', message: `doc version deleted`, autoClear: true});
+        const store = getStore(); store.ui.alert( {type: 'info', message: `doc version deleted`, autoClear: true});
     } else {
-        store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+        const store = getStore(); store.ui.alert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   } 
 
@@ -627,7 +640,7 @@ export class Document {
       const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
       await updateDoc(versionDocRef, {markedUpContent: versionContent});
     } else {
-      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+      const store = getStore(); store.ui.alert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   }
 
@@ -641,7 +654,7 @@ export class Document {
       const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
       await updateDoc(versionDocRef, {released: released});
     } else {
-      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+      const store = getStore(); store.ui.alert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   }
 
@@ -674,7 +687,7 @@ export class ChatHistory {
     checkUserLoggedIn()
     value = addInDefaults(value);
     const docRef = await addDoc(collection(db, "chats"), value);
-    store.commit('alert', {type: 'info', message: `document added`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `document added`, autoClear: true});
     return docRef;
   }
   
@@ -682,7 +695,7 @@ export class ChatHistory {
     checkUserLoggedIn()
     
     // Ensure user.uid exists before using it in the query
-    if (!store.state.user?.uid) {
+    if (!getStore().user?.uid) {
       console.warn('No user ID available, returning empty array');
       return [];
     }
@@ -690,7 +703,7 @@ export class ChatHistory {
     const chatsRef = collection(db, "chats");
     const q = query(chatsRef,
       where("archived", "==", false),
-      where("createdBy", "==", store.state.user.uid)
+      where("createdBy", "==", getStore().user.uid)
     );
     const snapshot = await getDocs(q);
 
@@ -733,7 +746,7 @@ export class ChatHistory {
     checkUserLoggedIn()
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, {archived: true});
-    store.commit('alert', {type: 'info', message: `chat archived`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `chat archived`, autoClear: true});
   }
 
   
@@ -741,7 +754,7 @@ export class ChatHistory {
     checkUserLoggedIn()
     const documentRef = doc(db, "chats", id);
     await deleteDoc(documentRef);
-    store.commit('alert', {type: 'info', message: `chat deleted`, autoClear: true});
+    const store = getStore(); store.ui.alert( {type: 'info', message: `chat deleted`, autoClear: true});
   }
 }
 
@@ -776,9 +789,9 @@ export class Favorites {
 
   static async getAll() {
     checkUserLoggedIn()
-    const favoritesRef = doc(db, "favorites", store.state.user.uid);
+    const favoritesRef = doc(db, "favorites", getStore().user.uid);
     const snapshot = await getDoc(favoritesRef);
-    if (snapshot.exists() && snapshot.data().createdBy === store.state.user.uid) { // Check if created by logged-in user
+    if (snapshot.exists() && snapshot.data().createdBy === getStore().user.uid) { // Check if created by logged-in user
       return snapshot.data().documentIds || [];
     } else {
       return [];
@@ -787,10 +800,10 @@ export class Favorites {
   
   static async updateFavorites(favorites) {
     checkUserLoggedIn()
-    const favoritesRef = doc(db, "favorites", store.state.user.uid);
+    const favoritesRef = doc(db, "favorites", getStore().user.uid);
     const data = addInDefaults({ documentIds: favorites });
     await setDoc(favoritesRef, data, { merge: true });
-    store.commit('alert', { type: 'info', message: 'Favorites updated', autoClear: true });
+    const store = getStore(); store.ui.alert( { type: 'info', message: 'Favorites updated', autoClear: true });
   }
 }
 
@@ -799,13 +812,13 @@ export class Task {
     checkUserLoggedIn()
     
     // Check if project.id exists before using it in the query
-    if (!store.state.project?.id) {
+    if (!getStore().project?.id) {
       console.warn('No project ID available for tasks, returning empty array');
       return [];
     }
     
     const tasksRef = collection(db, "tasks");
-    const q = query(tasksRef, where("project", "==", store.state.project.id));
+    const q = query(tasksRef, where("project", "==", getStore().project.id));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
   }
@@ -853,7 +866,7 @@ export class Task {
 
     const data = addInDefaults({
       docID: docID,
-      createdBy: store.state.user.uid,
+      createdBy: getStore().user.uid,
       tasks: updatedTasks
     });
 

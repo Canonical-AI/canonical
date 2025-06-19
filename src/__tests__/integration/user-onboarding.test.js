@@ -145,9 +145,9 @@ describe('User Onboarding Flow Integration Tests', () => {
       })
 
       // Verify user is created but has no default project
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.state.user.email).toBe('test@example.com')
-      expect(store.state.user.defaultProject).toBeNull()
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.email).toBe('test@example.com')
+      expect(store.user.defaultProject).toBeNull()
 
       // STEP 2: Project Setup
       const projectData = {
@@ -172,8 +172,8 @@ describe('User Onboarding Flow Integration Tests', () => {
       store.commit('setDefaultProject', mockProjectRef.id)
 
       // Verify project setup completed
-      expect(store.state.project.id).toBe('project-123')
-      expect(store.state.user.defaultProject).toBe('project-123')
+      expect(store.project.id).toBe('project-123')
+      expect(store.user.defaultProject).toBe('project-123')
 
       // STEP 3: First Document Creation
       const firstDocData = {
@@ -186,12 +186,12 @@ describe('User Onboarding Flow Integration Tests', () => {
       const createdDoc = await store.dispatch('createDocument', { data: firstDocData })
 
       // Verify complete onboarding flow
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.state.user.defaultProject).toBe('project-123')
-      expect(store.state.project.id).toBe('project-123')
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.defaultProject).toBe('project-123')
+      expect(store.project.id).toBe('project-123')
       expect(createdDoc.id).toBe('doc-123')
-      expect(store.state.documents).toHaveLength(1)
-      expect(store.state.selected.id).toBe('doc-123')
+      expect(store.documents).toHaveLength(1)
+      expect(store.selected.id).toBe('doc-123')
     })
 
     it('should handle project setup with custom folders', async () => {
@@ -218,7 +218,7 @@ describe('User Onboarding Flow Integration Tests', () => {
       // Simulate custom project setup
       store.commit('setProject', mockProjectRef.id)
 
-      expect(store.state.project.id).toBe('custom-project-456')
+      expect(store.project.id).toBe('custom-project-456')
     })
 
     it('should handle onboarding errors gracefully', async () => {
@@ -234,18 +234,18 @@ describe('User Onboarding Flow Integration Tests', () => {
       )
 
       // Verify error doesn't break the flow
-      expect(store.getters.isUserLoggedIn).toBe(true)
+      expect(store.isUserLoggedIn).toBe(true)
       // User should still be able to retry project setup
     })
 
     it('should prevent onboarding without authentication', () => {
       // Verify unauthenticated state
-      expect(store.getters.isUserLoggedIn).toBe(false)
-      expect(store.state.user.uid).toBeNull()
+      expect(store.isUserLoggedIn).toBe(false)
+      expect(store.user.uid).toBeNull()
 
       // Project setup should be blocked
-      expect(store.state.user.defaultProject).toBeNull()
-      expect(store.state.project.id).toBeNull()
+      expect(store.user.defaultProject).toBeNull()
+      expect(store.project.id).toBeNull()
     })
   })
 
@@ -270,7 +270,7 @@ describe('User Onboarding Flow Integration Tests', () => {
 
       store.commit('setProject', mockProjectRef.id)
 
-      expect(store.state.project.id).toBe('minimal-project')
+      expect(store.project.id).toBe('minimal-project')
     })
 
     it('should handle enterprise project setup', async () => {
@@ -292,7 +292,7 @@ describe('User Onboarding Flow Integration Tests', () => {
 
       store.commit('setProject', mockProjectRef.id)
 
-      expect(store.state.project.id).toBe('enterprise-project')
+      expect(store.project.id).toBe('enterprise-project')
     })
   })
 
@@ -316,27 +316,27 @@ describe('User Onboarding Flow Integration Tests', () => {
       store.commit('setDefaultProject', mockProjectRef.id)
 
       // User data should remain intact
-      expect(store.state.user.email).toBe('persistent@example.com')
-      expect(store.state.user.tier).toBe('pro')
-      expect(store.state.user.defaultProject).toBe('persistent-project')
+      expect(store.user.email).toBe('persistent@example.com')
+      expect(store.user.tier).toBe('pro')
+      expect(store.user.defaultProject).toBe('persistent-project')
     })
 
     it('should handle loading states correctly', async () => {
-      expect(store.state.loadingUser).toBe(false)
+      expect(store.loadingUser).toBe(false)
 
       store.commit('setLoadingUser', true)
-      expect(store.state.loadingUser).toBe(true)
+      expect(store.loadingUser).toBe(true)
 
       // Simulate async operation completion
       store.commit('setLoadingUser', false)
-      expect(store.state.loadingUser).toBe(false)
+      expect(store.loadingUser).toBe(false)
     })
   })
 
   describe('Alert System During Onboarding', () => {
     it('should show appropriate alerts during onboarding', () => {
       // Initial state
-      expect(store.state.globalAlerts).toHaveLength(0)
+      expect(store.globalAlerts).toHaveLength(0)
 
       // Simulate onboarding alerts
       store.commit('alert', { 
@@ -354,10 +354,10 @@ describe('User Onboarding Flow Integration Tests', () => {
         message: 'Default project set' 
       })
 
-      expect(store.state.globalAlerts).toHaveLength(3)
-      expect(store.state.globalAlerts[0].message).toBe('New User Account Created!')
-      expect(store.state.globalAlerts[1].message).toBe('Project added')
-      expect(store.state.globalAlerts[2].message).toBe('Default project set')
+      expect(store.globalAlerts).toHaveLength(3)
+      expect(store.globalAlerts[0].message).toBe('New User Account Created!')
+      expect(store.globalAlerts[1].message).toBe('Project added')
+      expect(store.globalAlerts[2].message).toBe('Default project set')
     })
   })
 }) 

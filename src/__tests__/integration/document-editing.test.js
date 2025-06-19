@@ -189,9 +189,9 @@ describe('Document Editing Integration Tests', () => {
       // Verify document creation
       expect(mockDocumentOperations.create).toHaveBeenCalledWith(newDocumentData)
       expect(result.id).toBe('new-doc-123')
-      expect(store.state.documents).toHaveLength(1)
-      expect(store.state.documents[0].data.name).toBe('[DRAFT] - My New Document')
-      expect(store.state.selected.id).toBe('new-doc-123')
+      expect(store.documents).toHaveLength(1)
+      expect(store.documents[0].data.name).toBe('[DRAFT] - My New Document')
+      expect(store.selected.id).toBe('new-doc-123')
     })
 
     it('should create document without selecting it', async () => {
@@ -213,8 +213,8 @@ describe('Document Editing Integration Tests', () => {
       })
 
       expect(result.id).toBe('background-doc-456')
-      expect(store.state.documents).toHaveLength(1)
-      expect(store.state.selected.id).toBeNull() // Should not be selected
+      expect(store.documents).toHaveLength(1)
+      expect(store.selected.id).toBeNull() // Should not be selected
     })
 
     it('should handle document creation errors', async () => {
@@ -234,7 +234,7 @@ describe('Document Editing Integration Tests', () => {
       ).rejects.toThrow('Document creation failed')
 
       // Verify no document was added
-      expect(store.state.documents).toHaveLength(0)
+      expect(store.documents).toHaveLength(0)
     })
   })
 
@@ -259,9 +259,9 @@ describe('Document Editing Integration Tests', () => {
 
       expect(mockDocumentOperations.getDocById).toHaveBeenCalledWith('existing-doc-789')
       expect(result.id).toBe('existing-doc-789')
-      expect(store.state.selected.id).toBe('existing-doc-789')
-      expect(store.state.selected.data.name).toBe('Existing Document')
-      expect(store.state.selected.isLoading).toBe(false)
+      expect(store.selected.id).toBe('existing-doc-789')
+      expect(store.selected.data.name).toBe('Existing Document')
+      expect(store.selected.isLoading).toBe(false)
     })
 
     it('should handle loading non-existent document', async () => {
@@ -272,7 +272,7 @@ describe('Document Editing Integration Tests', () => {
       })
 
       expect(result).toBeNull()
-      expect(store.state.globalAlerts).toContainEqual({
+      expect(store.globalAlerts).toContainEqual({
         type: 'error',
         message: 'non-existent-doc not found'
       })
@@ -293,7 +293,7 @@ describe('Document Editing Integration Tests', () => {
       })
 
       // Check loading state
-      expect(store.state.selected.isLoading).toBe(true)
+      expect(store.selected.isLoading).toBe(true)
 
       // Resolve the mock
       resolvePromise({
@@ -304,8 +304,8 @@ describe('Document Editing Integration Tests', () => {
       await loadPromise
 
       // Verify loading is complete
-      expect(store.state.selected.isLoading).toBe(false)
-      expect(store.state.selected.id).toBe('loading-doc')
+      expect(store.selected.isLoading).toBe(false)
+      expect(store.selected.id).toBe('loading-doc')
     })
   })
 
@@ -343,19 +343,19 @@ describe('Document Editing Integration Tests', () => {
       // Simulate save
       await mockDocumentOperations.updateDoc('edit-doc-123', updatedData)
 
-      expect(store.state.selected.data.name).toBe('Updated Document Title')
-      expect(store.state.selected.data.content).toBe('Updated content with **formatting**.')
+      expect(store.selected.data.name).toBe('Updated Document Title')
+      expect(store.selected.data.content).toBe('Updated content with **formatting**.')
     })
 
     it('should toggle document draft status', async () => {
-      expect(store.state.selected.data.draft).toBe(true)
+      expect(store.selected.data.draft).toBe(true)
 
       mockDocumentOperations.updateDoc.mockResolvedValue()
 
       // Toggle draft status
       await store.dispatch('toggleDraft')
 
-      expect(store.state.selected.data.draft).toBe(false)
+      expect(store.selected.data.draft).toBe(false)
       expect(mockDocumentOperations.updateDoc).toHaveBeenCalledWith(
         'edit-doc-123',
         expect.objectContaining({ draft: false })
@@ -390,12 +390,12 @@ describe('Document Editing Integration Tests', () => {
       updates.forEach(update => {
         store.commit('updateSelectedDocument', {
           id: 'edit-doc-123',
-          data: { ...store.state.selected.data, ...update }
+          data: { ...store.selected.data, ...update }
         })
       })
 
       // Final state should have the last update
-      expect(store.state.selected.data.content).toBe('Final update')
+      expect(store.selected.data.content).toBe('Final update')
     })
   })
 
@@ -412,27 +412,27 @@ describe('Document Editing Integration Tests', () => {
     it('should delete a document permanently', async () => {
       mockDocumentOperations.deleteDocByID.mockResolvedValue()
 
-      expect(store.state.documents).toHaveLength(3)
+      expect(store.documents).toHaveLength(3)
 
       // Delete document
       await store.dispatch('deleteDocument', { id: 'doc-2' })
 
       expect(mockDocumentOperations.deleteDocByID).toHaveBeenCalledWith('doc-2')
-      expect(store.state.documents).toHaveLength(2)
-      expect(store.state.documents.find(doc => doc.id === 'doc-2')).toBeUndefined()
+      expect(store.documents).toHaveLength(2)
+      expect(store.documents.find(doc => doc.id === 'doc-2')).toBeUndefined()
     })
 
     it('should archive a document', async () => {
       mockDocumentOperations.archiveDoc.mockResolvedValue()
 
-      expect(store.state.documents).toHaveLength(3)
+      expect(store.documents).toHaveLength(3)
 
       // Archive document
       await store.dispatch('archiveDocument', { id: 'doc-1' })
 
       expect(mockDocumentOperations.archiveDoc).toHaveBeenCalledWith('doc-1')
-      expect(store.state.documents).toHaveLength(2)
-      expect(store.state.documents.find(doc => doc.id === 'doc-1')).toBeUndefined()
+      expect(store.documents).toHaveLength(2)
+      expect(store.documents.find(doc => doc.id === 'doc-1')).toBeUndefined()
     })
 
     it('should handle delete errors gracefully', async () => {
@@ -445,7 +445,7 @@ describe('Document Editing Integration Tests', () => {
       ).rejects.toThrow('Delete failed')
 
       // Document list should remain unchanged
-      expect(store.state.documents).toHaveLength(3)
+      expect(store.documents).toHaveLength(3)
     })
   })
 
@@ -463,7 +463,7 @@ describe('Document Editing Integration Tests', () => {
 
       expect(mockDocumentOperations.getAll).toHaveBeenCalled()
       expect(result).toEqual(mockDocuments)
-      expect(store.state.documents).toEqual(mockDocuments)
+      expect(store.documents).toEqual(mockDocuments)
     })
 
     it('should handle empty document list', async () => {
@@ -472,7 +472,7 @@ describe('Document Editing Integration Tests', () => {
       const result = await store.dispatch('getDocuments')
 
       expect(result).toEqual([])
-      expect(store.state.documents).toEqual([])
+      expect(store.documents).toEqual([])
     })
 
     it('should maintain document list integrity during CRUD operations', async () => {
@@ -492,14 +492,14 @@ describe('Document Editing Integration Tests', () => {
         select: false 
       })
 
-      expect(store.state.documents).toHaveLength(2)
+      expect(store.documents).toHaveLength(2)
 
       // Delete a document
       mockDocumentOperations.deleteDocByID.mockResolvedValue()
       await store.dispatch('deleteDocument', { id: 'doc-2' })
 
-      expect(store.state.documents).toHaveLength(1)
-      expect(store.state.documents[0].id).toBe('doc-1')
+      expect(store.documents).toHaveLength(1)
+      expect(store.documents[0].id).toBe('doc-1')
     })
   })
 
@@ -522,8 +522,8 @@ describe('Document Editing Integration Tests', () => {
       })
 
       // Verify both selected and documents list are updated
-      expect(store.state.selected.data.name).toBe('Updated Sync Test')
-      expect(store.state.documents[0].data.name).toBe('Updated Sync Test')
+      expect(store.selected.data.name).toBe('Updated Sync Test')
+      expect(store.documents[0].data.name).toBe('Updated Sync Test')
     })
 
     it('should handle version-specific edits correctly', async () => {
@@ -536,14 +536,14 @@ describe('Document Editing Integration Tests', () => {
 
       // Load live version
       await store.dispatch('selectDocument', { id: 'version-doc' })
-      expect(store.state.selected.currentVersion).toBe('live')
+      expect(store.selected.currentVersion).toBe('live')
 
       // Load specific version
       await store.dispatch('selectDocument', { 
         id: 'version-doc', 
         version: 'v1.0' 
       })
-      expect(store.state.selected.currentVersion).toBe('v1.0')
+      expect(store.selected.currentVersion).toBe('v1.0')
     })
   })
 
@@ -571,8 +571,8 @@ describe('Document Editing Integration Tests', () => {
       })
 
       // Selected document should be set but documents list unchanged
-      expect(store.state.selected.id).toBe('non-existent')
-      expect(store.state.documents).toHaveLength(0)
+      expect(store.selected.id).toBe('non-existent')
+      expect(store.documents).toHaveLength(0)
     })
 
     it('should handle permissions errors appropriately', async () => {

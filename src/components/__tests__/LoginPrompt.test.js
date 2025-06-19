@@ -210,8 +210,8 @@ describe('LoginPrompt', () => {
 
       // Component should have access to store getters
       // Check the store directly
-      expect(mockStore.getters.isLoggedIn).toBe(true)
-      expect(mockStore.getters.isUserLoggedIn).toBe(true)
+      expect(mockstore.isLoggedIn).toBe(true)
+      expect(mockstore.isUserLoggedIn).toBe(true)
     })
   })
 }) 

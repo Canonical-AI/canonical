@@ -2,12 +2,12 @@
   <div class="document-tree-container">
     <!-- Fixed header section -->
     <div class="tree-header">
-      <v-list-item :title="$store.state.project.name" subtitle="project" ></v-list-item>
+      <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
       
       <v-divider></v-divider>
       <v-list-item>
         <v-btn 
-          :disabled="!$store.getters.isUserLoggedIn"
+          :disabled="!$store.isUserLoggedIn"
           class="text-none" 
           block 
           @click="$router.push({ path: '/document/create-document' })" 
@@ -28,7 +28,7 @@
             hide-details
           />
 
-          <v-btn :disabled="!$store.getters.isUserLoggedIn" 
+          <v-btn :disabled="!$store.isUserLoggedIn" 
               class="text-none" @click="addFolder()" 
               variant="text" 
               density="compact" 
@@ -190,7 +190,7 @@ export default {
     },
     computed:{
         items() {
-            return this.$store.getters.projectFolderTree; 
+            return this.store.projectFolderTree; 
         },
         filteredItems() {
         // Filter out items without proper IDs first to prevent dragging issues
@@ -230,7 +230,7 @@ export default {
         },
         
         async addFolder() {
-            await this.$store.commit('addFolder', "New Folder");
+            this.$store.folders.add("New Folder");
         },
 
         isSelected(el) {
@@ -252,7 +252,7 @@ export default {
 
         toggle(el) {
             el.isOpen = !el.isOpen;
-            this.$store.commit('toggleFolderOpen', { 
+            this.$store.folders.toggleOpen({ 
                 FolderName: el.id, 
                 isOpen: el.isOpen 
             });
@@ -292,7 +292,7 @@ export default {
             // Don't allow moving documents without proper IDs
             if(!event.data || !event.data.id) return;
 
-            this.$store.commit('updateFolder', { 
+            this.$store.folders.update({ 
                 docId: event.data.id, 
                 target: folder.id, 
                 action: 'add' 
@@ -304,7 +304,7 @@ export default {
             // Don't allow moving documents without proper IDs
             if(!event.data || !event.data.id) return;
 
-            this.$store.commit('updateFolder', { 
+            this.$store.folders.update({ 
                 docId: event.data.id, 
                 target: folder.id, 
                 action: 'remove' 
@@ -312,7 +312,7 @@ export default {
         },
 
         deleteFolder(id){
-            this.$store.commit('removeFolder', id)
+            this.$store.folders.remove(id)
         },
         renameFolder(el) {
             el.renaming = true;
@@ -324,7 +324,7 @@ export default {
             });
         },
         submitRenameFolder(el,value){
-            this.$store.commit('renameFolder',{toFolderName: value, fromFolderName: el.data.name})
+            this.$store.folders.rename({toFolderName: value, fromFolderName: el.data.name})
             el.data.name = value
             el.renaming = false;
         },

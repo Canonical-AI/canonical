@@ -43,9 +43,9 @@ export default {
         }
     },
     watch: {
-        '$store.state.tasks': {
+        '$store.tasks': {
             handler(){
-                if (this.$store.state.tasks.length === 0) return 
+                if (this.$store.tasks.length === 0) return 
 
                 requestAnimationFrame(() => {
                     this.updateTaskFromRemote()
@@ -92,8 +92,8 @@ export default {
         },
 
         updateTaskFromRemote(){
-            const existingTask = this.$store.state.tasks
-                    .filter(task => task.docID === this.$store.state.selected.id)[0]
+            const existingTask = this.$store.tasks
+                    .filter(task => task.docID === this.$store.selected.id)[0]
                     ?.tasks.find(task => task.identity === this.identity)
 
             if (existingTask && (existingTask.src !== this.src || existingTask.checked.toString() !== this.checked)) {

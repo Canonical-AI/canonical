@@ -24,7 +24,7 @@ export default {
     name: "ReferenceLink",
     computed:{
         documentName() {
-            const document = this.$store.state.documents.find(doc => doc.id === this.src); // Fetch document from store
+            const document = this.$store.documents.find(doc => doc.id === this.src); // Fetch document from store
             if (document) {
                 this.newDoc = false
                 this.isDraft = document.data.draft
@@ -65,7 +65,7 @@ export default {
         },
         async createDocument() {
             this.loading = true
-            const parent = this.$store.state.selected
+            const parent = this.$store.selected
             let result = await Generate.generateDocumentTemplate({prompt: `create a document template based on the title: ${this.documentName}`})
  
             console.log(result)

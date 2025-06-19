@@ -68,7 +68,7 @@
                     <v-list-item-title>Project Name</v-list-item-title>
                     <v-list-item-subtitle>{{ setupProject.name }}</v-list-item-subtitle>
                     <v-list-item-title>Owner</v-list-item-title>
-                    <v-list-item-subtitle>{{ $store.state.user.email }}</v-list-item-subtitle>
+                    <v-list-item-subtitle>{{ $store.user.email }}</v-list-item-subtitle>
                     <v-list-item-title>Folders</v-list-item-title>
                     <v-list-item-subtitle>{{ setupProject.folders.map(folder => folder.name).join(', ') }}</v-list-item-subtitle>
                 </v-stepper-window-item>
@@ -123,7 +123,7 @@ export default {
         }
     }),
     watch:{
-        '$store.state.user.uid': {
+        '$store.user.uid': {
             handler: function(newValue) {
                 if (newValue !== null) {
                     this.settingUpAccount = false;
@@ -134,7 +134,7 @@ export default {
             },
             immediate: true
         },
-        '$store.state.tempProject': {
+        '$store.tempProject': {
             handler: function(newValue) {
                 this.setupProject = newValue
             },

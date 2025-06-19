@@ -117,8 +117,8 @@ export default {
     const error = ref('');
     const showEmailForm = ref(false);
     
-    const isLoggedIn = computed(() => store.getters.isLoggedIn);
-    const userEmail = computed(() => store.state.user?.email || '');
+    const isLoggedIn = computed(() => store.isLoggedIn);
+    const userEmail = computed(() => store.user?.email || '');
     
     const handleAuth = async () => {
       error.value = '';

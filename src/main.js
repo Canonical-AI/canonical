@@ -1,9 +1,11 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import vuetify from './plugins/vuetify'
-import store from './store/index';
-import { eventStore } from './store/eventStore';
+import storePlugin from './plugins/store'
+import { eventStore } from './store/eventStore'
+import { useMainStore } from './store/index.js';
 import VueGtag from "vue-gtag";
 import dayjs from "dayjs";
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -41,12 +43,13 @@ window.addEventListener('unhandledrejection', function(event) {
   }
 });
 
-store.dispatch('enter')
+const pinia = createPinia()
 
 const app = createApp(App)
   .use(router)
   .use(vuetify)
-  .use(store)
+  .use(pinia)
+  .use(storePlugin)
   .use(dayjs)
   .use(VueGtag, {
     config: { id: "G-C3BP9PBDB0" },
@@ -62,5 +65,10 @@ app.config.globalProperties.$slideFadeTransition = slideFadeTransition
 app.config.globalProperties.$marked = marked
 app.config.globalProperties.$eventStore = eventStore
 
+// Initialize store after app is ready
 app.mount('#app')
+
+// Initialize user session
+const store = useMainStore()
+store.user.enter()
 

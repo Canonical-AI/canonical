@@ -10,7 +10,7 @@
                     <v-select
                         density="compact"
                         v-model="user.defaultProject"
-                        :items="this.$store.state.projects"
+                        :items="this.$store.projects"
                         item-title="name"
                         item-value="id"
                         object
@@ -65,7 +65,7 @@ export default {
         }
     },
     beforeMount() {
-        this.user = this.$store.state.user
+        this.user = this.$store.user
     },
     methods: {
         updateUser() {

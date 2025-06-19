@@ -56,7 +56,7 @@
           Review
         </v-tab>
         <v-tab 
-          v-if="$store.getters.canAccessAi" 
+          v-if="$store.canAccessAi" 
           value="chat" 
           class="text-none"
         >
@@ -82,7 +82,7 @@
         <!-- Comments Section -->
         <div class="comments-container flex-grow-1 overflow-y-auto">
           <comment
-            v-if="document.id && $store.getters.isUserLoggedIn"
+            v-if="document.id && $store.isUserLoggedIn"
             :doc-id="document.id"
             :doc-type="'document'"
             ref="commentComponent"
@@ -118,7 +118,7 @@
     />
     
     <!-- Show template button for new documents -->
-    <div v-else-if="$store.getters.canAccessAi && !isEditorModified">
+    <div v-else-if="$store.canAccessAi && !isEditorModified">
       <v-tooltip 
         text="Generate a template to start your document" 
         location="bottom"
@@ -171,7 +171,7 @@
       </template>
     </v-tooltip>
     <v-tooltip 
-      v-if="$store.getters.canAccessAi && document.id !== null" 
+      v-if="$store.canAccessAi && document.id !== null" 
       text="Feedback from your AI coach" 
       location="bottom"
     >
@@ -186,7 +186,7 @@
       </template>
     </v-tooltip>
     <v-tooltip 
-      v-if="$store.getters.canAccessAi" 
+      v-if="$store.canAccessAi" 
       text="Chat with your product mentor" 
       location="bottom"
     >
@@ -449,7 +449,7 @@ export default {
 
   methods: {
     getFormattedDocuments() {
-      return this.$store.state.documents.map((doc) => ({
+      return this.$store.documents.map((doc) => ({
         id: doc.id,
         name: doc.data.name,
       }));
@@ -460,7 +460,7 @@ export default {
       this.showEditor = false;
       this.isLoading = true;
 
-      while (this.$store.state.loadingUser) {
+      while (this.$store.loadingUser) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
@@ -471,7 +471,7 @@ export default {
           return;
         }
         
-        const selectedDocument = this.$store.state.selected;
+        const selectedDocument = this.$store.selected;
         
         if (!selectedDocument || !selectedDocument.data) {
           console.error("Failed to load document or document data is missing");
@@ -495,7 +495,7 @@ export default {
           ...selectedDocument,
         };
         
-        this.isFavorite = this.$store.getters.isFavorite(this.document.id);
+        this.isFavorite = this.$store.isFavorite(this.document.id);
         
         // Set editable state based on whether we're viewing a version
         if (version) {
@@ -563,7 +563,7 @@ export default {
     async populateTemplate(type) {
       this.isLoading = true;
       await this.$store.dispatch("getTemplates");
-      this.documentTemplate = await this.$store.state.templates.find(
+      this.documentTemplate = await this.$store.templates.find(
         (t) => t.name === type,
       );
 
@@ -605,7 +605,7 @@ export default {
     },
 
     async getDocumentName(name, id) {
-      const document = this.$store.state.documents.find((doc) => doc.id === id);
+      const document = this.$store.documents.find((doc) => doc.id === id);
       const newName = document?.data.name || name;
       return newName.length > 30 ? newName.substring(0, 27) + "..." : newName;
     },
@@ -748,8 +748,8 @@ export default {
     isDisabled() {
       // Don't override isEditable state - it's managed by version viewing logic
       if (
-        this.$store.getters.isUserLoggedIn ||
-        this.$store.state.project?.id != null 
+        this.$store.isUserLoggedIn ||
+        this.$store.project?.id != null 
       ) {
         return false;
       } else {
