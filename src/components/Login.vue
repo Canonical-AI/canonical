@@ -106,16 +106,23 @@ import {
 import { firebaseApp } from '../firebase';
 
 export default {
-  setup() {
+  props: {
+    prefilledEmail: {
+      type: String,
+      default: ''
+    }
+  },
+  emits: ['auth-success'],
+  setup(props, { emit }) {
     const router = useRouter();
     const store = useStore();
     const auth = getAuth(firebaseApp);
     
-    const email = ref('');
+    const email = ref(props.prefilledEmail || '');
     const password = ref('');
     const isSignUp = ref(false);
     const error = ref('');
-    const showEmailForm = ref(false);
+    const showEmailForm = ref(!!props.prefilledEmail); // Show email form if email is prefilled
     
     const isLoggedIn = computed(() => store.getters.isLoggedIn);
     const userEmail = computed(() => store.state.user?.email || '');
@@ -131,7 +138,14 @@ export default {
         await store.dispatch('enter');
         email.value = '';
         password.value = '';
-        router.push('/');
+        
+        // Emit auth success for invitation flow
+        emit('auth-success');
+        
+        // Only navigate if not in invitation flow
+        if (!props.prefilledEmail) {
+          router.push('/');
+        }
       } catch (err) {
         error.value = err.message;
       }
@@ -163,7 +177,14 @@ export default {
           (userCred) => {
             console.log(userCred);
             store.dispatch('enter');
-            router.push('/');
+            
+            // Emit auth success for invitation flow
+            emit('auth-success');
+            
+            // Only navigate if not in invitation flow
+            if (!props.prefilledEmail) {
+              router.push('/');
+            }
           }
         );
       } catch (err) {

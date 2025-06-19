@@ -8,6 +8,7 @@ import About from '../components/info/About.vue'
 import DocumentCreate from '../components/document/DocumentCreate.vue';
 import ProjectConfig from '../components/settings/ProjectConfig.vue';
 import UsersSettings from '../components/settings/UsersSettings.vue';
+import InvitationAccept from '../components/settings/InvitationAccept.vue';
 import {User} from "../services/firebaseDataService";
 import store from '../store';
 import TaskOverview from '../components/tasks/TaskOverview.vue';
@@ -99,6 +100,12 @@ const routes = [
     name: 'UsersSettings',
     component: UsersSettings,
     beforeEnter: checkAuth
+  },
+  {
+    path: '/invite/:token',
+    name: 'InvitationAccept',
+    component: InvitationAccept,
+    props: (route) => ({ token: route.params.token})
   },
   {
     path: '/logout',

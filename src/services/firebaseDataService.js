@@ -20,6 +20,8 @@ export const collectionMap = {
   favorites:'favorites',
   project:'projects',
   task:'tasks',
+  invitation:'invitations',
+  userProject:'userProjects'
 }
 
 
@@ -139,8 +141,6 @@ export class User{
   }
   
   static async createUser(payload){
-    router.push('/new-user');  /// step 1 push to /new-user will keep loading till...
-
     const newUser = {
       displayName: payload.email,
       email: payload.email,
@@ -152,11 +152,33 @@ export class User{
     await setDoc(doc(db, "users", payload.uid), newUser);
 
     const userDataForStore = { ...newUser, id: payload.uid};
-    await store.commit('setUserData', userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
+    await store.commit('setUserData', userDataForStore);
 
+    // Check for pending invitations for this email
+    const pendingInvitations = await this.getPendingInvitations(payload.email);
+    
+    if (pendingInvitations.length > 0) {
+      // Auto-accept the first invitation and set it as default project
+      const firstInvitation = pendingInvitations[0];
+      try {
+        const projectId = await this.acceptInvitation(firstInvitation.inviteToken);
+        store.commit('alert', { 
+          type: 'success', 
+          message: `Welcome! You've been automatically added to your project.`,
+          autoClear: true 
+        });
+        // Skip the new-user setup since they already have a project
+        return;
+      } catch (error) {
+        console.error('Error auto-accepting invitation:', error);
+        // Fall through to normal new-user flow
+      }
+    }
+    
+    // Normal new user flow - no pending invitations
+    router.push('/new-user');
     store.commit('alert', { type: 'info', message: 'New User Account Created!' });
-    // user will then be forced to setup their project. 
-   return
+    return;
   }
 
   static async setDefaultProject(value) {
@@ -194,6 +216,178 @@ export class User{
   //   const userRef = doc(db, "users", userId);
   //   await deleteDoc(userRef);
   // }
+
+  // COLLABORATION METHODS
+  static async inviteUserToProject(email, projectId, role = 'user') {
+    checkUserLoggedIn();
+    
+    // Check if current user is admin of this project
+    const currentUserRole = await this.getUserRoleInProject(store.state.user.uid, projectId);
+    if (currentUserRole !== 'admin') {
+      throw new Error('Only project admins can invite users');
+    }
+
+    // Check if user already exists and is in project
+    const existingUser = await this.getUserByEmail(email);
+    if (existingUser) {
+      const userInProject = await this.getUserRoleInProject(existingUser.id, projectId);
+      if (userInProject) {
+        throw new Error('User is already in this project');
+      }
+    }
+
+    // Create invitation
+    const inviteToken = crypto.randomUUID();
+    const invitation = {
+      email,
+      projectId,
+      invitedBy: store.state.user.uid,
+      role,
+      status: 'pending',
+      inviteToken,
+      createdDate: serverTimestamp(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+    };
+
+    const inviteRef = await addDoc(collection(db, "invitations"), invitation);
+    
+    // Generate shareable invitation link
+    const inviteLink = `${window.location.origin}/invite/${inviteToken}`;
+    
+    store.commit('alert', { 
+      type: 'success', 
+      message: `Invitation link generated for ${email}`, 
+      autoClear: true 
+    });
+    
+    return { 
+      id: inviteRef.id, 
+      inviteLink,
+      inviteToken,
+      email,
+      role
+    };
+  }
+
+  static async getUserByEmail(email) {
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, where('email', '==', email));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) return null;
+    
+    const userDoc = snapshot.docs[0];
+    return { id: userDoc.id, ...userDoc.data() };
+  }
+
+  static async getUserRoleInProject(userId, projectId) {
+    const userProjectsRef = collection(db, "userProjects");
+    const q = query(userProjectsRef, 
+      where('userId', '==', userId),
+      where('projectId', '==', projectId),
+      where('status', '==', 'active')
+    );
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) return null;
+    
+    return snapshot.docs[0].data().role;
+  }
+
+  static async acceptInvitation(inviteToken) {
+    checkUserLoggedIn();
+    
+    // Find invitation
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('inviteToken', '==', inviteToken),
+      where('status', '==', 'pending')
+    );
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      throw new Error('Invalid or expired invitation');
+    }
+
+    const inviteDoc = snapshot.docs[0];
+    const invitation = inviteDoc.data();
+
+    // Check if invitation is expired
+    if (invitation.expiresAt.toDate() < new Date()) {
+      throw new Error('Invitation has expired');
+    }
+
+    // Check if user email matches invitation
+    if (store.state.user.email !== invitation.email) {
+      throw new Error('This invitation is for a different email address');
+    }
+
+    // Add user to project
+    await Project.addUserToProject(store.state.user.uid, invitation.projectId, invitation.role);
+
+    // Update invitation status
+    await updateDoc(doc(db, "invitations", inviteDoc.id), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp()
+    });
+
+    // Set as default project if user doesn't have one
+    if (!store.state.user.defaultProject) {
+      await this.setDefaultProject(invitation.projectId);
+    }
+
+    // Refresh user data to include new project
+    await store.dispatch('enter');
+
+    store.commit('alert', { type: 'success', message: 'Successfully joined project!', autoClear: true });
+    return invitation.projectId;
+  }
+
+  static async getPendingInvitations(userEmail = null) {
+    const email = userEmail || store.state.user?.email;
+    if (!email) return [];
+
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('email', '==', email),
+      where('status', '==', 'pending')
+    );
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  }
+
+  static async cancelInvitation(inviteId) {
+    checkUserLoggedIn();
+    
+    // Get invitation to check permissions
+    const inviteRef = doc(db, "invitations", inviteId);
+    const inviteDoc = await getDoc(inviteRef);
+    
+    if (!inviteDoc.exists()) {
+      throw new Error('Invitation not found');
+    }
+
+    const invitation = inviteDoc.data();
+    
+    // Check if current user is admin of the project or the one who sent the invitation
+    const currentUserRole = await this.getUserRoleInProject(store.state.user.uid, invitation.projectId);
+    if (currentUserRole !== 'admin' && invitation.invitedBy !== store.state.user.uid) {
+      throw new Error('Only project admins can cancel invitations');
+    }
+
+    // Update invitation status
+    await updateDoc(inviteRef, {
+      status: 'cancelled',
+      cancelledAt: serverTimestamp(),
+      cancelledBy: store.state.user.uid
+    });
+
+    store.commit('alert', { type: 'success', message: 'Invitation cancelled', autoClear: true });
+  }
 }
 
 export class Project {
@@ -209,7 +403,10 @@ export class Project {
     checkUserLoggedIn()
     const projectInstance = new Project(value);
     const docRef = await addDoc(collection(db, "project"), {...projectInstance});
-    await this.addUserToProject(store.state.user.uid, docRef.id, 'admin')
+    
+    // Make the project creator an admin
+    await this.addUserToProject(store.state.user.uid, docRef.id, 'admin');
+    
     store.commit('alert', {type: 'info', message: `Project added`, autoClear: true});
     return docRef;
   }
@@ -256,29 +453,175 @@ export class Project {
     store.commit('alert', {type: 'info', message: `Project archived`, autoClear: true});
   }
 
-  // USER PROJECTS 
+  // ENHANCED USER MANAGEMENT
   static async addUserToProject(userId, projectId, role='user') {
-      // todo check if current user is admin of project
     checkUserLoggedIn();
+    
+    // Check if user is already in the project (only for non-creator additions)
+    const isCreatorAddingSelf = userId === store.state.user.uid;
+    if (!isCreatorAddingSelf) {
+      const existingRole = await User.getUserRoleInProject(userId, projectId);
+      if (existingRole) {
+        throw new Error('User is already a member of this project');
+      }
+    }
+    
     const userProjectRef = collection(db, "userProjects");
-    await addDoc(userProjectRef, { userId, projectId, role});
-    store.commit('alert', { type: 'info', message: 'User added to project', autoClear: true });
+    await addDoc(userProjectRef, { 
+      userId, 
+      projectId, 
+      role,
+      status: 'active',
+      joinedDate: serverTimestamp(),
+      invitedBy: isCreatorAddingSelf ? null : store.state.user.uid, // No inviter for project creator
+      isCreator: isCreatorAddingSelf // Mark if this user is the project creator
+    });
+    
+    const message = isCreatorAddingSelf ? 
+      `Project created and you are now an ${role}` : 
+      'User added to project';
+    
+    store.commit('alert', { type: 'info', message, autoClear: true });
   }
 
+  static async updateUserRole(userId, projectId, newRole) {
+    checkUserLoggedIn();
+    
+    // Check if current user is admin
+    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    if (currentUserRole !== 'admin') {
+      throw new Error('Only project admins can change user roles');
+    }
+
+    // Prevent removing the last admin
+    if (newRole !== 'admin') {
+      const admins = await this.getProjectAdmins(projectId);
+      if (admins.length === 1 && admins[0].userId === userId) {
+        throw new Error('Cannot remove the last admin from the project');
+      }
+    }
+
+    // Update role
+    const userProjectsRef = collection(db, "userProjects");
+    const q = query(userProjectsRef, 
+      where('userId', '==', userId),
+      where('projectId', '==', projectId)
+    );
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      await updateDoc(snapshot.docs[0].ref, { role: newRole });
+      store.commit('alert', { type: 'success', message: 'User role updated', autoClear: true });
+    }
+  }
+
+  static async removeUserFromProject(userId, projectId) {
+    checkUserLoggedIn();
+    
+    // Check if current user is admin
+    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    if (currentUserRole !== 'admin') {
+      throw new Error('Only project admins can remove users');
+    }
+
+    // Prevent removing the last admin
+    const userRole = await User.getUserRoleInProject(userId, projectId);
+    if (userRole === 'admin') {
+      const admins = await this.getProjectAdmins(projectId);
+      if (admins.length === 1) {
+        throw new Error('Cannot remove the last admin from the project');
+      }
+    }
+
+    // Update status to removed instead of deleting
+    const userProjectsRef = collection(db, "userProjects");
+    const q = query(userProjectsRef, 
+      where('userId', '==', userId),
+      where('projectId', '==', projectId)
+    );
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      await updateDoc(snapshot.docs[0].ref, { 
+        status: 'removed',
+        removedAt: serverTimestamp(),
+        removedBy: store.state.user.uid
+      });
+      store.commit('alert', { type: 'success', message: 'User removed from project', autoClear: true });
+    }
+  }
+
+  static async getProjectAdmins(projectId) {
+    const userProjectsRef = collection(db, "userProjects");
+    const q = query(userProjectsRef, 
+      where('projectId', '==', projectId),
+      where('role', '==', 'admin'),
+      where('status', '==', 'active')
+    );
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => doc.data());
+  }
+
+
+
+  static async getProjectInvitations(projectId) {
+    checkUserLoggedIn();
+    
+    // Check if user is admin
+    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    
+    // Also check if user is the project creator as fallback
+    let isProjectCreator = false;
+    if (currentUserRole !== 'admin') {
+      const projectRef = doc(db, "project", projectId);
+      const projectDoc = await getDoc(projectRef);
+      if (projectDoc.exists()) {
+        isProjectCreator = projectDoc.data().createdBy === store.state.user.uid;
+      }
+    }
+    
+    if (currentUserRole !== 'admin' && !isProjectCreator) {
+      throw new Error('Only project admins can view invitations');
+    }
+
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('projectId', '==', projectId)
+    );
+    const snapshot = await getDocs(q);
+    
+    const invitations = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // Sort by createdDate in JavaScript instead of Firestore
+    return invitations.sort((a, b) => {
+      const dateA = a.createdDate?.toDate?.() || new Date(a.createdDate);
+      const dateB = b.createdDate?.toDate?.() || new Date(b.createdDate);
+      return dateB - dateA; // desc order (newest first)
+    });
+  }
+
+  // Update existing getUsersForProject to filter by active status
   static async getUsersForProject(projectId, details = false) {
     checkUserLoggedIn();
-    //probably need to check if user in project
     const userProjectsRef = collection(db, "userProjects");
-    const q = query(userProjectsRef, where('projectId', '==', projectId));
+    const q = query(userProjectsRef, 
+      where('projectId', '==', projectId),
+      where('status', '==', 'active')  // Only get active users
+    );
     const snapshot = await getDocs(q);
     const users = snapshot.docs.map(doc => ({
       userId: doc.data().userId,
-      role: doc.data().role
+      role: doc.data().role,
+      joinedDate: doc.data().joinedDate
     }));
 
     if (details) {
       const userIds = users.map(u => u.userId);
-      const userIdChunks = _.chunk(userIds, 10); // need to chunk to avoid limit of 10 items in firebase query
+      const userIdChunks = _.chunk(userIds, 10);
       
       let usersDetail = [];
       for (const chunk of userIdChunks) {
@@ -287,11 +630,12 @@ export class Project {
         const userSnapshots = await getDocs(q);
         
         const chunkUsers = userSnapshots.docs.map(doc => {
-          const role = users.find(u => u.userId === doc.id)?.role;
+          const userProject = users.find(u => u.userId === doc.id);
           return { 
             id: doc.id, 
             ...doc.data(), 
-            role,
+            role: userProject?.role,
+            joinedDate: userProject?.joinedDate
           };
         });
         
@@ -303,7 +647,6 @@ export class Project {
 
     return users;
   }
-
 }
 
 

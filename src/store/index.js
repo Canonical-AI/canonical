@@ -85,6 +85,11 @@ const store = createStore({
       return state.favorites.includes(id);
     },
     projectFolderTree(state){
+      // Return empty array if project or folders are not loaded yet
+      if (!state.project || !state.project.folders) {
+        return [];
+      }
+
       const documentMap = new Map(state.documents.map(doc => [doc.id, doc]));
       const updatedFolders = state.project.folders.map(folder => {
           const updatedChildren = folder.children.map(childId => documentMap
