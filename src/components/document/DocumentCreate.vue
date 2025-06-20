@@ -22,13 +22,6 @@
             </v-btn>
           </template>
           <v-list class="border border-surface-light" density="compact">
-            <v-list-item
-              @click="toggleDraft()"
-              prepend-icon="mdi-file-edit"
-              :class="document.data.draft ? 'text-orange' : ''"
-            >
-              {{ document.data.draft ? "Release doc" : "Stage doc" }}
-            </v-list-item>
             <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
               Archive doc
             </v-list-item>
@@ -56,7 +49,7 @@
           Review
         </v-tab>
         <v-tab 
-          v-if="$store.getters.canAccessAi" 
+          v-if="$store.canAccessAi" 
           value="chat" 
           class="text-none"
         >
@@ -82,7 +75,7 @@
         <!-- Comments Section -->
         <div class="comments-container flex-grow-1 overflow-y-auto">
           <comment
-            v-if="document.id && $store.getters.isUserLoggedIn"
+            v-if="document.id && $store.isUserLoggedIn"
             :doc-id="document.id"
             :doc-type="'document'"
             ref="commentComponent"
@@ -118,7 +111,7 @@
     />
     
     <!-- Show template button for new documents -->
-    <div v-else-if="$store.getters.canAccessAi && !isEditorModified">
+    <div v-else-if="$store.canAccessAi && !isEditorModified">
       <v-tooltip 
         text="Generate a template to start your document" 
         location="bottom"
@@ -171,7 +164,7 @@
       </template>
     </v-tooltip>
     <v-tooltip 
-      v-if="$store.getters.canAccessAi && document.id !== null" 
+      v-if="$store.canAccessAi && document.id !== null" 
       text="Feedback from your AI coach" 
       location="bottom"
     >
@@ -186,7 +179,7 @@
       </template>
     </v-tooltip>
     <v-tooltip 
-      v-if="$store.getters.canAccessAi" 
+      v-if="$store.canAccessAi" 
       text="Chat with your product mentor" 
       location="bottom"
     >
@@ -237,19 +230,17 @@
         v-if="!isLoading"
         :key="editorKey"
       >
-        <div
+        <input
           v-if="!showTemplateInput"
-          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded"
-          :contenteditable="isEditable"
-          :style="{ minHeight: '1em', outline: 'none' }"
-          @blur="isEditable && updateDocumentNameOnBlur"
-          @keydown.enter="isEditable && finishEditingTitle"
-          @focus="isEditable && ensureContent"
+          v-model="document.data.name"
+          class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded border-0 p-0"
+          :style="{ minHeight: '1em', outline: 'none', resize: 'none' }"
+          :disabled="!isEditable"
+          @input="updateDocumentNameFromInput"
           @click.stop
-          ref="editableDiv"
-        >
-          {{ document.data.name }}
-        </div>
+          ref="titleInput"
+          type="text"
+        />
 
         <!-- Template Input Section -->
         <div v-if="!isLoading && showTemplateInput" class="template-input-wrapper">
@@ -406,7 +397,7 @@ export default {
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
 
     // Set up comments composable
-    const { handleAcceptSuggestion, handleUndo } = useComments(this.$store, this.$eventStore);
+    const { handleAcceptSuggestion, handleUndo } = useComments(this.$eventStore);
     
     this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
       
@@ -451,7 +442,7 @@ export default {
 
   methods: {
     getFormattedDocuments() {
-      return this.$store.state.documents.map((doc) => ({
+      return this.$store.documents.map((doc) => ({
         id: doc.id,
         name: doc.data.name,
       }));
@@ -462,23 +453,23 @@ export default {
       this.showEditor = false;
       this.isLoading = true;
 
-      while (this.$store.state.loadingUser) {
+      while (this.$store.loadingUser) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
       try {
-        const result = await this.$store.dispatch("selectDocument", { id, version });
+        const result = await this.$store.documentsSelect({ id, version });
         if (result === null) {
           this.isLoading = false;
           return;
         }
         
-        const selectedDocument = this.$store.state.selected;
+        const selectedDocument = this.$store.selected;
         
         if (!selectedDocument || !selectedDocument.data) {
           console.error("Failed to load document or document data is missing");
           this.isLoading = false;
-          this.$store.commit("alert", { 
+          this.$store.uiAlert({ 
             type: "error", 
             message: "Unable to load document. It may have been deleted or you don't have permission." 
           });
@@ -497,7 +488,7 @@ export default {
           ...selectedDocument,
         };
         
-        this.isFavorite = this.$store.getters.isFavorite(this.document.id);
+        this.isFavorite = this.$store.isFavorite(this.document.id);
         
         // Set editable state based on whether we're viewing a version
         if (version) {
@@ -509,7 +500,7 @@ export default {
 
       } catch (error) {
         console.error("Error fetching document:", error);
-        this.$store.commit("alert", { 
+        this.$store.uiAlert({ 
           type: "error", 
           message: "An error occurred while loading the document. Please try again." 
         });
@@ -537,12 +528,12 @@ export default {
     async createDocument() {
       console.log("create-doc");
       this.isCreatingDocument = true;
-      const createdDoc = await this.$store.dispatch("createDocument", {
+      const createdDoc = await this.$store.documentsCreate({
         data: this.document.data,
       });
       this.document.id = createdDoc.id;
       this.document.data.id = createdDoc.id;
-      this.$store.commit("setSelectedDocument", this.document);
+      this.$store.setSelectedDocument(this.document);
       
       await this.$router.replace({ path: `/document/${this.document.id}` });
       this.isCreatingDocument = false;
@@ -556,71 +547,28 @@ export default {
       if (this.document.id === null) {
         await this.createDocument();
       } else {
-        await this.$store.commit("saveSelectedDocument");
+        await this.$store.documentsSave();
       }
 
       this.isEditorModified = false;
     },
 
-    async populateTemplate(type) {
-      this.isLoading = true;
-      await this.$store.dispatch("getTemplates");
-      this.documentTemplate = await this.$store.state.templates.find(
-        (t) => t.name === type,
-      );
-
-      if (this.documentTemplate) {
-        const newData = {
-          id: null,
-          data: {
-            content: this.documentTemplate.content,
-            name: `[DRAFT] - My New ${this.document.data.type}...`,
-            type: type,
-            relationships: [],
-          },
-        };
-        // this.document.data = newData
-        this.previousType = newData.data.type;
-        this.previousTitle = newData.data.name;
-        this.previousContent = newData.data.content;
-        Object.assign(this.document, newData);
-      } else {
-        const newData = {
-          id: null,
-          data: {
-            content: "Hello, **World**",
-            name: `[DRAFT] - My new doc...`,
-            type: type,
-            relationships: [],
-          },
-        };
-        // this.document.data = newData
-        this.previousType = newData.data.type;
-        this.previousTitle = newData.data.name;
-        this.previousContent = newData.data.content;
-        Object.assign(this.document, newData);
-        this.$router.push({ query: { ...this.$route.query, type: type } });
-      }
-      this.isEditorModified = false;
-      await this.$nextTick();
-      this.isLoading = false;
-    },
 
     async getDocumentName(name, id) {
-      const document = this.$store.state.documents.find((doc) => doc.id === id);
+      const document = this.$store.documents.find((doc) => doc.id === id);
       const newName = document?.data.name || name;
       return newName.length > 30 ? newName.substring(0, 27) + "..." : newName;
     },
 
     async deleteDocument() {
-      await this.$store.dispatch("deleteDocument", { id: this.document.id });
-      this.$store.dispatch("getDocuments");
+      await this.$store.documentsDelete({ id: this.document.id });
+      this.$store.documentsGetAll();
       this.$router.push({ path: `/document/create-document` });
     },
 
     async archiveDocument() {
-      await this.$store.dispatch("archiveDocument", { id: this.document.id });
-      this.$store.dispatch("getDocuments");
+      await this.$store.documentsArchive({ id: this.document.id });
+      this.$store.documentsGetAll();
       this.$router.push({ path: `/document/create-document` });
     },
 
@@ -643,7 +591,7 @@ export default {
     },
 
     toggleFavorite() {
-      this.$store.commit("toggleFavorite", this.document.id);
+      this.$store.toggleFavorite(this.document.id);
       this.isFavorite = !this.isFavorite;
     },
 
@@ -658,34 +606,14 @@ export default {
       textarea.style.height = `${textarea.scrollHeight}px`; // Set it to the scroll height
     },
 
-    updateDocumentNameOnBlur(event) {
-      const newName = event.target.innerText.trim();
-      if (newName !== this.document.data.name) {
-        this.document.data.name = newName;
+    updateDocumentNameFromInput(event) {
+      if (event.target.value !== this.document.data.name) {
+        this.document.data.name = event.target.value;
+        this.isEditorModified = true;
       }
     },
 
-    finishEditingTitle(event) {
-      event.preventDefault(); // Prevent adding a new line
-      const newName = event.target.innerText.trim();
-      if (newName !== this.document.data.name) {
-        this.document.data.name = newName;
-      }
-      event.target.blur(); // Remove focus from the title
-    },
 
-    async toggleDraft() {
-      await this.$store.dispatch("toggleDraft");
-      // Force update of documents list to reflect the change in tree
-      await this.$store.dispatch("getDocuments");
-    },
-
-    ensureContent() {
-      const el = this.$refs.editableDiv;
-      if (!el.innerText.trim()) {
-        el.innerHTML = "<br>"; // Ensure there's always a line break to maintain focus
-      }
-    },
 
     activateEditor() {
       activateEditor({
@@ -741,7 +669,7 @@ export default {
         
         this.showTemplateInput = false;
         
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'success', 
           message: 'Template generated successfully!', 
           autoClear: true 
@@ -749,7 +677,7 @@ export default {
         
       } catch (error) {
         console.error('Error generating template:', error);
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: 'Failed to generate template. Please try again.', 
           autoClear: true 
@@ -764,8 +692,8 @@ export default {
     isDisabled() {
       // Don't override isEditable state - it's managed by version viewing logic
       if (
-        this.$store.getters.isUserLoggedIn ||
-        this.$store.state.project?.id != null 
+        this.$store.isUserLoggedIn ||
+        this.$store.project?.id != null 
       ) {
         return false;
       } else {
@@ -814,7 +742,7 @@ export default {
               id: this.document.id,
               data: this.document.data
             };
-            this.$store.commit("updateSelectedDocument", documentUpdateData);
+            this.$store.documentsUpdate(documentUpdateData);
           }
         }
 
@@ -829,12 +757,12 @@ export default {
 
         if (this.isEditorModified) {
           console.log("trying to save....");
-          // Only pass document data, not comments, to avoid overwriting store's comment state
+          // Only pass document data, not comments or versions, to avoid overwriting store's comment state
           const documentUpdateData = {
             id: this.document.id,
             data: this.document.data
           };
-          this.$store.commit("updateSelectedDocument", documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          this.$store.documentsUpdate(documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();
@@ -914,7 +842,7 @@ export default {
             this.previousTitle = this.document.data.name;
             this.isEditorModified = false;
             this.isLoading = false;
-            this.$store.commit('setSelectedDocument', this.document);
+            this.$store.documentsUpdate(this.document);
             
             // Ensure DOM is updated
             await this.$nextTick();

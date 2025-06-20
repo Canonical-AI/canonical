@@ -51,7 +51,7 @@
           
 
         <v-menu
-          v-if='$store.getters.isUserLoggedIn === false'
+          v-if='$store.isUserLoggedIn === false'
           :close-on-content-click = "false"
           v-model="loginMenuOpen"
           offset-y>
@@ -65,7 +65,7 @@
 
 
         <v-menu
-        v-if='$store.getters.isUserLoggedIn === true && $store.state.user.email'
+        v-if='$store.isUserLoggedIn === true && $store.user.email'
         class="user-menu w-auto"
         offset-overflow
         left
@@ -77,7 +77,7 @@
                   v-bind="props">
                 <span
                   class="white--text text-h5">
-                  {{$store.state.user.email[0].toUpperCase()}}</span>
+                  {{$store.user.email[0].toUpperCase()}}</span>
                 </v-avatar>
             </template>
             <v-list density="compact" variant="plain">
@@ -85,7 +85,7 @@
                 <p class="text-medium-emphasis">Signed in as</p>
               </v-list-item>
               <v-list-item>
-                <p v-if="$store.state.user.email">{{$store.state.user.email.split("@")[0]}}</p>
+                <p v-if="$store.user.email">{{$store.user.email.split("@")[0]}}</p>
                 <p v-else>No Email</p>
               </v-list-item>
               <v-list-item
@@ -93,7 +93,7 @@
                 :key="index"
                 variant="plain"
               >
-                <v-list-item-title variant="contained-text" v-if='$store.getters.isUserLoggedIn === true' @click="logout">
+                <v-list-item-title variant="contained-text" v-if='$store.isUserLoggedIn === true' @click="logout">
                     Logout
                 </v-list-item-title>
               </v-list-item>
@@ -112,7 +112,7 @@
           density="compact"
           nav>
           <v-list-item @click.stop="toggleDrawer('document')" prepend-icon="mdi-folder-multiple" value="dashboard"></v-list-item>
-          <v-list-item @click.stop="toggleDrawer('chat')" v-if="$store.getters.canAccessAi" :disabled="!$store.getters.isUserLoggedIn">
+          <v-list-item @click.stop="toggleDrawer('chat')" v-if="$store.canAccessAi" :disabled="!$store.isUserLoggedIn">
             <template v-slot:prepend>
               <v-badge dot color="success">
                 <v-icon icon="mdi-forum"/>
@@ -156,10 +156,10 @@
         <div ref="bottomElement"></div>
       </v-main>
 
-      <v-snackbar 
-        v-for="alert in alerts.filter(a => a.show === true && a.type === 'info')"
+            <v-snackbar 
+        v-for="alert in infoAlerts"
         class="text-center transition-opacity duration-300 ease-in-out"
-        :key="alert"
+        :key="alert.time || alert.timestamp"
         v-model="alert.show"
         timeout="5000"
         :color='alert.color ? alert.color : "success"' 
@@ -169,11 +169,12 @@
       </v-snackbar>
 
       <div
-        v-for="alert in alerts.filter(a => a.show === true && a.type != 'info').sort((a, b) => a.time - b.time)"
+        v-for="alert in nonInfoAlerts"
+        :key="alert.time || alert.timestamp"
         >
         <v-snackbar
           class="text-center transition-opacity duration-300 ease-in-out snackbar-solid"
-          :key="alert"
+          :key="`snackbar-${alert.time || alert.timestamp}`"
           v-model="alert.show"
           density="compact"
           :color="alert.type || 'error'"
@@ -186,7 +187,7 @@
           <template v-slot:actions>
             <v-btn
               variant="text"
-              @click="alert.show = false"
+              @click="dismissAlert(alert)"
               icon="mdi-close"
             >
             </v-btn>
@@ -267,7 +268,6 @@ export default {
   name: 'App',
   data: () => ({
     toggle_exclusive: 0,
-    alerts:[],
     selection:[],
     items:[],
     filter: '',
@@ -289,10 +289,8 @@ export default {
     return theme
   },
   async mounted() {
-    //await this.$store.commit('enter')
-    this.isNavOpen = !this.$vuetify.display.mobile
-    
 
+    this.isNavOpen = !this.$vuetify.display.mobile
 
     // Add event listeners to track user activity
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
@@ -316,13 +314,8 @@ export default {
     }
   },
   watch: {
-    alerts_: {
-      handler() {
-        this.alerts = this.alerts_;
-      },
-      deep: true,
-    },
-    '$store.getters.isUserLoggedIn': {
+
+    '$store.isUserLoggedIn': {
       handler(newValue) {
         if (newValue === true) {
           this.loginMenuOpen = false;
@@ -364,11 +357,17 @@ export default {
     },
   },
   computed:{
-    alerts_(){
-      return this.$store.state.globalAlerts
+
+    nonInfoAlerts(){
+      return this.$store.globalAlerts
+        .filter(a => a.show === true && a.type !== 'info')
+        .sort((a, b) => a.time - b.time);
+    },
+    infoAlerts(){
+      return this.$store.globalAlerts.filter(a => a.show === true && a.type === 'info');
     },
     project(){
-      return this.$store.state.project.id;
+      return this.$store.project.id;
     },
     themes(){
       return Object.keys(this.$vuetify.theme.themes).filter(theme => theme !== 'light' && theme !== 'dark');
@@ -413,10 +412,11 @@ export default {
 
       });
     },
-    tryDemo(){
+    async tryDemo(){
       this.isRegisterDialogOpen = false;
-      this.$store.commit('setProject', import.meta.env.VITE_DEFAULT_PROJECT_ID)
-      this.$store.dispatch('getDocuments')
+      await this.$store.projectSet(import.meta.env.VITE_DEFAULT_PROJECT_ID)
+  
+      await this.$store.documentsGetAll();
 
     },
     startLoginPromptTimer() {
@@ -428,7 +428,7 @@ export default {
       this.loginPromptTimer = setTimeout(() => {
         // Only show login menu if user is not logged in, hasn't been prompted yet,
         // and has been inactive for 5 minutes
-        if (!this.$store.getters.isUserLoggedIn && 
+        if (!this.$store.isUserLoggedIn && 
             !this.userActivity.hasShownPrompt && 
             (Date.now() - this.userActivity.lastActive) >= 300000) {
           this.loginMenuOpen = true;
@@ -444,6 +444,9 @@ export default {
         clearTimeout(this.loginPromptTimer);
       }
       this.startLoginPromptTimer();
+    },
+    dismissAlert(alert) {
+      alert.show = false;
     }
   },
   created() {

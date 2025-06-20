@@ -93,7 +93,7 @@
 <script>
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useStore } from 'vuex';
+import { useMainStore } from '../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -108,7 +108,7 @@ import { firebaseApp } from '../firebase';
 export default {
   setup() {
     const router = useRouter();
-    const store = useStore();
+    const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
     const email = ref('');
@@ -117,8 +117,8 @@ export default {
     const error = ref('');
     const showEmailForm = ref(false);
     
-    const isLoggedIn = computed(() => store.getters.isLoggedIn);
-    const userEmail = computed(() => store.state.user?.email || '');
+    const isLoggedIn = computed(() => store.isUserLoggedIn);
+    const userEmail = computed(() => store.user?.email || '');
     
     const handleAuth = async () => {
       error.value = '';
@@ -128,7 +128,7 @@ export default {
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
         }
-        await store.dispatch('enter');
+        await store.userEnter();
         email.value = '';
         password.value = '';
         router.push('/');
@@ -140,8 +140,8 @@ export default {
     const handleSignOut = async () => {
       try {
         await signOut(auth);
-        store.commit('logout');
-        store.commit('alert', { type: 'info', message: 'Logged out successfully', autoClear: true });
+        store.userLogout();
+        store.uiAlert({ type: 'info', message: 'Logged out successfully', autoClear: true });
       } catch (err) {
         error.value = err.message;
       }
@@ -162,7 +162,7 @@ export default {
         await signInWithPopup(auth, authProvider).then(
           (userCred) => {
             console.log(userCred);
-            store.dispatch('enter');
+            store.userEnter();
             router.push('/');
           }
         );

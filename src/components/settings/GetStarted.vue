@@ -68,7 +68,7 @@
                     <v-list-item-title>Project Name</v-list-item-title>
                     <v-list-item-subtitle>{{ setupProject.name }}</v-list-item-subtitle>
                     <v-list-item-title>Owner</v-list-item-title>
-                    <v-list-item-subtitle>{{ $store.state.user.email }}</v-list-item-subtitle>
+                    <v-list-item-subtitle>{{ $store.user.email }}</v-list-item-subtitle>
                     <v-list-item-title>Folders</v-list-item-title>
                     <v-list-item-subtitle>{{ setupProject.folders.map(folder => folder.name).join(', ') }}</v-list-item-subtitle>
                 </v-stepper-window-item>
@@ -123,7 +123,7 @@ export default {
         }
     }),
     watch:{
-        '$store.state.user.uid': {
+        '$store.user.uid': {
             handler: function(newValue) {
                 if (newValue !== null) {
                     this.settingUpAccount = false;
@@ -134,7 +134,7 @@ export default {
             },
             immediate: true
         },
-        '$store.state.tempProject': {
+        '$store.tempProject': {
             handler: function(newValue) {
                 this.setupProject = newValue
             },
@@ -161,8 +161,8 @@ export default {
         async launch(){
             try {
                 const projectRef = await Project.create(this.setupProject)
-                await this.$store.commit('setProject', projectRef.id )
-                await this.$store.commit('setDefaultProject', projectRef.id)
+                await this.$store.projectSet(projectRef.id )
+                await this.$store.userSetDefaultProject(projectRef.id)
             } catch (error) {
                 console.error(error)
                 return
@@ -184,8 +184,8 @@ export default {
                     draft: true,
                 }
               //  const createdDoc = await Document.create(doc);
-                const createdDoc = await this.$store.dispatch('createDocument', { data: doc, select : false})
-                this.$store.commit('toggleFavorite', createdDoc.id);
+                const createdDoc = await this.$store.documentsCreate({ data: doc, select : false})
+                this.$store.toggleFavorite(createdDoc.id);
                 this.$router.push('/document/' + createdDoc.id)
             } catch (error) {
                 console.error(error)

@@ -86,9 +86,9 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch} from 'vue';
 import { useRouter } from 'vue-router';
-import { useStore } from 'vuex';
+import { useMainStore } from '../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -102,7 +102,7 @@ import { firebaseApp } from '../firebase';
 export default {
   setup() {
     const router = useRouter();
-    const store = useStore();
+    const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
     const email = ref('');
@@ -112,7 +112,7 @@ export default {
     const showEmailForm = ref(false);
     const showPrompt = ref(false);
     
-    const isLoggedIn = computed(() => store.getters.isLoggedIn);
+    const isLoggedIn = computed(() => store.isLoggedIn);
     
     // Timer setup
     let inactivityTimer = null;
@@ -126,9 +126,9 @@ export default {
       }
       
       // Only set timer if user is not logged in and prompt not dismissed
-      if (!store.getters.isUserLoggedIn && !isPromptDismissed()) {
+      if (!store.isUserLoggedIn && !isPromptDismissed()) {
         inactivityTimer = setTimeout(() => {
-          if (!store.getters.isUserLoggedIn) { // Check again before showing
+          if (!store.isUserLoggedIn) { // Check again before showing
             showPrompt.value = true;
           }
         }, INACTIVITY_TIMEOUT);
@@ -159,7 +159,7 @@ export default {
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
         }
-        await store.dispatch('enter');
+        await store.userEnter();
         email.value = '';
         password.value = '';
         showPrompt.value = false;
@@ -182,7 +182,7 @@ export default {
         }
         await signInWithPopup(auth, authProvider).then(
           (userCred) => {
-            store.dispatch('enter');
+            store.userEnter();
             showPrompt.value = false;
           }
         );
@@ -204,8 +204,8 @@ export default {
     };
     
     // Watch for auth state changes to hide prompt if user logs in
-    const unwatch = store.watch(
-      () => store.getters.isUserLoggedIn, 
+    const unwatch = watch(
+      () => store.isUserLoggedIn, 
       (isLoggedIn) => {
         if (isLoggedIn) {
           showPrompt.value = false;
@@ -215,7 +215,7 @@ export default {
     
     onMounted(() => {
       // Check if already logged in - don't show prompt in that case
-      if (store.getters.isUserLoggedIn) {
+      if (store.isUserLoggedIn) {
         showPrompt.value = false;
         return;
       }

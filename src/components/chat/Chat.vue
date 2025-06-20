@@ -159,9 +159,9 @@ import {marked} from 'marked'
         immediate: true
       },
 
-      '$store.getters.isUserLoggedIn':{
+      '$store.isUserLoggedIn':{
         async handler(isUserLoggedIn){
-          if(this.$store.getters.isUserLoggedIn){
+          if(this.$store.isUserLoggedIn){
             if (!this.chatInstance && !this.isLoading) {
               this.chatInstance = new Chat(); 
               await this.chatInstance.initChat()
@@ -195,7 +195,7 @@ import {marked} from 'marked'
           const newChatHist = await ChatHistory.create(this.chatHist.data)
           this.chatHist.id = newChatHist.id
           this.$router.push({ path: `/chat/${newChatHist.id}` });
-          this.$store.commit('getChats')
+          this.$store.getChats()
           return this.chatHist
         
         } else {

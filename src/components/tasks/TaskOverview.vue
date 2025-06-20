@@ -105,7 +105,7 @@ export default {
         },
 
         async updateTask(task, value){
-            await this.$store.commit('updateTask', {
+            await this.$store.updateTask({
                 docID: task.documentId,
                 identity: task.identity,
                 task: {
@@ -134,10 +134,10 @@ export default {
     },
     computed: {
         tasks() {
-            return this.$store.state.tasks
+            return this.$store.tasks
                 .reduce((allTasks, doc) => {
                     const docTasks = doc.tasks.map(task => {
-                        const document = this.$store.state.documents
+                        const document = this.$store.documents
                             .find(d => d.id === doc.docID);
                         
                         return {
