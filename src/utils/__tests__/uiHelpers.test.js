@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createPinia, setActivePinia } from 'pinia'
-import { useMainStore } from '../index.js'
 import { copyToClipboard, debounce, getRandomItem, placeCursorAtEnd } from '../uiHelpers.js'
 
 // Mock the store module
@@ -11,17 +9,14 @@ vi.mock('../../store/index.js', () => ({
 describe('uiHelpers', () => {
   let mockStore
 
-  beforeEach(() => {
-    // Create fresh Pinia instance
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    
+  beforeEach(async () => {
     // Create mock store instance
     mockStore = {
       uiAlert: vi.fn()
     }
     
-    // Mock the useMainStore to return our mock
+    // Get the mocked useMainStore and set it up
+    const { useMainStore } = await import('../../store/index.js')
     vi.mocked(useMainStore).mockReturnValue(mockStore)
   })
 

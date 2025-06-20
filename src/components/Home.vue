@@ -39,10 +39,11 @@
         </v-container>
         <v-container v-else>
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
-            <h1 class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
-            <v-btn @click="createDocument" color="primary">Create Document</v-btn>
+            <h1 v-if="$store.user.uid" class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
+            <v-btn @click="createDocument" :disabled="!$store.user.uid" color="primary">Create Document</v-btn>
           </span>
-          <h1>It's quiet here... add some documents to your favorites</h1>
+          <h1 v-if="$store.user.uid">It's quiet here... add some documents to your favorites</h1>
+          <h1 v-else>you're not logged in :/</h1>
         </v-container>
       </v-main>
     </v-app>

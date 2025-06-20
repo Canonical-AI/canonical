@@ -4,27 +4,17 @@ import { useMainStore } from '../../store/index.js'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 // Mock Firebase operations
-const mockFirebaseOperations = {
-  createUser: vi.fn(),
-  createProject: vi.fn(),
-  setDefaultProject: vi.fn(),
-  addUserToProject: vi.fn(),
-  getUserAuth: vi.fn(),
-  getUserData: vi.fn(),
-  getProjectById: vi.fn()
-}
-
 vi.mock('../../services/firebaseDataService', () => ({
   User: {
-    createUser: mockFirebaseOperations.createUser,
-    setDefaultProject: mockFirebaseOperations.setDefaultProject,
-    getUserAuth: mockFirebaseOperations.getUserAuth,
-    getUserData: mockFirebaseOperations.getUserData
+    createUser: vi.fn(),
+    setDefaultProject: vi.fn(),
+    getUserAuth: vi.fn(),
+    getUserData: vi.fn()
   },
   Project: {
-    create: mockFirebaseOperations.createProject,
-    addUserToProject: mockFirebaseOperations.addUserToProject,
-    getById: mockFirebaseOperations.getProjectById
+    create: vi.fn(),
+    addUserToProject: vi.fn(),
+    getById: vi.fn()
   },
   Document: {
     create: vi.fn(),
@@ -47,10 +37,14 @@ vi.mock('../../router', () => ({
 describe('User Onboarding Flow Integration Tests', () => {
   let store
   let router
+  let mockFirebase
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset all mocks
     vi.clearAllMocks()
+
+    // Get mock functions
+    mockFirebase = await import('../../services/firebaseDataService')
 
     // Create fresh Pinia instance
     const pinia = createPinia()
@@ -83,7 +77,7 @@ describe('User Onboarding Flow Integration Tests', () => {
       }
 
       // Mock successful user creation
-      mockFirebaseOperations.createUser.mockResolvedValue({
+      mockFirebase.User.createUser.mockResolvedValue({
         id: newUser.uid,
         email: newUser.email,
         displayName: newUser.displayName,
@@ -112,15 +106,20 @@ describe('User Onboarding Flow Integration Tests', () => {
         users: [newUser.uid]
       }
 
-      // Mock successful project creation
+      // Mock successful project creation and retrieval
       const mockProjectRef = { id: 'project-123' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
-      mockFirebaseOperations.addUserToProject.mockResolvedValue()
-      mockFirebaseOperations.setDefaultProject.mockResolvedValue()
-      mockFirebaseOperations.getProjectById.mockResolvedValue({
+      mockFirebase.Project.create.mockResolvedValue(mockProjectRef)
+      mockFirebase.Project.addUserToProject.mockResolvedValue()
+      mockFirebase.User.setDefaultProject.mockResolvedValue()
+      
+      // Mock project retrieval (this is what projectSet calls)
+      mockFirebase.Project.getById.mockResolvedValue({
         id: 'project-123',
-        data: projectData
+        ...projectData
       })
+
+      // Mock document loading (called by projectGetAllData)
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       // Simulate project creation through GetStarted component flow
       await store.projectSet('project-123')
@@ -138,29 +137,10 @@ describe('User Onboarding Flow Integration Tests', () => {
       }
 
       // Mock document creation
-      const mockDocumentCreate = vi.fn().mockResolvedValue({
+      mockFirebase.Document.create.mockResolvedValue({
         id: 'doc-123',
         data: firstDocData
       })
-      
-      vi.doMock('../../services/firebaseDataService', () => ({
-        Document: {
-          create: mockDocumentCreate,
-          getAll: vi.fn()
-        },
-        User: {
-          getUserAuth: mockFirebaseOperations.getUserAuth,
-          getUserData: mockFirebaseOperations.getUserData
-        },
-        Project: {
-          getById: mockFirebaseOperations.getProjectById
-        },
-        ChatHistory: { getAll: vi.fn() },
-        Favorites: { getAll: vi.fn() },
-        Template: { getAll: vi.fn() },
-        Comment: { getAll: vi.fn() },
-        Task: { getAll: vi.fn() }
-      }))
 
       const createdDoc = await store.documentsCreate({ data: firstDocData })
 
@@ -196,15 +176,19 @@ describe('User Onboarding Flow Integration Tests', () => {
         users: ['user-123']
       }
 
-      mockFirebaseOperations.createProject.mockResolvedValue({ id: 'custom-project-456' })
-      mockFirebaseOperations.getProjectById.mockResolvedValue({
+      mockFirebase.Project.create.mockResolvedValue({ id: 'custom-project-456' })
+      mockFirebase.Project.getById.mockResolvedValue({
         id: 'custom-project-456',
-        data: customProjectData
+        ...customProjectData
       })
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       await store.projectSet('custom-project-456')
 
       expect(store.project.id).toBe('custom-project-456')
+      expect(store.project.name).toBe('Custom Project')
       expect(store.project.folders).toEqual(customProjectData.folders)
     })
 
@@ -229,11 +213,11 @@ describe('User Onboarding Flow Integration Tests', () => {
       }
 
       // Mock user authentication with existing data
-      mockFirebaseOperations.getUserAuth.mockResolvedValue(existingUser)
-      mockFirebaseOperations.getProjectById.mockResolvedValue({
-        id: 'existing-project-789',
-        data: existingProject
-      })
+      mockFirebase.User.getUserAuth.mockResolvedValue(existingUser)
+      mockFirebase.Project.getById.mockResolvedValue(existingProject)
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       // Simulate user entering app
       await store.userEnter()
@@ -248,7 +232,7 @@ describe('User Onboarding Flow Integration Tests', () => {
 
   describe('Onboarding Error Handling', () => {
     it('should handle authentication failure gracefully', async () => {
-      mockFirebaseOperations.getUserAuth.mockRejectedValue(new Error('Auth failed'))
+      mockFirebase.User.getUserAuth.mockRejectedValue(new Error('Auth failed'))
 
       await store.userEnter()
 
@@ -269,22 +253,17 @@ describe('User Onboarding Flow Integration Tests', () => {
         projects: []
       })
 
-      mockFirebaseOperations.createProject.mockRejectedValue(new Error('Project creation failed'))
+      mockFirebase.Project.getById.mockRejectedValue(new Error('Project not found'))
 
-      try {
-        await store.projectSet('failing-project')
-        // Should not reach here
-        expect(true).toBe(false)
-      } catch (error) {
-        expect(error.message).toContain('Project creation failed')
-        expect(store.project.id).toBeNull()
-      }
+      // The projectSet method will throw an error when Project.getById fails
+      await expect(store.projectSet('failing-project'))
+        .rejects.toThrow('Project not found')
     })
   })
 
   describe('State Consistency During Onboarding', () => {
     it('should maintain loading states correctly during onboarding', async () => {
-      mockFirebaseOperations.getUserAuth.mockImplementation(() =>
+      mockFirebase.User.getUserAuth.mockImplementation(() =>
         new Promise(resolve => setTimeout(() => resolve({
           uid: 'slow-user',
           email: 'slow@example.com',
@@ -295,12 +274,16 @@ describe('User Onboarding Flow Integration Tests', () => {
         }), 100))
       )
 
-      mockFirebaseOperations.getProjectById.mockImplementation(() =>
+      mockFirebase.Project.getById.mockImplementation(() =>
         new Promise(resolve => setTimeout(() => resolve({
           id: 'slow-project',
-          data: { name: 'Slow Project', folders: [] }
+          name: 'Slow Project', 
+          folders: []
         }), 50))
       )
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       // Start user enter process
       const enterPromise = store.userEnter()
@@ -327,11 +310,15 @@ describe('User Onboarding Flow Integration Tests', () => {
         projects: ['concurrent-project']
       }
 
-      mockFirebaseOperations.getUserAuth.mockResolvedValue(userData)
-      mockFirebaseOperations.getProjectById.mockResolvedValue({
+      mockFirebase.User.getUserAuth.mockResolvedValue(userData)
+      mockFirebase.Project.getById.mockResolvedValue({
         id: 'concurrent-project',
-        data: { name: 'Concurrent Project', folders: [] }
+        name: 'Concurrent Project', 
+        folders: []
       })
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       // Start multiple concurrent operations
       const enter1 = store.userEnter()

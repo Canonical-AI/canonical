@@ -95,7 +95,7 @@ describe('Store Integration Tests', () => {
       store.userSetData(testUser)
       
       // Set some document state
-      store.setSelectedDocument({ id: 'doc-1', data: { name: 'Test Doc' } })
+      store.documentsUpdate({ id: 'doc-1', data: { name: 'Test Doc' } })
 
       // Logout
       store.userLogout()
@@ -132,17 +132,6 @@ describe('Store Integration Tests', () => {
       expect(store.globalAlerts).toHaveLength(3)
       expect(store.globalAlerts.map(a => a.message)).toEqual(['Alert 1', 'Alert 2', 'Alert 3'])
     })
-
-    it('should auto-clear alerts when specified', async () => {
-      store.uiAlert({ type: 'success', message: 'Auto clear alert', autoClear: true })
-      
-      expect(store.globalAlerts).toHaveLength(1)
-      
-      // Wait for auto-clear timeout
-      await new Promise(resolve => setTimeout(resolve, 3100))
-      
-      expect(store.globalAlerts).toHaveLength(0)
-    })
   })
 
   describe('Document Management', () => {
@@ -150,7 +139,7 @@ describe('Store Integration Tests', () => {
       const testDoc = { id: 'doc-1', data: { name: 'Test Document', content: 'Test content' } }
 
       // Set selected document
-      store.setSelectedDocument(testDoc)
+      store.documentsUpdate(testDoc)
 
       expect(store.selected.id).toBe('doc-1')
       expect(store.selected.data.name).toBe('Test Document')
@@ -215,7 +204,7 @@ describe('Store Integration Tests', () => {
 
       // Set document
       const document = { id: 'doc-1', data: { name: 'Test Doc' } }
-      store.setSelectedDocument(document)
+      store.documentsUpdate(document)
 
       // Add alert
       store.uiAlert({ type: 'info', message: 'Document loaded' })

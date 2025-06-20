@@ -10,10 +10,10 @@ const getStore = () => useMainStore();
 export async function copyToClipboard(text, successMessage = 'Copied to clipboard!') {
   try {
     await navigator.clipboard.writeText(text)
-    getStore.uiAlert({ type: 'info', message: successMessage })
+    getStore().uiAlert({ type: 'info', message: successMessage })
   } catch (error) {
     console.error('Failed to copy:', error)
-    getStore.uiAlert({ type: 'error', message: 'Failed to copy to clipboard' })
+    getStore().uiAlert({ type: 'error', message: 'Failed to copy to clipboard' })
   }
 }
 

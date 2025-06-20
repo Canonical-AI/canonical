@@ -742,7 +742,7 @@ export default {
               id: this.document.id,
               data: this.document.data
             };
-            this.$store.updateSelectedDocument(documentUpdateData);
+            this.$store.documentsUpdate(documentUpdateData);
           }
         }
 
@@ -762,7 +762,7 @@ export default {
             id: this.document.id,
             data: this.document.data
           };
-          this.$store.updateSelectedDocument(documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          this.$store.documentsUpdate(documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();
@@ -842,7 +842,7 @@ export default {
             this.previousTitle = this.document.data.name;
             this.isEditorModified = false;
             this.isLoading = false;
-            this.$store.setSelectedDocument(this.document);
+            this.$store.documentsUpdate(this.document);
             
             // Ensure DOM is updated
             await this.$nextTick();

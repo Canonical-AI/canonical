@@ -469,6 +469,8 @@ export const useMainStore = defineStore('main', {
       this.selected = { ...this.selected, ...document };
     },
 
+
+
     // Comments Management
     async commentsAdd(comment) {
       if (!this.selected || !this.selected.id) {
@@ -715,17 +717,6 @@ export const useMainStore = defineStore('main', {
     },
 
 
-    setSelectedDocument(document) {
-      this.selected = { ...this.selected, ...document };
-    },
-
-    updateSelectedDocument(payload) {
-      if (payload.id && payload.data) {
-        this.selected = { ...this.selected, id: payload.id, data: { ...this.selected.data, ...payload.data } };
-      } else {
-        this.documentsUpdate(payload);
-      }
-    },
 
     async toggleFavorite(docId) {
       const index = this.favorites.indexOf(docId);
