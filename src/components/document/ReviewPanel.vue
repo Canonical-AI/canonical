@@ -91,7 +91,7 @@
 <script>
 import { marked } from "marked";
 import { Feedback } from "../../services/vertexAiService";
-import { showAlert } from "../../utils/uiHelpers";
+
 
 export default {
   name: "ReviewPanel",
@@ -144,13 +144,13 @@ export default {
         }
       } catch (error) {
         console.error('Error generating feedback:', error);
-        showAlert(this.$store, 'error', 'Failed to generate feedback. Please try again.');
+        this.$store.uiAlert({type: 'error', message: 'Failed to generate feedback. Please try again.'});
       }
     },
 
     async handleReview() {
       if (!this.document?.data?.content || !this.editorRef) {
-        showAlert(this.$store, 'warning', 'No content to review or editor not ready');
+        this.$store.uiAlert({type: 'warning', message: 'No content to review or editor not ready'});
         return;
       }
 
@@ -280,7 +280,7 @@ export default {
 
         // Show combined success message
         if (messages.length > 0) {
-          showAlert(this.$store, 'success', `AI review completed! ${messages.join('. ')}.`);
+          this.$store.uiAlert({type: 'success', message: `AI review completed! ${messages.join('. ')}.`});
         }
 
         // Handle any errors
@@ -288,15 +288,15 @@ export default {
           throw new Error('Both feedback generation and inline review failed');
         } else if (!feedbackSuccess) {
           console.error('Feedback generation failed:', feedbackResult.reason);
-          showAlert(this.$store, 'warning', 'Inline review completed, but overall feedback failed');
+          this.$store.uiAlert({type: 'warning', message: 'Inline review completed, but overall feedback failed'});
         } else if (!inlineSuccess) {
           console.error('Inline review failed:', inlineResult.reason);
-          showAlert(this.$store, 'warning', 'Overall feedback generated, but inline review failed');
+          this.$store.uiAlert({type: 'warning', message: 'Overall feedback generated, but inline review failed'});
         }
 
       } catch (error) {
         console.error('AI review failed:', error);
-        showAlert(this.$store, 'error', `AI review failed: ${error.message || 'Please try again'}`);
+        this.$store.uiAlert({type: 'error', message: `AI review failed: ${error.message || 'Please try again'}`});
       } finally {
         this.isReviewLoading = false;
       }
@@ -308,7 +308,7 @@ export default {
         const aiComments = allComments.filter(comment => comment.aiGenerated === true);
         
         if (aiComments.length === 0) {
-          showAlert(this.$store, 'info', 'No AI comments found to clear');
+          this.$store.uiAlert({type: 'info', message: 'No AI comments found to clear'});
           return;
         }
 
@@ -316,7 +316,7 @@ export default {
         const deletionPromises = aiComments.map(async (comment) => {
           try {
             // Delete from store and database
-            await this.$store.dispatch('deleteComment', comment.id);
+            await this.$store.commentsDelete(comment.id);
             
             // Remove visual marks from editor
             if (this.editorRef) {
@@ -344,16 +344,16 @@ export default {
 
         // Show appropriate message
         if (failedDeletions.length === 0) {
-          showAlert(this.$store, 'success', `${successfulDeletions} AI comment${successfulDeletions > 1 ? 's' : ''} cleared successfully`);
+            this.$store.uiAlert({type: 'success', message: `${successfulDeletions} AI comment${successfulDeletions > 1 ? 's' : ''} cleared successfully`});
         } else if (successfulDeletions === 0) {
-          showAlert(this.$store, 'error', `Failed to clear any AI comments. Please try again.`);
+          this.$store.uiAlert({type: 'error', message: `Failed to clear any AI comments. Please try again.`});
         } else {
-          showAlert(this.$store, 'warning', `${successfulDeletions} comment${successfulDeletions > 1 ? 's' : ''} cleared, ${failedDeletions.length} failed`);
+          this.$store.uiAlert({type: 'warning', message: `${successfulDeletions} comment${successfulDeletions > 1 ? 's' : ''} cleared, ${failedDeletions.length} failed`}); 
         }
         
       } catch (error) {
         console.error('Error clearing AI comments:', error);
-        showAlert(this.$store, 'error', 'Failed to clear AI comments. Please try again.');
+        this.$store.uiAlert({type: 'error', message: 'Failed to clear AI comments. Please try again.'});
       }
     },
 

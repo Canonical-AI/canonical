@@ -156,10 +156,10 @@
         <div ref="bottomElement"></div>
       </v-main>
 
-      <v-snackbar 
-        v-for="alert in alerts.filter(a => a.show === true && a.type === 'info')"
+            <v-snackbar 
+        v-for="alert in infoAlerts"
         class="text-center transition-opacity duration-300 ease-in-out"
-        :key="alert"
+        :key="alert.time || alert.timestamp"
         v-model="alert.show"
         timeout="5000"
         :color='alert.color ? alert.color : "success"' 
@@ -169,11 +169,12 @@
       </v-snackbar>
 
       <div
-        v-for="alert in alerts.filter(a => a.show === true && a.type != 'info').sort((a, b) => a.time - b.time)"
+        v-for="alert in nonInfoAlerts"
+        :key="alert.time || alert.timestamp"
         >
         <v-snackbar
           class="text-center transition-opacity duration-300 ease-in-out snackbar-solid"
-          :key="alert"
+          :key="`snackbar-${alert.time || alert.timestamp}`"
           v-model="alert.show"
           density="compact"
           :color="alert.type || 'error'"
@@ -186,7 +187,7 @@
           <template v-slot:actions>
             <v-btn
               variant="text"
-              @click="alert.show = false"
+              @click="dismissAlert(alert)"
               icon="mdi-close"
             >
             </v-btn>
@@ -267,7 +268,6 @@ export default {
   name: 'App',
   data: () => ({
     toggle_exclusive: 0,
-    alerts:[],
     selection:[],
     items:[],
     filter: '',
@@ -289,10 +289,8 @@ export default {
     return theme
   },
   async mounted() {
-    //await this.$store.commit('enter')
-    this.isNavOpen = !this.$vuetify.display.mobile
-    
 
+    this.isNavOpen = !this.$vuetify.display.mobile
 
     // Add event listeners to track user activity
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
@@ -316,12 +314,7 @@ export default {
     }
   },
   watch: {
-    alerts_: {
-      handler() {
-        this.alerts = this.alerts_;
-      },
-      deep: true,
-    },
+
     '$store.isUserLoggedIn': {
       handler(newValue) {
         if (newValue === true) {
@@ -364,8 +357,14 @@ export default {
     },
   },
   computed:{
-    alerts_(){
+
+    nonInfoAlerts(){
       return this.$store.globalAlerts
+        .filter(a => a.show === true && a.type !== 'info')
+        .sort((a, b) => a.time - b.time);
+    },
+    infoAlerts(){
+      return this.$store.globalAlerts.filter(a => a.show === true && a.type === 'info');
     },
     project(){
       return this.$store.project.id;
@@ -413,10 +412,11 @@ export default {
 
       });
     },
-    tryDemo(){
+    async tryDemo(){
       this.isRegisterDialogOpen = false;
-      this.$store.commit('setProject', import.meta.env.VITE_DEFAULT_PROJECT_ID)
-      this.$store.dispatch('getDocuments')
+      await this.$store.projectSet(import.meta.env.VITE_DEFAULT_PROJECT_ID)
+  
+      await this.$store.documentsGetAll();
 
     },
     startLoginPromptTimer() {
@@ -444,6 +444,9 @@ export default {
         clearTimeout(this.loginPromptTimer);
       }
       this.startLoginPromptTimer();
+    },
+    dismissAlert(alert) {
+      alert.show = false;
     }
   },
   created() {

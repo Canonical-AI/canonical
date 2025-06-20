@@ -190,7 +190,7 @@ export default {
             comment: this.newComment,
             documentVersion: this.currentVersion === 'live' ? null : this.currentVersion
           };
-          this.$store.dispatch('addComment', commentData);
+          this.$store.commentsAdd(commentData);
           this.newComment = '';
         }
       },

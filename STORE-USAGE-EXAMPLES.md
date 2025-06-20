@@ -217,7 +217,7 @@ store.ui.increment()
 - Clean error handling
 
 ### ✅ Organized Structure  
-- Logical grouping: `store.comments.add()` instead of `store.addComment()`
+- Logical grouping: `store.comments.add()` instead of `store.commentsAdd()`
 - Easy to discover related functions
 - Clear separation of concerns
 

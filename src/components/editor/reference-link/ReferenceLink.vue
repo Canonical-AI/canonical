@@ -78,9 +78,9 @@ export default {
             try {
                 console.log(parent.data.content)
               //  const createdDoc = await Document.create(doc);
-                const createdDoc = await this.$store.dispatch('createDocument', { data: doc, select : false})
+                const createdDoc = await this.$store.documentsCreate({ data: doc, select : false})
                 const updatedText = parent.data.content.replace(`src="${this.documentName}"`, `src="${createdDoc.id}"`); // replace the old link with the new link
-                await this.$store.commit('updateSelectedDocument', {id: parent.id, data: {content: updatedText}})
+                await this.$store.updateSelectedDocument({id: parent.id, data: {content: updatedText}})
                 this.$router.push('/document/' + createdDoc.id)
             } catch (error) {
                 console.log(error)

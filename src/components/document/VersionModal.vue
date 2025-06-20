@@ -175,11 +175,11 @@ export default {
         async createVersion() {
             if (this.newVersion === 'live') {
                 console.warn('cannont name version live');
-                this.$store.commit('alert', {type: 'error', message: 'Cannot name version live', autoClear: true});
+                this.$store.uiAlert({type: 'error', message: 'Cannot name version live', autoClear: true});
                 return;
             }
                 
-            await this.$store.dispatch('createVersion', this.newVersion);
+            await this.$store.createVersion(this.newVersion);
             this.$router.push({ query: { v: this.newVersion }});
             this.creatingVersion = false;
             this.newVersion = '';
@@ -187,7 +187,7 @@ export default {
         },
 
         async deleteVersion() {
-            await this.$store.dispatch('deleteVersion', this.selectedVersion);
+            await this.$store.deleteVersion(this.selectedVersion);
             this.creatingVersion = false;
             this.newVersion = '';
             this.open = false;
@@ -196,7 +196,7 @@ export default {
         },
 
         async toggleDraft() {
-            await this.$store.dispatch('toggleVersionReleased', { versionNumber: this.currentVersion, released: !this.versionReleasedStatus });
+            await this.$store.toggleVersionReleased({ versionNumber: this.currentVersion, released: !this.versionReleasedStatus });
         },
     }
 }

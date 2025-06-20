@@ -105,7 +105,7 @@ export default {
         },
 
         async updateTask(task, value){
-            await this.$store.commit('updateTask', {
+            await this.$store.updateTask({
                 docID: task.documentId,
                 identity: task.identity,
                 task: {

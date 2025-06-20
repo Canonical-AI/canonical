@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import router from '../router'
-import {User, Document, Template, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
+import {User, Document, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 
 function filterHelper(list, filter) {
   return [...list].filter(function(item) {
@@ -55,6 +55,7 @@ export const useMainStore = defineStore('main', {
     },
     selected: {
       id: null,
+      data: {},
       version: null,
       comments: [],
       versions: [],
@@ -162,30 +163,24 @@ export const useMainStore = defineStore('main', {
     async userEnter() {
       this.loadingUser = true;
       try {
-        console.log('Starting user authentication...');
         const user = await User.getUserAuth();
         
         if (user) {
-          console.log('User authenticated:', user.email);
+
           // WAIT for user data to be set before continuing
           this.userSetData(user);
-          console.log('User data set in store, user.uid:', this.user.uid);
-          
+
           // WAIT for project to be set before continuing
           if (user.defaultProject) {
-            console.log('Setting default project:', user.defaultProject);
             await this.projectSet(user.defaultProject);
-            console.log('Project set complete');
           }
         } else {
           console.log('No user authenticated');
         }
       } catch (error) {
-        console.error('Error in userEnter:', error);
         this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
       } finally {
         this.loadingUser = false;
-        console.log('User authentication flow complete');
       }
     },
 
@@ -214,6 +209,7 @@ export const useMainStore = defineStore('main', {
       this.documents = [];
       this.selected = {
         id: null,
+        data: {},
         version: null,
         comments: [],
         versions: [],
@@ -261,7 +257,7 @@ export const useMainStore = defineStore('main', {
     },
 
     async projectGetAllData() {
-      console.log('Starting projectGetAllData, user.uid:', this.user.uid);
+
       
       // Double check user is logged in before proceeding
       if (!this.isUserLoggedIn || !this.user.uid) {
@@ -269,32 +265,42 @@ export const useMainStore = defineStore('main', {
         return;
       }
 
-      console.log('Loading project data...');
-      
-      // Load projects
-      this.projects = await Promise.all(
-        this.user.projects.map(projectId => Project.getById(projectId))
-      );
-      console.log('Projects loaded:', this.projects.length);
-      
-      // Load documents  
-      this.documents = await Document.getAll();
-      console.log('Documents loaded:', this.documents.length);
-
-      // Load user-specific data only if confirmed logged in
-      if (this.isUserLoggedIn && this.user.uid) {
-        console.log('Loading user-specific data...');
-        this.tasks = await Task.getAll();
-        console.log('Tasks loaded:', this.tasks.length);
-        
-        this.chats = await ChatHistory.getAll();
-        console.log('Chats loaded:', this.chats.length);
-        
-        this.favorites = await Favorites.getAll();
-        console.log('Favorites loaded:', this.favorites.length);
+      // Check if project is set before proceeding
+      if (!this.project || !this.project.id) {
+        console.warn('No project set, skipping project data load');
+        return;
       }
+
       
-      console.log('Project data loading complete');
+      try {
+        // Load projects (with safety check for user.projects)
+        if (this.user.projects && this.user.projects.length > 0) {
+          this.projects = await Promise.all(
+            this.user.projects.map(projectId => Project.getById(projectId))
+          );
+        }
+        
+        // Load documents (already has safety checks in Document.getAll)
+        this.documents = await Document.getAll();
+        console.log('Documents loaded:', this.documents.length);
+
+        // Load user-specific data only if confirmed logged in
+        if (this.isUserLoggedIn && this.user.uid) {
+          
+          // These methods already have their own safety checks
+          this.tasks = await Task.getAll();         
+          this.chats = await ChatHistory.getAll();
+          this.favorites = await Favorites.getAll();
+        }
+
+      } catch (error) {
+        console.error('Error loading project data:', error);
+        this.uiAlert({
+          type: 'error',
+          message: 'Failed to load project data. Please try refreshing the page.',
+          autoClear: true
+        });
+      }
     },
 
     // Document Management
@@ -314,7 +320,16 @@ export const useMainStore = defineStore('main', {
     },
 
     async documentsSelect({ id, version = null }) {
-      this.selected = { ...this.selected, isLoading: true };
+      // Initialize selected with safe defaults
+      this.selected = { 
+        id: null,
+        data: {},
+        comments: [],
+        versions: [],
+        isVersion: false,
+        currentVersion: 'live',
+        isLoading: true 
+      };
 
       try {
         let selectedData;
@@ -333,26 +348,88 @@ export const useMainStore = defineStore('main', {
           selectedData = await Document.getDocById(id);
         }
 
+        // Ensure selectedData has the required structure
+        if (!selectedData || !selectedData.id) {
+          throw new Error(`Failed to load document with ID: ${id}`);
+        }
+
+        // Ensure data property exists
+        if (!selectedData.data) {
+          selectedData.data = {};
+        }
+
+        // Ensure comments array exists
+        if (!selectedData.comments) {
+          selectedData.comments = [];
+        }
+
         selectedData.isLoading = false;
-        this.selected = selectedData;
+        this.selected = {
+          ...selectedData,
+          currentVersion: version || 'live',
+          isVersion: !!version
+        };
+        
+        // Check document versions status after selecting
+        await this.documentsCheckVersionsStatus({ id: this.selected.id });
+        
+        return this.selected;
       } catch (error) {
-        this.selected.isLoading = false;
+        this.selected = {
+          id: null,
+          data: {},
+          comments: [],
+          versions: [],
+          isVersion: false,
+          currentVersion: 'live',
+          isLoading: false
+        };
+        console.error('Error selecting document:', error);
         throw error;
       }
     },
 
     async documentsCheckVersionsStatus({ id }) {
       try {
-        const versions = await Document.getDocVersions(id);
-        const hasReleasedVersions = versions.some(version => version.released);
-        const docIndex = this.documents.findIndex(doc => doc.id === id);
+        const releasedVersions = this.selected.versions.filter(version => version?.released === true).map(version => version.versionNumber);
+        const currentReleasedVersions = this.selected.data.releasedVersion || [];
+
+        // Compare arrays by value using JSON.stringify (with sorting for consistent comparison)
+        const releasedVersionsSorted = [...releasedVersions].sort();
+        const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
+        const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
         
-        if (docIndex !== -1) {
-          this.documents[docIndex].data.hasReleasedVersions = hasReleasedVersions;
-        }
-        
-        if (this.selected.id === id) {
-          this.selected.data.hasReleasedVersions = hasReleasedVersions;
+        if (!arraysAreEqual || (this.selected.data.draft === true && this.selected.data.releasedVersion && this.selected.data.releasedVersion.length > 0)) {
+          await Document.updateDocField(id, 'releasedVersion', releasedVersions);
+          await Document.updateDocField(id, 'draft', false);
+          
+          // Update the local state immediately
+          this.selected.data = {
+            ...this.selected.data,
+            releasedVersion: releasedVersions,
+            draft: false
+          };
+          
+          // Update the document in the documents array to reflect changes
+          const docIndex = this.documents.findIndex(doc => doc.id === id);
+          if (docIndex !== -1) {
+            this.documents[docIndex].data = {
+              ...this.documents[docIndex].data,
+              releasedVersion: releasedVersions,
+              draft: false
+            };
+          }
+        } else if (this.selected.data.draft === false && (!this.selected.data.releasedVersion || this.selected.data.releasedVersion.length === 0)) {
+          // This is something to protect backwards compatibility, before version releases were implemented
+          console.log('setting draft to true');
+          await Document.updateDocField(id, 'releasedVersion', []);
+          await Document.updateDocField(id, 'draft', true);
+          
+          this.selected.data = {
+            ...this.selected.data,
+            releasedVersion: [],
+            draft: true
+          };
         }
       } catch (error) {
         console.error('Error checking document versions status:', error);
@@ -370,16 +447,22 @@ export const useMainStore = defineStore('main', {
     },
 
     async documentsSave() {
+      // Safety checks to prevent undefined errors
+      if (!this.selected || !this.selected.id || !this.selected.data) {
+        console.error('Cannot save document: selected document is invalid', this.selected);
+        throw new Error('Cannot save document: selected document is invalid');
+      }
+
       const updatedDoc = await Document.updateDoc(this.selected.id, this.selected.data);
       
       const docIndex = this.documents.findIndex(doc => doc.id === this.selected.id);
       if (docIndex !== -1) {
-        this.documents[docIndex] = { id: this.selected.id, data: updatedDoc.data };
+        this.documents[docIndex] = { id: this.selected.id, data: this.selected.data };
       }
       
-      this.selected = { ...this.selected, ...updatedDoc };
+      this.selected = { ...this.selected, data: this.selected.data };
       
-      return updatedDoc;
+      return { id: this.selected.id, data: this.selected.data };
     },
 
     documentsUpdate(document) {
@@ -388,6 +471,13 @@ export const useMainStore = defineStore('main', {
 
     // Comments Management
     async commentsAdd(comment) {
+      if (!this.selected || !this.selected.id) {
+        throw new Error('No document selected');
+      }
+      if (!this.selected.comments) {
+        this.selected.comments = [];
+      }
+      
       const newComment = await Document.createComment(this.selected.id, comment);
       newComment.createDate = { seconds: Math.floor(Date.now() / 1000) };
       this.selected.comments.push(newComment);
@@ -395,6 +485,13 @@ export const useMainStore = defineStore('main', {
     },
 
     async commentsAddReply({ parentId, comment }) {
+      if (!this.selected || !this.selected.id) {
+        throw new Error('No document selected');
+      }
+      if (!this.selected.comments) {
+        this.selected.comments = [];
+      }
+      
       const replyData = {
         ...comment,
         parentId: parentId
@@ -435,12 +532,30 @@ export const useMainStore = defineStore('main', {
 
     // UI Management
     uiAlert(payload) {
-      this.globalAlerts.push({
+      const alert = {
         type: payload.type,
         message: payload.message,
         autoClear: payload.autoClear,
-        timestamp: Date.now()
-      });
+        timestamp: Date.now(),
+        time: Date.now(),
+        show: true
+      };
+      
+      this.globalAlerts.push(alert);
+      
+      // Auto-clear alerts if autoClear is true
+      if (payload.autoClear) {
+        setTimeout(() => {
+          const index = this.globalAlerts.indexOf(alert);
+          if (index > -1) {
+            alert.show = false;
+            // Remove after fade out
+            setTimeout(() => {
+              this.globalAlerts.splice(index, 1);
+            }, 1000);
+          }
+        }, 5000);
+      }
     },
 
     uiFilter(payload) {
@@ -460,7 +575,7 @@ export const useMainStore = defineStore('main', {
     },
 
     // Folder Management
-    foldersUpdate({docId, target, action}) {
+    async foldersUpdate({docId, target, action}) {
       const sourceFolder = this.project.folders.find(folder => 
         folder.children.includes(docId)
       );
@@ -473,21 +588,25 @@ export const useMainStore = defineStore('main', {
           targetFolder.children.push(docId);
         }
       }
+      await Project.updatefield(this.project.id, 'folders', this.project.folders);
     },
 
-    foldersAdd(folderName) {
+    async foldersAdd(folderName) {
       this.project.folders.push({
         name: folderName,
         children: [],
         isOpen: true
       });
+      await Project.updatefield(this.project.id, 'folders', this.project.folders);
+      this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
     },
 
-    foldersRemove(folderName) {
+    async foldersRemove(folderName) {
       this.project.folders = this.project.folders.filter(folder => folder.name !== folderName);
+      await Project.updatefield(this.project.id, 'folders', this.project.folders);
     },
 
-    foldersRename({toFolderName, fromFolderName}) {
+    async foldersRename({toFolderName, fromFolderName}) {
       const folder = this.project.folders.find(folder => folder.name === fromFolderName);
       if (folder) {
         folder.name = toFolderName;
@@ -499,6 +618,140 @@ export const useMainStore = defineStore('main', {
       if (folder) {
         folder.isOpen = isOpen;
       }
+
+      const folderStatus = {
+        projectId: this.project.id,
+        folders: this.project.folders.map(folder => ({
+          name: folder.name,
+          isOpen: folder.isOpen
+        }))
+      };
+
+      document.cookie = `folderStatus=${encodeURIComponent(JSON.stringify(folderStatus))}; path=/;`;  
+    },
+
+    async createVersion(newVersion) {
+      await Document.createVersion(this.selected.id, this.selected.data, newVersion);
+      
+      // Update the versions array in the selected document
+      if (!this.selected.versions) {
+        this.selected.versions = [];
+      }
+      this.selected.versions.push(newVersion);
+      
+      return newVersion;
+    },
+
+    async deleteVersion(selectedVersion) {
+      await Document.deleteVersion(this.selected.id, selectedVersion);
+      
+      // Update the versions array in the selected document
+      if (this.selected.versions) {
+        this.selected.versions = this.selected.versions.filter(version => version !== selectedVersion);
+      }
+      
+      return selectedVersion;
+    },
+
+    async toggleVersionReleased({ versionNumber, released }) {
+      await Document.toggleVersionReleased(this.selected.id, versionNumber, released);
+      
+      // Update the versions array in the selected document
+      if (this.selected.versions) {
+        this.selected.versions = this.selected.versions.map(version => 
+          version.versionNumber === versionNumber ? { 
+            ...version, released: released
+          } : version
+        );
+      }
+      
+      // Check document versions status after toggle
+      await this.documentsCheckVersionsStatus({ id: this.selected.id });
+      
+      return { versionNumber, released };
+    },
+
+    async renameChat(payload) {
+      // Chat renaming implementation
+      const result = await ChatHistory.updateChatField(payload.id, 'name', payload.newName);
+      const chatIndex = this.chats.findIndex(chat => chat.id === payload.id);
+      if (chatIndex !== -1) {
+        this.chats[chatIndex].data.name = payload.newName;
+      }
+      return result;
+    },
+
+    async updateTask(payload) {
+      const result = await Task.updateTask(payload.docID, payload.identity, payload.task);
+      
+      // Find the document containing the task
+      const docIndex = this.tasks.findIndex(doc => doc.docID === payload.docID);
+      if (docIndex !== -1) {
+        // Update the specific task within the document's tasks array
+        const updatedTasks = this.tasks[docIndex].tasks.map(t => 
+          t.identity === payload.identity 
+            ? payload.task 
+            : t
+        );
+        this.tasks[docIndex] = { ...this.tasks[docIndex], tasks: updatedTasks };
+      }
+      return result;
+    },
+
+    async updateMarkedUpContent({ docID, versionContent, versionNumber }) {
+      if (this.selected.id === null || this.selected.currentVersion === 'live') { 
+        return; 
+      }
+      
+      await Document.updateMarkedUpContent(docID, versionContent, versionNumber);
+      
+      // Update the content in the selected document if we're viewing this document
+      if (this.selected.id === docID) {
+        this.selected.data = { 
+          ...this.selected.data, 
+          content: versionContent 
+        };
+      }
+    },
+
+
+    setSelectedDocument(document) {
+      this.selected = { ...this.selected, ...document };
+    },
+
+    updateSelectedDocument(payload) {
+      if (payload.id && payload.data) {
+        this.selected = { ...this.selected, id: payload.id, data: { ...this.selected.data, ...payload.data } };
+      } else {
+        this.documentsUpdate(payload);
+      }
+    },
+
+    async toggleFavorite(docId) {
+      const index = this.favorites.indexOf(docId);
+      let newFavorites;
+      if (index > -1) {
+        this.favorites.splice(index, 1);
+        newFavorites = [...this.favorites];
+      } else {
+        this.favorites.push(docId);
+        newFavorites = [...this.favorites];
+      }
+      await Favorites.updateFavorites(newFavorites);
+    },
+
+    async getChats() {
+      this.chats = await ChatHistory.getAll()
+    },
+
+    async deleteChat(id) {
+      this.chats = this.chats.filter(chat => chat.id !== id);
+      await ChatHistory.deleteChat(id);
+    },
+
+    async archiveChat(id) {
+      this.chats = this.chats.filter(chat => chat.id !== id);
+      await ChatHistory.archiveChat(id);
     }
   }
 })

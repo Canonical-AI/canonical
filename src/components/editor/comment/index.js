@@ -90,7 +90,7 @@ export const addComment = async (editorView, textToMark, commentContent, startPo
   };
 
   try {
-    const comment = await useMainStore().comments.add( commentData);
+    const comment = await useMainStore().commentsAdd( commentData);
 
     // Try to add the comment mark to text, but don't fail if it doesn't work
     if (textToMark || startPos !== null) {
@@ -285,7 +285,7 @@ function normalizeText(text) {
 
 export async function resolveComment(editorView, commentId) {
   try{
-    await useMainStore().comments.updateData( {
+    await useMainStore().commentsUpdateData( {
       id: commentId,
       data: { resolved: true }
     });
@@ -295,21 +295,21 @@ export async function resolveComment(editorView, commentId) {
 
     updateCommentMarkResolved(editorView, commentId, true);
 
-    useMainStore().ui.alert( {
+    useMainStore().uiAlert( {
         type: 'success',
         message: 'Comment resolved',
         autoClear: true
     });
     return true;
   } catch (error) {
-    console.error('resolveComment: Error updating comment mark:', error);
+    console.warn('resolveComment: Error updating comment mark:', error);
     return false;
   }
 }
 
 export async function unresolveComment(editorView, commentId) {
   try{
-    await useMainStore().comments.updateData( {
+    await useMainStore().commentsUpdateData( {
       id: commentId,
       data: { resolved: false }
     });
@@ -319,24 +319,24 @@ export async function unresolveComment(editorView, commentId) {
 
     updateCommentMarkResolved(editorView, commentId, false);
 
-    useMainStore().ui.alert( {
+    useMainStore().uiAlert( {
         type: 'success',
         message: 'Comment unresolved',
         autoClear: true
     });
     return true;
   } catch (error) {
-    console.error('unresolveComment: Error updating comment mark:', error);
+    console.warn('unresolveComment: Error updating comment mark:', error);
     return false;
   }
 }
 
 export async function deleteComment(editorView, commentId) {
   try{
-    await useMainStore().comments.delete( commentId);
+    await useMainStore().commentsDelete( commentId);
     await new Promise(resolve => setTimeout(resolve, 100));
     removeCommentMarkById(editorView, commentId);
-    useMainStore().ui.alert( {
+    useMainStore().uiAlert( {
       type: 'success',
       message: 'Comment deleted',
       autoClear: true

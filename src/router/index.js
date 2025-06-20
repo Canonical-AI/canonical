@@ -17,7 +17,7 @@ async function checkAuth(to, from, next) {
   const store = useMainStore();
 
   if(!store.isUserLoggedIn){
-    await store.user.enter()
+    await store.userEnter()
   }
 
   if (store.isUserLoggedIn) {

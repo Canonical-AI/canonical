@@ -128,7 +128,7 @@ export default {
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
         }
-        await store.dispatch('enter');
+        await store.userEnter();
         email.value = '';
         password.value = '';
         router.push('/');
@@ -140,8 +140,8 @@ export default {
     const handleSignOut = async () => {
       try {
         await signOut(auth);
-        store.commit('logout');
-        store.commit('alert', { type: 'info', message: 'Logged out successfully', autoClear: true });
+        store.userLogout();
+        store.uiAlert({ type: 'info', message: 'Logged out successfully', autoClear: true });
       } catch (err) {
         error.value = err.message;
       }
@@ -162,7 +162,7 @@ export default {
         await signInWithPopup(auth, authProvider).then(
           (userCred) => {
             console.log(userCred);
-            store.dispatch('enter');
+            store.userEnter();
             router.push('/');
           }
         );

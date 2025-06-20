@@ -84,7 +84,7 @@ const systemPrompts = {
 function checkUserPermission() {
     if (!useMainStore().user.uid || (useMainStore().user.tier !== 'pro' && useMainStore().user.tier !== 'trial')) {
         // TODO: we're going to bulk swap users from tial to free
-        useMainStore().ui.alert( { type: 'error', message: 'Cannot proceed: Not a Pro User', autoClear: true });
+        useMainStore().uiAlert( { type: 'error', message: 'Cannot proceed: Not a Pro User', autoClear: true });
         throw new Error('Cannot proceed: not logged in');
     }
     return true
@@ -243,7 +243,7 @@ export class Feedback {
         };
 
         console.log('Creating comment with data:', commentData);
-        const createdComment = await useMainStore().comments.add( commentData);
+        const createdComment = await useMainStore().commentsAdd( commentData);
         console.log('Comment created, returned:', createdComment);
         return createdComment;
     }
@@ -452,7 +452,7 @@ export class Chat {
 
     async initChat(history = null) {
         if (useMainStore().project.id === null) {
-            await useMainStore().user.enter();
+            await useMainStore().userEnter();
         }
 
         checkUserPermission();
@@ -461,7 +461,7 @@ export class Chat {
 
 
         if (useMainStore().documents.length === 0) {
-            documents = `{'documents': ${JSON.stringify(await useMainStore().documents.getAll())}}`; // Ensure this is awaited
+            documents = `{'documents': ${JSON.stringify(await useMainStore().documentsGetAll())}}`; // Ensure this is awaited
         } else {
             documents = `{'documents': ${JSON.stringify(useMainStore().documents)}}`; // Get documents
         }

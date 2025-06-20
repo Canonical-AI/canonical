@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createStore } from 'vuex'
+import { createPinia, setActivePinia } from 'pinia'
+import { useMainStore } from '../../store/index.js'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginPrompt from '../LoginPrompt.vue'
 
@@ -16,6 +17,28 @@ vi.mock('firebase/auth', () => ({
   signInWithPopup: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   signInWithEmailAndPassword: vi.fn()
+}))
+
+// Mock Firebase services used by store
+vi.mock('../../services/firebaseDataService', () => ({
+  User: {
+    getUserAuth: vi.fn(),
+    getUserData: vi.fn()
+  },
+  Document: { getAll: vi.fn() },
+  Project: { getById: vi.fn() },
+  ChatHistory: { getAll: vi.fn() },
+  Favorites: { getAll: vi.fn() },
+  Template: { getAll: vi.fn() },
+  Comment: { getAll: vi.fn() },
+  Task: { getAll: vi.fn() }
+}))
+
+// Mock router
+vi.mock('../../router', () => ({
+  default: {
+    push: vi.fn()
+  }
 }))
 
 // Mock Vuetify components for simpler testing
@@ -48,18 +71,15 @@ describe('LoginPrompt', () => {
   let store
   let router
   let wrapper
+  let pinia
 
   beforeEach(() => {
-    // Create mock store
-    store = createStore({
-      getters: {
-        isLoggedIn: () => false,
-        isUserLoggedIn: () => false
-      },
-      actions: {
-        enter: vi.fn()
-      }
-    })
+    // Create fresh Pinia instance
+    pinia = createPinia()
+    setActivePinia(pinia)
+    
+    // Get the store instance
+    store = useMainStore()
 
     // Create mock router
     router = createRouter({
@@ -77,7 +97,7 @@ describe('LoginPrompt', () => {
   const createWrapper = (props = {}) => {
     return mount(LoginPrompt, {
       global: {
-        plugins: [store, router],
+        plugins: [pinia, router],
         components: mockVuetifyComponents
       },
       props
@@ -104,6 +124,23 @@ describe('LoginPrompt', () => {
       wrapper = createWrapper()
       
       expect(wrapper.text()).toContain('Remind me later')
+    })
+
+    it('should not show dialog when user is logged in', () => {
+      // Set user as logged in
+      store.userSetData({
+        uid: 'test-user',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
+      })
+
+      wrapper = createWrapper()
+      
+      // Dialog should not be visible when user is logged in
+      expect(store.isUserLoggedIn).toBe(true)
     })
   })
 
@@ -194,24 +231,73 @@ describe('LoginPrompt', () => {
 
   describe('Store Integration', () => {
     it('should check login status from store', () => {
-      const mockStore = createStore({
-        getters: {
-          isLoggedIn: () => true,
-          isUserLoggedIn: () => true
-        }
-      })
+      // Initially not logged in
+      expect(store.isUserLoggedIn).toBe(false)
+      
+      wrapper = createWrapper()
+      
+      // Component should render for non-logged-in users
+      expect(wrapper.text()).toContain('Sign in to Canonical')
+    })
 
-      wrapper = mount(LoginPrompt, {
-        global: {
-          plugins: [mockStore, router],
-          components: mockVuetifyComponents
-        }
-      })
+    it('should integrate with store user authentication', async () => {
+      wrapper = createWrapper()
+      
+      // Mock successful authentication
+      const mockUserData = {
+        uid: 'test-123',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
+      }
 
-      // Component should have access to store getters
-      // Check the store directly
-      expect(mockstore.isLoggedIn).toBe(true)
-      expect(mockstore.isUserLoggedIn).toBe(true)
+      // Simulate successful login through store
+      store.userSetData(mockUserData)
+
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.uid).toBe('test-123')
+      expect(store.user.email).toBe('test@example.com')
+    })
+  })
+
+  describe('Component State Management', () => {
+    it('should manage dialog visibility correctly', () => {
+      wrapper = createWrapper()
+      
+      // Dialog should be visible for non-authenticated users
+      expect(store.isUserLoggedIn).toBe(false)
+      
+      // Login user
+      store.userSetData({
+        uid: 'test-user',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
+      })
+      
+      // Should now be logged in
+      expect(store.isUserLoggedIn).toBe(true)
+    })
+
+    it('should handle localStorage dismissal state', () => {
+      const mockLocalStorage = {
+        getItem: vi.fn().mockReturnValue('true'),
+        setItem: vi.fn()
+      }
+      
+      Object.defineProperty(global, 'localStorage', {
+        value: mockLocalStorage,
+        writable: true
+      })
+      
+      wrapper = createWrapper()
+      
+      // Should check localStorage for dismissal state
+      expect(mockLocalStorage.getItem).toHaveBeenCalledWith('loginPromptDismissed')
     })
   })
 }) 

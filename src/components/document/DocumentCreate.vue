@@ -22,13 +22,6 @@
             </v-btn>
           </template>
           <v-list class="border border-surface-light" density="compact">
-            <v-list-item
-              @click="toggleDraft()"
-              prepend-icon="mdi-file-edit"
-              :class="document.data.draft ? 'text-orange' : ''"
-            >
-              {{ document.data.draft ? "Release doc" : "Stage doc" }}
-            </v-list-item>
             <v-list-item @click="archiveDocument" prepend-icon="mdi-archive">
               Archive doc
             </v-list-item>
@@ -465,7 +458,7 @@ export default {
       }
       
       try {
-        const result = await this.$store.dispatch("selectDocument", { id, version });
+        const result = await this.$store.documentsSelect({ id, version });
         if (result === null) {
           this.isLoading = false;
           return;
@@ -476,7 +469,7 @@ export default {
         if (!selectedDocument || !selectedDocument.data) {
           console.error("Failed to load document or document data is missing");
           this.isLoading = false;
-          this.$store.commit("alert", { 
+          this.$store.uiAlert({ 
             type: "error", 
             message: "Unable to load document. It may have been deleted or you don't have permission." 
           });
@@ -507,7 +500,7 @@ export default {
 
       } catch (error) {
         console.error("Error fetching document:", error);
-        this.$store.commit("alert", { 
+        this.$store.uiAlert({ 
           type: "error", 
           message: "An error occurred while loading the document. Please try again." 
         });
@@ -535,12 +528,12 @@ export default {
     async createDocument() {
       console.log("create-doc");
       this.isCreatingDocument = true;
-      const createdDoc = await this.$store.dispatch("createDocument", {
+      const createdDoc = await this.$store.documentsCreate({
         data: this.document.data,
       });
       this.document.id = createdDoc.id;
       this.document.data.id = createdDoc.id;
-      this.$store.commit("setSelectedDocument", this.document);
+      this.$store.setSelectedDocument(this.document);
       
       await this.$router.replace({ path: `/document/${this.document.id}` });
       this.isCreatingDocument = false;
@@ -554,55 +547,12 @@ export default {
       if (this.document.id === null) {
         await this.createDocument();
       } else {
-        await this.$store.commit("saveSelectedDocument");
+        await this.$store.documentsSave();
       }
 
       this.isEditorModified = false;
     },
 
-    async populateTemplate(type) {
-      this.isLoading = true;
-      await this.$store.dispatch("getTemplates");
-      this.documentTemplate = await this.$store.templates.find(
-        (t) => t.name === type,
-      );
-
-      if (this.documentTemplate) {
-        const newData = {
-          id: null,
-          data: {
-            content: this.documentTemplate.content,
-            name: `[DRAFT] - My New ${this.document.data.type}...`,
-            type: type,
-            relationships: [],
-          },
-        };
-        // this.document.data = newData
-        this.previousType = newData.data.type;
-        this.previousTitle = newData.data.name;
-        this.previousContent = newData.data.content;
-        Object.assign(this.document, newData);
-      } else {
-        const newData = {
-          id: null,
-          data: {
-            content: "Hello, **World**",
-            name: `[DRAFT] - My new doc...`,
-            type: type,
-            relationships: [],
-          },
-        };
-        // this.document.data = newData
-        this.previousType = newData.data.type;
-        this.previousTitle = newData.data.name;
-        this.previousContent = newData.data.content;
-        Object.assign(this.document, newData);
-        this.$router.push({ query: { ...this.$route.query, type: type } });
-      }
-      this.isEditorModified = false;
-      await this.$nextTick();
-      this.isLoading = false;
-    },
 
     async getDocumentName(name, id) {
       const document = this.$store.documents.find((doc) => doc.id === id);
@@ -611,14 +561,14 @@ export default {
     },
 
     async deleteDocument() {
-      await this.$store.dispatch("deleteDocument", { id: this.document.id });
-      this.$store.dispatch("getDocuments");
+      await this.$store.documentsDelete({ id: this.document.id });
+      this.$store.documentsGetAll();
       this.$router.push({ path: `/document/create-document` });
     },
 
     async archiveDocument() {
-      await this.$store.dispatch("archiveDocument", { id: this.document.id });
-      this.$store.dispatch("getDocuments");
+      await this.$store.documentsArchive({ id: this.document.id });
+      this.$store.documentsGetAll();
       this.$router.push({ path: `/document/create-document` });
     },
 
@@ -641,7 +591,7 @@ export default {
     },
 
     toggleFavorite() {
-      this.$store.commit("toggleFavorite", this.document.id);
+      this.$store.toggleFavorite(this.document.id);
       this.isFavorite = !this.isFavorite;
     },
 
@@ -661,12 +611,6 @@ export default {
         this.document.data.name = event.target.value;
         this.isEditorModified = true;
       }
-    },
-
-    async toggleDraft() {
-      await this.$store.dispatch("toggleDraft");
-      // Force update of documents list to reflect the change in tree
-      await this.$store.dispatch("getDocuments");
     },
 
 
@@ -725,7 +669,7 @@ export default {
         
         this.showTemplateInput = false;
         
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'success', 
           message: 'Template generated successfully!', 
           autoClear: true 
@@ -733,7 +677,7 @@ export default {
         
       } catch (error) {
         console.error('Error generating template:', error);
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: 'Failed to generate template. Please try again.', 
           autoClear: true 
@@ -798,7 +742,7 @@ export default {
               id: this.document.id,
               data: this.document.data
             };
-            this.$store.commit("updateSelectedDocument", documentUpdateData);
+            this.$store.updateSelectedDocument(documentUpdateData);
           }
         }
 
@@ -818,7 +762,7 @@ export default {
             id: this.document.id,
             data: this.document.data
           };
-          this.$store.commit("updateSelectedDocument", documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
+          this.$store.updateSelectedDocument(documentUpdateData); // alway save current edditor content to store but not to database yet. might even be able to get this with cookies so if you close the browser your data is saved
           
           if (this.debounceSave) {
             await this.debounceSave();
@@ -898,7 +842,7 @@ export default {
             this.previousTitle = this.document.data.name;
             this.isEditorModified = false;
             this.isLoading = false;
-            this.$store.commit('setSelectedDocument', this.document);
+            this.$store.setSelectedDocument(this.document);
             
             // Ensure DOM is updated
             await this.$nextTick();

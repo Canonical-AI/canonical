@@ -475,7 +475,7 @@ export default {
                     const currentMarkdown = this.getCurrentMarkdown();
                     
                     if (currentMarkdown) {
-                        this.$store.dispatch('updateMarkedUpContent', {
+                        this.$store.updateMarkedUpContent({
                             docID: this.$store.selected.id,
                             versionContent: currentMarkdown,
                             versionNumber: this.$store.selected.currentVersion
@@ -687,7 +687,7 @@ export default {
                 }
 
                 if (this.$store.selected.currentVersion !== 'live' && !this.loading) {
-                    this.$store.dispatch('updateMarkedUpContent', {
+                    this.$store.updateMarkedUpContent({
                         docID: this.$store.selected.id, 
                         versionContent: this.$store.selected.data.content, 
                         versionNumber: this.$store.selected.currentVersion});

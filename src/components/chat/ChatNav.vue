@@ -87,10 +87,10 @@ export default {
       this.$router.push({ path: `/chat/${chatId}` });
     },
     deleteChat(id) {
-      this.$store.commit('deleteChat', id);
+      this.$store.deleteChat(id);
     },
     archiveChat(id) {
-      this.$store.commit('archiveChat', id);
+      this.$store.archiveChat(id);
     },
     startRenameChat(chat){
       chat.renaming = true;
@@ -102,7 +102,7 @@ export default {
       });
     },
     async renameChat(chat, newName){
-      await this.$store.dispatch('renameChat', {id:chat.id, newName:newName})
+      await this.$store.renameChat({id:chat.id, newName:newName})
       chat.renaming = false
       return
     },

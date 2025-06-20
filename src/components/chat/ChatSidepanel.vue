@@ -181,7 +181,7 @@ export default {
   async created() {
     // Load chats if not already loaded
     if (this.$store.chats.length === 0 && this.$store.isUserLoggedIn) {
-      await this.$store.commit('getChats');
+      await this.$store.getChats();
     }
     await this.initializeChat();
   },
@@ -245,7 +245,7 @@ export default {
         
       } catch (error) {
         console.error('Error loading chat:', error);
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: 'Failed to load chat', 
           autoClear: true 
@@ -340,7 +340,7 @@ export default {
 
         const newChatHist = await ChatHistory.create(this.chatHist.data);
         this.chatHist.id = newChatHist.id;
-        this.$store.commit('getChats');
+        this.$store.getChats();
         return this.chatHist;
       } else {
         await ChatHistory.updateChat(this.chatHist.id, this.chatHist.data);

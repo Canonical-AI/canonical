@@ -195,7 +195,7 @@ import {marked} from 'marked'
           const newChatHist = await ChatHistory.create(this.chatHist.data)
           this.chatHist.id = newChatHist.id
           this.$router.push({ path: `/chat/${newChatHist.id}` });
-          this.$store.commit('getChats')
+          this.$store.getChats()
           return this.chatHist
         
         } else {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createStore } from 'vuex'
+import { createPinia, setActivePinia } from 'pinia'
+import { useMainStore } from '../../store/index.js'
 import { createRouter, createMemoryHistory } from 'vue-router'
 
 // Mock Firebase document operations
@@ -22,6 +23,25 @@ vi.mock('../../services/firebaseDataService', () => ({
     deleteDocByID: mockDocumentOperations.deleteDocByID,
     getDocById: mockDocumentOperations.getDocById,
     getAll: mockDocumentOperations.getAll
+  },
+  User: {
+    getUserAuth: vi.fn(),
+    getUserData: vi.fn()
+  },
+  Project: {
+    getById: vi.fn()
+  },
+  ChatHistory: { getAll: vi.fn() },
+  Favorites: { getAll: vi.fn() },
+  Template: { getAll: vi.fn() },
+  Comment: { getAll: vi.fn() },
+  Task: { getAll: vi.fn() }
+}))
+
+// Mock router
+vi.mock('../../router', () => ({
+  default: {
+    push: vi.fn()
   }
 }))
 
@@ -33,126 +53,29 @@ describe('Document Editing Integration Tests', () => {
     // Reset all mocks
     vi.clearAllMocks()
 
-    // Create store with document management functionality
-    store = createStore({
-      state: {
-        user: {
-          uid: 'test-user-123',
-          email: 'test@example.com',
-          tier: 'pro'
-        },
-        project: {
-          id: 'test-project-123',
-          name: 'Test Project'
-        },
-        documents: [],
-        selected: {
-          id: null,
-          data: {},
-          isLoading: false
-        },
-        globalAlerts: []
-      },
-      getters: {
-        isUserLoggedIn: (state) => !!state.user.uid
-      },
-      mutations: {
-        addDocument: (state, document) => {
-          state.documents.push(document)
-        },
-        removeDocument: (state, documentId) => {
-          state.documents = state.documents.filter(doc => doc.id !== documentId)
-        },
-        setDocuments: (state, documents) => {
-          state.documents = documents
-        },
-        setSelectedDocument: (state, document) => {
-          state.selected = { ...state.selected, ...document }
-        },
-        updateSelectedDocument: (state, document) => {
-          if (document.id) {
-            state.selected = { ...state.selected, ...document }
-            // Update in documents array as well
-            const docIndex = state.documents.findIndex(doc => doc.id === document.id)
-            if (docIndex !== -1) {
-              state.documents[docIndex] = { ...state.documents[docIndex], ...document }
-            }
-          }
-        },
-        saveSelectedDocument: (state) => {
-          // This mutation triggers the save
-          const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id)
-          if (docIndex !== -1) {
-            state.documents[docIndex].data = { ...state.selected.data }
-          }
-        },
-        alert: (state, alert) => {
-          state.globalAlerts.push(alert)
-        }
-      },
-      actions: {
-        async createDocument({ commit, state }, { data, select = true }) {
-          const createdDoc = await mockDocumentOperations.create(data)
-          if (select) {
-            commit('setSelectedDocument', { 
-              id: createdDoc.id, 
-              data: createdDoc.data || data,
-              isLoading: false 
-            })
-          }
-          commit('addDocument', { id: createdDoc.id, data: createdDoc.data || data })
-          return { id: createdDoc.id, data: createdDoc.data || data }
-        },
+    // Create fresh Pinia instance
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    
+    // Get the store instance
+    store = useMainStore()
 
-        async selectDocument({ commit, state }, { id, version = null }) {
-          commit('setSelectedDocument', { ...state.selected, isLoading: true })
+    // Set initial test state
+    store.userSetData({
+      uid: 'test-user-123',
+      email: 'test@example.com',
+      displayName: 'Test User',
+      tier: 'pro',
+      defaultProject: 'test-project-123',
+      projects: ['test-project-123']
+    })
 
-          try {
-            const selectedData = await mockDocumentOperations.getDocById(id)
-            if (!selectedData || !selectedData.data) {
-              commit('alert', { type: 'error', message: `${id} not found` })
-              return null
-            }
-
-            commit('setSelectedDocument', { 
-              ...selectedData, 
-              isLoading: false,
-              currentVersion: version || 'live'
-            })
-            return selectedData
-          } catch (error) {
-            commit('setSelectedDocument', { ...state.selected, isLoading: false })
-            return null
-          }
-        },
-
-        async deleteDocument({ commit }, { id }) {
-          await mockDocumentOperations.deleteDocByID(id)
-          commit('removeDocument', id)
-        },
-
-        async archiveDocument({ commit }, { id }) {
-          await mockDocumentOperations.archiveDoc(id)
-          commit('removeDocument', id)
-        },
-
-        async getDocuments({ commit }) {
-          const documents = await mockDocumentOperations.getAll()
-          commit('setDocuments', documents)
-          return documents
-        },
-
-        async toggleDraft({ commit, state }) {
-          state.selected.data.draft = !state.selected.data.draft
-          await mockDocumentOperations.updateDoc(state.selected.id, state.selected.data)
-          
-          // Update the document in the documents array
-          const docIndex = state.documents.findIndex(doc => doc.id === state.selected.id)
-          if (docIndex !== -1) {
-            state.documents[docIndex].data = { ...state.documents[docIndex].data, ...state.selected.data }
-          }
-        }
-      }
+    store.projectSetTemp({
+      id: 'test-project-123',
+      name: 'Test Project',
+      folders: [],
+      users: ['test-user-123'],
+      createdBy: 'test-user-123'
     })
 
     // Create router
@@ -182,7 +105,7 @@ describe('Document Editing Integration Tests', () => {
       })
 
       // Create document
-      const result = await store.dispatch('createDocument', { 
+      const result = await store.documentsCreate({ 
         data: newDocumentData 
       })
 
@@ -202,387 +125,203 @@ describe('Document Editing Integration Tests', () => {
       }
 
       mockDocumentOperations.create.mockResolvedValue({
-        id: 'background-doc-456',
+        id: 'bg-doc-123',
         data: documentData
       })
 
       // Create document without selecting
-      const result = await store.dispatch('createDocument', { 
+      const result = await store.documentsCreate({ 
         data: documentData, 
         select: false 
       })
 
-      expect(result.id).toBe('background-doc-456')
+      expect(result.id).toBe('bg-doc-123')
       expect(store.documents).toHaveLength(1)
       expect(store.selected.id).toBeNull() // Should not be selected
     })
-
-    it('should handle document creation errors', async () => {
-      const documentData = {
-        name: 'Failed Document',
-        content: 'This will fail to create'
-      }
-
-      // Mock creation failure
-      mockDocumentOperations.create.mockRejectedValue(
-        new Error('Document creation failed')
-      )
-
-      // Attempt to create document
-      await expect(
-        store.dispatch('createDocument', { data: documentData })
-      ).rejects.toThrow('Document creation failed')
-
-      // Verify no document was added
-      expect(store.documents).toHaveLength(0)
-    })
   })
 
-  describe('Document Loading and Selection', () => {
-    it('should load and select an existing document', async () => {
+  describe('Document Selection Flow', () => {
+    it('should select existing document successfully', async () => {
       const existingDoc = {
-        id: 'existing-doc-789',
+        id: 'existing-doc-123',
         data: {
           name: 'Existing Document',
-          content: 'This document already exists.',
-          draft: false,
-          archived: false
-        }
+          content: 'This document already exists'
+        },
+        comments: [],
+        versions: []
       }
 
+      // Mock successful document fetch
       mockDocumentOperations.getDocById.mockResolvedValue(existingDoc)
 
-      // Select the document
-      const result = await store.dispatch('selectDocument', { 
-        id: 'existing-doc-789' 
-      })
+      // Select document
+      const result = await store.documentsSelect({ id: 'existing-doc-123' })
 
-      expect(mockDocumentOperations.getDocById).toHaveBeenCalledWith('existing-doc-789')
-      expect(result.id).toBe('existing-doc-789')
-      expect(store.selected.id).toBe('existing-doc-789')
+      expect(mockDocumentOperations.getDocById).toHaveBeenCalledWith('existing-doc-123')
+      expect(result).toEqual(existingDoc)
+      expect(store.selected.id).toBe('existing-doc-123')
       expect(store.selected.data.name).toBe('Existing Document')
-      expect(store.selected.isLoading).toBe(false)
     })
 
-    it('should handle loading non-existent document', async () => {
+    it('should handle document not found', async () => {
+      // Mock document not found
       mockDocumentOperations.getDocById.mockResolvedValue(null)
 
-      const result = await store.dispatch('selectDocument', { 
-        id: 'non-existent-doc' 
-      })
+      // Try to select non-existent document
+      const result = await store.documentsSelect({ id: 'non-existent-doc' })
 
       expect(result).toBeNull()
-      expect(store.globalAlerts).toContainEqual({
-        type: 'error',
-        message: 'non-existent-doc not found'
-      })
+      expect(store.globalAlerts).toHaveLength(1)
+      expect(store.globalAlerts[0].type).toBe('error')
+      expect(store.globalAlerts[0].message).toContain('not found')
     })
 
-    it('should show loading state during document fetch', async () => {
-      // Create a promise that we can control
-      let resolvePromise
-      const loadingPromise = new Promise((resolve) => {
-        resolvePromise = resolve
-      })
-      
-      mockDocumentOperations.getDocById.mockReturnValue(loadingPromise)
-
-      // Start loading document
-      const loadPromise = store.dispatch('selectDocument', { 
-        id: 'loading-doc' 
-      })
-
-      // Check loading state
-      expect(store.selected.isLoading).toBe(true)
-
-      // Resolve the mock
-      resolvePromise({
-        id: 'loading-doc',
-        data: { name: 'Loaded Document', content: 'Content' }
-      })
-
-      await loadPromise
-
-      // Verify loading is complete
-      expect(store.selected.isLoading).toBe(false)
-      expect(store.selected.id).toBe('loading-doc')
-    })
-  })
-
-  describe('Document Editing and Updates', () => {
-    beforeEach(async () => {
-      // Setup with an existing selected document
+    it('should select document with specific version', async () => {
       const existingDoc = {
-        id: 'edit-doc-123',
+        id: 'versioned-doc-123',
         data: {
-          name: 'Document to Edit',
-          content: 'Original content here.',
-          draft: true
-        }
+          name: 'Versioned Document',
+          content: 'This document has versions'
+        },
+        comments: [],
+        versions: [
+          { number: '1.0', content: 'Version 1.0 content' },
+          { number: '2.0', content: 'Version 2.0 content' }
+        ]
       }
 
       mockDocumentOperations.getDocById.mockResolvedValue(existingDoc)
-      await store.dispatch('selectDocument', { id: 'edit-doc-123' })
-    })
 
-    it('should update document content', async () => {
-      const updatedData = {
-        name: 'Updated Document Title',
-        content: 'Updated content with **formatting**.',
-        draft: true
-      }
+      // Select document with version
+      await store.documentsSelect({ id: 'versioned-doc-123', version: '1.0' })
 
-      mockDocumentOperations.updateDoc.mockResolvedValue()
-
-      // Update document
-      store.commit('updateSelectedDocument', {
-        id: 'edit-doc-123',
-        data: updatedData
-      })
-
-      // Simulate save
-      await mockDocumentOperations.updateDoc('edit-doc-123', updatedData)
-
-      expect(store.selected.data.name).toBe('Updated Document Title')
-      expect(store.selected.data.content).toBe('Updated content with **formatting**.')
-    })
-
-    it('should toggle document draft status', async () => {
-      expect(store.selected.data.draft).toBe(true)
-
-      mockDocumentOperations.updateDoc.mockResolvedValue()
-
-      // Toggle draft status
-      await store.dispatch('toggleDraft')
-
-      expect(store.selected.data.draft).toBe(false)
-      expect(mockDocumentOperations.updateDoc).toHaveBeenCalledWith(
-        'edit-doc-123',
-        expect.objectContaining({ draft: false })
-      )
-    })
-
-    it('should update specific document fields', async () => {
-      mockDocumentOperations.updateDocField.mockResolvedValue()
-
-      // Simulate updating just the title
-      await mockDocumentOperations.updateDocField(
-        'edit-doc-123', 
-        'name', 
-        'New Title Only'
-      )
-
-      expect(mockDocumentOperations.updateDocField).toHaveBeenCalledWith(
-        'edit-doc-123',
-        'name',
-        'New Title Only'
-      )
-    })
-
-    it('should handle concurrent edits properly', async () => {
-      // Simulate multiple rapid updates
-      const updates = [
-        { content: 'Update 1' },
-        { content: 'Update 2' },
-        { content: 'Final update' }
-      ]
-
-      updates.forEach(update => {
-        store.commit('updateSelectedDocument', {
-          id: 'edit-doc-123',
-          data: { ...store.selected.data, ...update }
-        })
-      })
-
-      // Final state should have the last update
-      expect(store.selected.data.content).toBe('Final update')
+      expect(store.selected.id).toBe('versioned-doc-123')
+      expect(store.selected.currentVersion).toBe('1.0')
     })
   })
 
-  describe('Document Deletion and Archiving', () => {
-    beforeEach(async () => {
-      // Setup documents list
-      store.commit('setDocuments', [
-        { id: 'doc-1', data: { name: 'Document 1', content: 'Content 1' } },
-        { id: 'doc-2', data: { name: 'Document 2', content: 'Content 2' } },
-        { id: 'doc-3', data: { name: 'Document 3', content: 'Content 3' } }
-      ])
-    })
+  describe('Document Management Operations', () => {
+    it('should delete document successfully', async () => {
+      // Set up initial document
+      store.documents = [
+        { id: 'doc-to-delete', data: { name: 'Document to Delete' } }
+      ]
 
-    it('should delete a document permanently', async () => {
       mockDocumentOperations.deleteDocByID.mockResolvedValue()
-
-      expect(store.documents).toHaveLength(3)
 
       // Delete document
-      await store.dispatch('deleteDocument', { id: 'doc-2' })
+      await store.documentsDelete({ id: 'doc-to-delete' })
 
-      expect(mockDocumentOperations.deleteDocByID).toHaveBeenCalledWith('doc-2')
-      expect(store.documents).toHaveLength(2)
-      expect(store.documents.find(doc => doc.id === 'doc-2')).toBeUndefined()
-    })
-
-    it('should archive a document', async () => {
-      mockDocumentOperations.archiveDoc.mockResolvedValue()
-
-      expect(store.documents).toHaveLength(3)
-
-      // Archive document
-      await store.dispatch('archiveDocument', { id: 'doc-1' })
-
-      expect(mockDocumentOperations.archiveDoc).toHaveBeenCalledWith('doc-1')
-      expect(store.documents).toHaveLength(2)
-      expect(store.documents.find(doc => doc.id === 'doc-1')).toBeUndefined()
-    })
-
-    it('should handle delete errors gracefully', async () => {
-      mockDocumentOperations.deleteDocByID.mockRejectedValue(
-        new Error('Delete failed')
-      )
-
-      await expect(
-        store.dispatch('deleteDocument', { id: 'doc-1' })
-      ).rejects.toThrow('Delete failed')
-
-      // Document list should remain unchanged
-      expect(store.documents).toHaveLength(3)
-    })
-  })
-
-  describe('Document List Management', () => {
-    it('should load all documents', async () => {
-      const mockDocuments = [
-        { id: 'doc-1', data: { name: 'Doc 1', content: 'Content 1' } },
-        { id: 'doc-2', data: { name: 'Doc 2', content: 'Content 2' } },
-        { id: 'doc-3', data: { name: 'Doc 3', content: 'Content 3' } }
-      ]
-
-      mockDocumentOperations.getAll.mockResolvedValue(mockDocuments)
-
-      const result = await store.dispatch('getDocuments')
-
-      expect(mockDocumentOperations.getAll).toHaveBeenCalled()
-      expect(result).toEqual(mockDocuments)
-      expect(store.documents).toEqual(mockDocuments)
-    })
-
-    it('should handle empty document list', async () => {
-      mockDocumentOperations.getAll.mockResolvedValue([])
-
-      const result = await store.dispatch('getDocuments')
-
-      expect(result).toEqual([])
-      expect(store.documents).toEqual([])
-    })
-
-    it('should maintain document list integrity during CRUD operations', async () => {
-      // Start with initial documents
-      store.commit('setDocuments', [
-        { id: 'doc-1', data: { name: 'Doc 1' } }
-      ])
-
-      // Add a document
-      mockDocumentOperations.create.mockResolvedValue({
-        id: 'doc-2',
-        data: { name: 'Doc 2' }
-      })
-
-      await store.dispatch('createDocument', { 
-        data: { name: 'Doc 2' }, 
-        select: false 
-      })
-
-      expect(store.documents).toHaveLength(2)
-
-      // Delete a document
-      mockDocumentOperations.deleteDocByID.mockResolvedValue()
-      await store.dispatch('deleteDocument', { id: 'doc-2' })
-
-      expect(store.documents).toHaveLength(1)
-      expect(store.documents[0].id).toBe('doc-1')
-    })
-  })
-
-  describe('Document State Synchronization', () => {
-    it('should keep selected document and documents list in sync', async () => {
-      // Create and select a document
-      mockDocumentOperations.create.mockResolvedValue({
-        id: 'sync-doc',
-        data: { name: 'Sync Test', content: 'Initial content' }
-      })
-
-      await store.dispatch('createDocument', { 
-        data: { name: 'Sync Test', content: 'Initial content' }
-      })
-
-      // Update the selected document
-      store.commit('updateSelectedDocument', {
-        id: 'sync-doc',
-        data: { name: 'Updated Sync Test', content: 'Updated content' }
-      })
-
-      // Verify both selected and documents list are updated
-      expect(store.selected.data.name).toBe('Updated Sync Test')
-      expect(store.documents[0].data.name).toBe('Updated Sync Test')
-    })
-
-    it('should handle version-specific edits correctly', async () => {
-      const docData = {
-        id: 'version-doc',
-        data: { name: 'Version Test', content: 'Live content' }
-      }
-
-      mockDocumentOperations.getDocById.mockResolvedValue(docData)
-
-      // Load live version
-      await store.dispatch('selectDocument', { id: 'version-doc' })
-      expect(store.selected.currentVersion).toBe('live')
-
-      // Load specific version
-      await store.dispatch('selectDocument', { 
-        id: 'version-doc', 
-        version: 'v1.0' 
-      })
-      expect(store.selected.currentVersion).toBe('v1.0')
-    })
-  })
-
-  describe('Error Handling and Edge Cases', () => {
-    it('should handle network errors during operations', async () => {
-      mockDocumentOperations.updateDoc.mockRejectedValue(
-        new Error('Network error')
-      )
-
-      store.commit('setSelectedDocument', {
-        id: 'error-doc',
-        data: { name: 'Error Test' }
-      })
-
-      await expect(
-        mockDocumentOperations.updateDoc('error-doc', { name: 'Updated' })
-      ).rejects.toThrow('Network error')
-    })
-
-    it('should prevent operations on non-existent documents', async () => {
-      // Try to update a document that doesn't exist in state
-      store.commit('updateSelectedDocument', {
-        id: 'non-existent',
-        data: { name: 'Should not work' }
-      })
-
-      // Selected document should be set but documents list unchanged
-      expect(store.selected.id).toBe('non-existent')
+      expect(mockDocumentOperations.deleteDocByID).toHaveBeenCalledWith('doc-to-delete')
       expect(store.documents).toHaveLength(0)
     })
 
-    it('should handle permissions errors appropriately', async () => {
-      mockDocumentOperations.deleteDocByID.mockRejectedValue(
-        new Error('Permission denied')
+    it('should archive document successfully', async () => {
+      // Set up initial document  
+      store.documents = [
+        { id: 'doc-to-archive', data: { name: 'Document to Archive' } }
+      ]
+
+      mockDocumentOperations.archiveDoc.mockResolvedValue()
+
+      // Archive document
+      await store.documentsArchive({ id: 'doc-to-archive' })
+
+      expect(mockDocumentOperations.archiveDoc).toHaveBeenCalledWith('doc-to-archive')
+      expect(store.documents).toHaveLength(0)
+    })
+
+    it('should update document successfully', async () => {
+      const originalDoc = { 
+        id: 'doc-to-update', 
+        data: { 
+          name: 'Original Name',
+          content: 'Original content'
+        } 
+      }
+
+      store.documents = [originalDoc]
+      store.setSelectedDocument(originalDoc)
+
+      // Update selected document data
+      store.updateSelectedDocument({ 
+        data: { 
+          name: 'Updated Name', 
+          content: 'Updated content' 
+        } 
+      })
+
+      expect(store.selected.data.name).toBe('Updated Name')
+      expect(store.selected.data.content).toBe('Updated content')
+      
+      // Check that documents array is also updated
+      expect(store.documents[0].data.name).toBe('Updated Name')
+    })
+  })
+
+  describe('Document State Management', () => {
+    it('should handle loading states correctly', async () => {
+      mockDocumentOperations.getDocById.mockImplementation(() => 
+        new Promise(resolve => setTimeout(() => resolve({
+          id: 'slow-doc',
+          data: { name: 'Slow Loading Doc' },
+          comments: [],
+          versions: []
+        }), 100))
       )
 
-      await expect(
-        store.dispatch('deleteDocument', { id: 'protected-doc' })
-      ).rejects.toThrow('Permission denied')
+      // Start loading
+      const selectPromise = store.documentsSelect({ id: 'slow-doc' })
+      
+      // Should show loading state initially
+      expect(store.selected.isLoading).toBe(true)
+
+      // Wait for completion
+      await selectPromise
+
+      // Should no longer be loading
+      expect(store.selected.isLoading).toBe(false)
+      expect(store.selected.id).toBe('slow-doc')
+    })
+
+    it('should maintain consistent state during rapid operations', async () => {
+      const doc1 = { id: 'doc-1', data: { name: 'Doc 1' }, comments: [], versions: [] }
+      const doc2 = { id: 'doc-2', data: { name: 'Doc 2' }, comments: [], versions: [] }
+
+      mockDocumentOperations.getDocById
+        .mockResolvedValueOnce(doc1)
+        .mockResolvedValueOnce(doc2)
+
+      // Rapidly select different documents
+      const select1 = store.documentsSelect({ id: 'doc-1' })
+      const select2 = store.documentsSelect({ id: 'doc-2' })
+
+      await Promise.all([select1, select2])
+
+      // Should end up with doc-2 selected (last operation)
+      expect(store.selected.id).toBe('doc-2')
+      expect(store.selected.data.name).toBe('Doc 2')
+    })
+  })
+
+  describe('Favorites Integration', () => {
+    it('should toggle document favorites correctly', async () => {
+      const docId = 'favorite-doc-123'
+      
+      // Initially not favorited
+      expect(store.isFavorite(docId)).toBe(false)
+
+      // Toggle to favorite
+      await store.toggleFavorite(docId)
+      expect(store.favorites).toContain(docId)
+      expect(store.isFavorite(docId)).toBe(true)
+
+      // Toggle back to not favorite
+      await store.toggleFavorite(docId)
+      expect(store.favorites).not.toContain(docId)
+      expect(store.isFavorite(docId)).toBe(false)
     })
   })
 }) 

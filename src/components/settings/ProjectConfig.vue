@@ -229,7 +229,7 @@ export default {
 
         async selectProject(value){
             console.log('selectProject', value)
-            this.$store.commit('setProject', value)
+            this.$store.projectSet(value)
             this.projectData = { ...this.$store.project }
             this.selectedFolders = this.projectData.folders.map(folder => folder.name);
             this.default = { ...this.projectData }
@@ -255,7 +255,6 @@ export default {
 
         setTempProject(){
             const projectCopy = JSON.parse(JSON.stringify(this.projectData));
-           // this.$store.commit('setTempProject', projectCopy)
         },
 
         async handleSubmit() { 
@@ -264,7 +263,7 @@ export default {
                 console.log('Creating new project:', this.projectData);
 
                 const projectRef = await Project.create(newProjectData)
-                this.$store.commit('setProject', projectRef.id )
+                this.$store.projectSet(projectRef.id )
                 this.$router.push({ path: `/document/create-document`})
  
             } else {

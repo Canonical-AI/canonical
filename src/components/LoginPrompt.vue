@@ -159,7 +159,7 @@ export default {
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
         }
-        await store.user.enter();
+        await store.userEnter();
         email.value = '';
         password.value = '';
         showPrompt.value = false;
@@ -182,7 +182,7 @@ export default {
         }
         await signInWithPopup(auth, authProvider).then(
           (userCred) => {
-            store.user.enter();
+            store.userEnter();
             showPrompt.value = false;
           }
         );

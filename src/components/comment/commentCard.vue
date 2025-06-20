@@ -346,7 +346,7 @@ export default {
     },
 
     async updateComment (id,updatedComment) {
-      await this.$store.dispatch('updateComment',{id,updatedComment})
+      await this.$store.commentsUpdate({id,updatedComment})
       this.resetForm()
     },
 
@@ -368,7 +368,7 @@ export default {
           documentVersion: this.comment.documentVersion
         };
 
-        await this.$store.dispatch('addReply', { 
+        await this.$store.commentsAddReply({ 
           parentId: this.comment.parentId || this.comment.id, 
           comment: replyData 
         });

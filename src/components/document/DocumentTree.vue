@@ -29,7 +29,7 @@
           />
 
           <v-btn :disabled="!$store.isUserLoggedIn" 
-              class="text-none" @click="addFolder()" 
+              class="text-none" @click="$store.foldersAdd('New Folder')" 
               variant="text" 
               density="compact" 
               size="small">Add Folder 
@@ -228,10 +228,6 @@ export default {
         handleItemClick(item) {
             this.$router.push({ path: `/document/${item.id}` }); 
         },
-        
-        async addFolder() {
-            this.$store.folders.add("New Folder");
-        },
 
         isSelected(el) {
             if (this.$route.params.id === el.id) {
@@ -252,7 +248,7 @@ export default {
 
         toggle(el) {
             el.isOpen = !el.isOpen;
-            this.$store.folders.toggleOpen({ 
+            this.$store.foldersToggleOpen({ 
                 FolderName: el.id, 
                 isOpen: el.isOpen 
             });
@@ -292,7 +288,7 @@ export default {
             // Don't allow moving documents without proper IDs
             if(!event.data || !event.data.id) return;
 
-            this.$store.folders.update({ 
+            this.$store.foldersUpdate({ 
                 docId: event.data.id, 
                 target: folder.id, 
                 action: 'add' 
@@ -304,7 +300,7 @@ export default {
             // Don't allow moving documents without proper IDs
             if(!event.data || !event.data.id) return;
 
-            this.$store.folders.update({ 
+            this.$store.foldersUpdate({ 
                 docId: event.data.id, 
                 target: folder.id, 
                 action: 'remove' 
@@ -312,7 +308,7 @@ export default {
         },
 
         deleteFolder(id){
-            this.$store.folders.remove(id)
+            this.$store.foldersRemove(id)
         },
         renameFolder(el) {
             el.renaming = true;
@@ -324,7 +320,7 @@ export default {
             });
         },
         submitRenameFolder(el,value){
-            this.$store.folders.rename({toFolderName: value, fromFolderName: el.data.name})
+            this.$store.foldersRename({toFolderName: value, fromFolderName: el.data.name})
             el.data.name = value
             el.renaming = false;
         },
