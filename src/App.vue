@@ -238,8 +238,6 @@
         </v-card>
       </v-dialog>
 
-      <LoginPrompt />
-
     </v-layout>
   </v-app>
 </template>
@@ -250,7 +248,6 @@ import { useTheme } from 'vuetify'
 import ChatNav from './components/chat/ChatNav.vue'
 import DocumentTree from "./components/document/DocumentTree.vue";
 import Login from "./components/Login.vue";
-import LoginPrompt from "./components/LoginPrompt.vue";
 import SettingsNav from "./components/settings/SettingsNav.vue";
 import GetStarted from "./components/settings/GetStarted.vue";
 import { logEvent } from "firebase/analytics";
@@ -262,7 +259,6 @@ export default {
     ChatNav,
     SettingsNav,
     Login,
-    LoginPrompt,
     GetStarted
   }, 
   name: 'App',
@@ -277,12 +273,7 @@ export default {
     isNewUser: false,
     helpDialog: false,
     welcomeDialog: false,
-    isNavOpen: true,
-    loginPromptTimer: null,
-    userActivity: {
-      lastActive: Date.now(),
-      hasShownPrompt: false
-    }
+    isNavOpen: true
   }),
   setup(){
     const theme = useTheme()
@@ -292,26 +283,6 @@ export default {
 
     this.isNavOpen = !this.$vuetify.display.mobile
 
-    // Add event listeners to track user activity
-    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    activityEvents.forEach(event => {
-      window.addEventListener(event, this.resetUserActivityTimer);
-    });
-    
-    // Start the inactivity timer
-    this.startLoginPromptTimer();
-  },
-  beforeUnmount() {
-    // Clean up event listeners when component is unmounted
-    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    activityEvents.forEach(event => {
-      window.removeEventListener(event, this.resetUserActivityTimer);
-    });
-    
-    // Clear any remaining timers
-    if (this.loginPromptTimer) {
-      clearTimeout(this.loginPromptTimer);
-    }
   },
   watch: {
 
@@ -332,6 +303,11 @@ export default {
         }
         if (to.path.includes('chat')) {
           this.drawer = 'chat';
+        }
+        // Close drawer when on login screen
+        if (to.path === '/login') {
+          this.drawer = null;
+          this.loginMenuOpen = false;
         }
         // Open dialog when route is /register
         if (to.path === '/register') {
@@ -418,32 +394,6 @@ export default {
   
       await this.$store.documentsGetAll();
 
-    },
-    startLoginPromptTimer() {
-      // Clear any existing timer first
-      if (this.loginPromptTimer) {
-        clearTimeout(this.loginPromptTimer);
-      }
-      
-      this.loginPromptTimer = setTimeout(() => {
-        // Only show login menu if user is not logged in, hasn't been prompted yet,
-        // and has been inactive for 5 minutes
-        if (!this.$store.isUserLoggedIn && 
-            !this.userActivity.hasShownPrompt && 
-            (Date.now() - this.userActivity.lastActive) >= 300000) {
-          this.loginMenuOpen = true;
-          this.userActivity.hasShownPrompt = true;
-        }
-        this.startLoginPromptTimer();
-      }, 300000); // 5 minutes in milliseconds
-    },
-    resetUserActivityTimer() {
-      this.userActivity.lastActive = Date.now();
-      this.userActivity.hasShownPrompt = false;
-      if (this.loginPromptTimer) {
-        clearTimeout(this.loginPromptTimer);
-      }
-      this.startLoginPromptTimer();
     },
     dismissAlert(alert) {
       alert.show = false;

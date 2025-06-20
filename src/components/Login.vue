@@ -17,8 +17,8 @@
         
         <div class="d-flex flex-column gap-1">
           <v-btn
-            color="white"
-            variant="outlined"
+            color="primary"
+            variant="flat"
             block
             @click="handleSocialSignIn('google')"
             class="mb-1"
@@ -28,8 +28,8 @@
           </v-btn>
           
           <v-btn
-            color="white"
-            variant="outlined"
+            color="primary"
+            variant="flat"
             block
             @click="handleSocialSignIn('github')"
             class="mb-1"
@@ -39,8 +39,8 @@
           </v-btn>
 
           <v-btn
-            color="white"
-            variant="outlined"
+            color=""
+            variant="tonal"
             block
             @click="showEmailForm = !showEmailForm"
             class="mb-1"
@@ -86,6 +86,18 @@
           </div>
         </v-expand-transition>
       </v-card-text>
+      
+      <v-card-actions class="justify-center pb-4">
+        <span class="text-body-2">
+          Not building yet? 
+          <span 
+            class="text-orange cursor-pointer font-weight-medium"
+            @click="goToSignup"
+          >
+            Sign up
+          </span>
+        </span>
+      </v-card-actions>
     </v-card>
   </v-sheet>
 </template>
@@ -183,6 +195,10 @@ export default {
       }
     };
     
+    const goToSignup = () => {
+      router.push('/login?signup=true');
+    };
+    
     return {
       email,
       password,
@@ -193,11 +209,19 @@ export default {
       showEmailForm,
       handleAuth,
       handleSignOut,
-      handleSocialSignIn
+      handleSocialSignIn,
+      goToSignup
     };
   }
 };
 </script>
 
 <style scoped>
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-pointer:hover {
+  text-decoration: underline;
+}
 </style>

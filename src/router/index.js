@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory} from 'vue-router'
 import Home from '../components/Home.vue'
 import Login from '../components/Login.vue'
+import LoginScreen from '../components/LoginScreen.vue'
 import Chat from '../components/chat/Chat.vue'
 import Help from '../components/info/Help.vue'
 import About from '../components/info/About.vue'
@@ -71,7 +72,7 @@ const routes = [
   {
     path: '/login',
     name: 'login',
-    component: Login
+    component: LoginScreen
   },
   {
     path: '/register',

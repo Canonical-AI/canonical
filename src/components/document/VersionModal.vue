@@ -26,7 +26,7 @@
                     </v-tooltip>
                     <v-tooltip 
                         v-else
-                        text="release status" 
+                        :text="$store.selected.data?.releasedVersion?.length > 0 ? 'release status' : 'create a version and release it'" 
                         location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-btn 

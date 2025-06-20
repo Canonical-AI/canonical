@@ -94,9 +94,41 @@ export default {
         }
       },
       immediate: true,
+    },
+    // Check for login redirect conditions
+    '$store.isUserLoggedIn': {
+      handler(isLoggedIn) {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
+    },
+    '$store.project.id': {
+      handler() {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
+    },
+    '$store.documents': {
+      handler() {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
     }
   },
   methods: {
+    checkRedirectToLogin() {
+      // Check if user is not logged in, no project ID set, and no documents
+      if (!this.$store.isUserLoggedIn && 
+          !this.$store.project.id && 
+          (!this.$store.documents || this.$store.documents.length === 0)) {
+        // Close side panel by setting drawer to null
+        if (this.$parent && this.$parent.drawer) {
+          this.$parent.drawer = null;
+        }
+        // Navigate to login
+        this.$router.push('/login');
+      }
+    },
     createDocument() {
       this.$router.push({ path: '/document/create-document' });
     },
@@ -146,7 +178,7 @@ export default {
       return {
         background: `linear-gradient(${Math.floor(Math.random() * 360)}deg, ${color1} 45%, ${color2} 76%, ${color3} 100%)`
       };
-    },
+    }
   }
 }
 </script>
