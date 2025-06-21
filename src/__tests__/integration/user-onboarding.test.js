@@ -1,110 +1,57 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createStore } from 'vuex'
+import { createPinia, setActivePinia } from 'pinia'
+import { useMainStore } from '../../store/index.js'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { mount } from '@vue/test-utils'
 
 // Mock Firebase operations
-const mockFirebaseOperations = {
-  createUser: vi.fn(),
-  createProject: vi.fn(),
-  setDefaultProject: vi.fn(),
-  addUserToProject: vi.fn()
-}
-
 vi.mock('../../services/firebaseDataService', () => ({
   User: {
-    createUser: mockFirebaseOperations.createUser,
-    setDefaultProject: mockFirebaseOperations.setDefaultProject
+    createUser: vi.fn(),
+    setDefaultProject: vi.fn(),
+    getUserAuth: vi.fn(),
+    getUserData: vi.fn()
   },
   Project: {
-    create: mockFirebaseOperations.createProject,
-    addUserToProject: mockFirebaseOperations.addUserToProject
+    create: vi.fn(),
+    addUserToProject: vi.fn(),
+    getById: vi.fn()
   },
   Document: {
-    create: vi.fn()
+    create: vi.fn(),
+    getAll: vi.fn()
+  },
+  ChatHistory: { getAll: vi.fn() },
+  Favorites: { getAll: vi.fn() },
+  Template: { getAll: vi.fn() },
+  Comment: { getAll: vi.fn() },
+  Task: { getAll: vi.fn() }
+}))
+
+// Mock router
+vi.mock('../../router', () => ({
+  default: {
+    push: vi.fn()
   }
 }))
 
 describe('User Onboarding Flow Integration Tests', () => {
   let store
   let router
+  let mockFirebase
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset all mocks
     vi.clearAllMocks()
 
-    // Create store with all necessary state and actions
-    store = createStore({
-      state: {
-        user: {
-          loggedIn: false,
-          displayName: null,
-          uid: null,
-          email: null,
-          tier: null,
-          defaultProject: null,
-          projects: []
-        },
-        loadingUser: false,
-        project: {
-          id: null,
-          folders: [],
-          name: null,
-          createdBy: null,
-          users: []
-        },
-        projects: [],
-        documents: [],
-        selected: {
-          id: null,
-          data: {}
-        },
-        globalAlerts: []
-      },
-      getters: {
-        isUserLoggedIn: (state) => !!state.user.uid,
-        isLoggedIn: (state) => !!state.user.uid
-      },
-      mutations: {
-        setUserData: (state, payload) => {
-          state.user.displayName = payload?.displayName || null
-          state.user.uid = payload?.id || null
-          state.user.email = payload?.email || null
-          state.user.defaultProject = payload?.defaultProject || null
-          state.user.tier = payload?.tier || 'free'
-          state.user.projects = payload?.projects || []
-        },
-        setLoadingUser: (state, loading) => {
-          state.loadingUser = loading
-        },
-        setProject: (state, projectId) => {
-          if (projectId) {
-            state.project.id = projectId
-          }
-        },
-        setDefaultProject: (state, projectId) => {
-          state.user.defaultProject = projectId
-        },
-        alert: (state, alert) => {
-          state.globalAlerts.push(alert)
-        },
-        addDocument: (state, document) => {
-          state.documents.push(document)
-        },
-        setSelectedDocument: (state, document) => {
-          state.selected = document
-        }
-      },
-      actions: {
-        enter: vi.fn(),
-        createDocument: vi.fn().mockImplementation(async ({ commit }, { data }) => {
-          const mockResult = { id: 'doc-123', data }
-          commit('addDocument', mockResult)
-          commit('setSelectedDocument', mockResult)
-          return mockResult
-        })
-      }
-    })
+    // Get mock functions
+    mockFirebase = await import('../../services/firebaseDataService')
+
+    // Create fresh Pinia instance
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    
+    // Get the store instance
+    store = useMainStore()
 
     // Create router
     router = createRouter({
@@ -123,57 +70,64 @@ describe('User Onboarding Flow Integration Tests', () => {
       const newUser = {
         uid: 'new-user-123',
         email: 'test@example.com',
-        displayName: 'Test User'
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
       }
 
       // Mock successful user creation
-      mockFirebaseOperations.createUser.mockResolvedValue({
+      mockFirebase.User.createUser.mockResolvedValue({
         id: newUser.uid,
         email: newUser.email,
         displayName: newUser.displayName,
         defaultProject: null,
-        tier: 'pro'
+        tier: 'pro',
+        projects: []
       })
 
       // Simulate user signup
-      await store.commit('setUserData', {
-        id: newUser.uid,
-        email: newUser.email,
-        displayName: newUser.displayName,
-        defaultProject: null,
-        tier: 'pro'
-      })
+      store.userSetData(newUser)
 
       // Verify user is created but has no default project
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.state.user.email).toBe('test@example.com')
-      expect(store.state.user.defaultProject).toBeNull()
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.email).toBe('test@example.com')
+      expect(store.user.defaultProject).toBeNull()
 
       // STEP 2: Project Setup
       const projectData = {
         name: 'My First Project',
         folders: [
-          { name: 'Product' },
-          { name: 'Features' },
-          { name: 'Notes' }
+          { name: 'Product', children: [], isOpen: true },
+          { name: 'Features', children: [], isOpen: true },
+          { name: 'Notes', children: [], isOpen: true }
         ],
         createdBy: newUser.uid,
-        org: 'example.com'
+        users: [newUser.uid]
       }
 
-      // Mock successful project creation
+      // Mock successful project creation and retrieval
       const mockProjectRef = { id: 'project-123' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
-      mockFirebaseOperations.addUserToProject.mockResolvedValue()
-      mockFirebaseOperations.setDefaultProject.mockResolvedValue()
+      mockFirebase.Project.create.mockResolvedValue(mockProjectRef)
+      mockFirebase.Project.addUserToProject.mockResolvedValue()
+      mockFirebase.User.setDefaultProject.mockResolvedValue()
+      
+      // Mock project retrieval (this is what projectSet calls)
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'project-123',
+        ...projectData
+      })
+
+      // Mock document loading (called by projectGetAllData)
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
       // Simulate project creation through GetStarted component flow
-      store.commit('setProject', mockProjectRef.id)
-      store.commit('setDefaultProject', mockProjectRef.id)
+      await store.projectSet('project-123')
+      await store.userSetDefaultProject('project-123')
 
       // Verify project setup completed
-      expect(store.state.project.id).toBe('project-123')
-      expect(store.state.user.defaultProject).toBe('project-123')
+      expect(store.project.id).toBe('project-123')
+      expect(store.user.defaultProject).toBe('project-123')
 
       // STEP 3: First Document Creation
       const firstDocData = {
@@ -183,181 +137,200 @@ describe('User Onboarding Flow Integration Tests', () => {
       }
 
       // Mock document creation
-      const createdDoc = await store.dispatch('createDocument', { data: firstDocData })
+      mockFirebase.Document.create.mockResolvedValue({
+        id: 'doc-123',
+        data: firstDocData
+      })
+
+      const createdDoc = await store.documentsCreate({ data: firstDocData })
 
       // Verify complete onboarding flow
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      expect(store.state.user.defaultProject).toBe('project-123')
-      expect(store.state.project.id).toBe('project-123')
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.defaultProject).toBe('project-123')
+      expect(store.project.id).toBe('project-123')
       expect(createdDoc.id).toBe('doc-123')
-      expect(store.state.documents).toHaveLength(1)
-      expect(store.state.selected.id).toBe('doc-123')
+      expect(store.documents).toHaveLength(1)
+      expect(store.selected.id).toBe('doc-123')
     })
 
     it('should handle project setup with custom folders', async () => {
       // Setup authenticated user
-      store.commit('setUserData', {
-        id: 'user-123',
-        email: 'test@example.com',
-        defaultProject: null
+      store.userSetData({
+        uid: 'user-123',
+        email: 'user@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
       })
 
-      const customProject = {
+      const customProjectData = {
         name: 'Custom Project',
         folders: [
-          { name: 'Research' },
-          { name: 'Strategy' },
-          { name: 'Implementation' },
-          { name: 'Testing' }
-        ]
+          { name: 'Engineering', children: [], isOpen: true },
+          { name: 'Design', children: [], isOpen: true },
+          { name: 'Marketing', children: [], isOpen: true },
+          { name: 'Research', children: [], isOpen: true }
+        ],
+        createdBy: 'user-123',
+        users: ['user-123']
       }
 
-      const mockProjectRef = { id: 'custom-project-456' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
-
-      // Simulate custom project setup
-      store.commit('setProject', mockProjectRef.id)
-
-      expect(store.state.project.id).toBe('custom-project-456')
-    })
-
-    it('should handle onboarding errors gracefully', async () => {
-      // Setup user
-      store.commit('setUserData', {
-        id: 'user-123',
-        email: 'test@example.com'
+      mockFirebase.Project.create.mockResolvedValue({ id: 'custom-project-456' })
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'custom-project-456',
+        ...customProjectData
       })
 
-      // Mock project creation failure
-      mockFirebaseOperations.createProject.mockRejectedValue(
-        new Error('Project creation failed')
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
+
+      await store.projectSet('custom-project-456')
+
+      expect(store.project.id).toBe('custom-project-456')
+      expect(store.project.name).toBe('Custom Project')
+      expect(store.project.folders).toEqual(customProjectData.folders)
+    })
+
+    it('should handle user entering with existing project', async () => {
+      const existingUser = {
+        uid: 'existing-user-789',
+        email: 'existing@example.com',
+        displayName: 'Existing User',
+        tier: 'pro',
+        defaultProject: 'existing-project-789',
+        projects: ['existing-project-789']
+      }
+
+      const existingProject = {
+        id: 'existing-project-789',
+        name: 'Existing Project',
+        folders: [
+          { name: 'Docs', children: ['doc-1', 'doc-2'], isOpen: true }
+        ],
+        users: ['existing-user-789'],
+        createdBy: 'existing-user-789'
+      }
+
+      // Mock user authentication with existing data
+      mockFirebase.User.getUserAuth.mockResolvedValue(existingUser)
+      mockFirebase.Project.getById.mockResolvedValue(existingProject)
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
+
+      // Simulate user entering app
+      await store.userEnter()
+
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.uid).toBe('existing-user-789')
+      expect(store.user.defaultProject).toBe('existing-project-789')
+      expect(store.project.id).toBe('existing-project-789')
+      expect(store.project.name).toBe('Existing Project')
+    })
+  })
+
+  describe('Onboarding Error Handling', () => {
+    it('should handle authentication failure gracefully', async () => {
+      mockFirebase.User.getUserAuth.mockRejectedValue(new Error('Auth failed'))
+
+      await store.userEnter()
+
+      expect(store.isUserLoggedIn).toBe(false)
+      expect(store.loadingUser).toBe(false)
+      expect(store.globalAlerts).toHaveLength(1)
+      expect(store.globalAlerts[0].type).toBe('error')
+      expect(store.globalAlerts[0].message).toContain('Authentication failed')
+    })
+
+    it('should handle project creation failure', async () => {
+      store.userSetData({
+        uid: 'user-123',
+        email: 'user@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
+      })
+
+      mockFirebase.Project.getById.mockRejectedValue(new Error('Project not found'))
+
+      // The projectSet method will throw an error when Project.getById fails
+      await expect(store.projectSet('failing-project'))
+        .rejects.toThrow('Project not found')
+    })
+  })
+
+  describe('State Consistency During Onboarding', () => {
+    it('should maintain loading states correctly during onboarding', async () => {
+      mockFirebase.User.getUserAuth.mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve({
+          uid: 'slow-user',
+          email: 'slow@example.com',
+          displayName: 'Slow User',
+          tier: 'pro',
+          defaultProject: 'slow-project',
+          projects: ['slow-project']
+        }), 100))
       )
 
-      // Verify error doesn't break the flow
-      expect(store.getters.isUserLoggedIn).toBe(true)
-      // User should still be able to retry project setup
-    })
+      mockFirebase.Project.getById.mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve({
+          id: 'slow-project',
+          name: 'Slow Project', 
+          folders: []
+        }), 50))
+      )
 
-    it('should prevent onboarding without authentication', () => {
-      // Verify unauthenticated state
-      expect(store.getters.isUserLoggedIn).toBe(false)
-      expect(store.state.user.uid).toBeNull()
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
-      // Project setup should be blocked
-      expect(store.state.user.defaultProject).toBeNull()
-      expect(store.state.project.id).toBeNull()
-    })
-  })
-
-  describe('Project Configuration Variations', () => {
-    beforeEach(() => {
-      // Setup authenticated user for project tests
-      store.commit('setUserData', {
-        id: 'user-123',
-        email: 'test@example.com',
-        tier: 'pro'
-      })
-    })
-
-    it('should handle minimal project setup', async () => {
-      const minimalProject = {
-        name: 'Simple Project',
-        folders: []
-      }
-
-      const mockProjectRef = { id: 'minimal-project' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
-
-      store.commit('setProject', mockProjectRef.id)
-
-      expect(store.state.project.id).toBe('minimal-project')
-    })
-
-    it('should handle enterprise project setup', async () => {
-      const enterpriseProject = {
-        name: 'Enterprise Project',
-        folders: [
-          { name: 'Product Management' },
-          { name: 'Engineering' },
-          { name: 'Design' },
-          { name: 'Marketing' },
-          { name: 'Sales' },
-          { name: 'Support' }
-        ],
-        org: 'bigcompany.com'
-      }
-
-      const mockProjectRef = { id: 'enterprise-project' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
-
-      store.commit('setProject', mockProjectRef.id)
-
-      expect(store.state.project.id).toBe('enterprise-project')
-    })
-  })
-
-  describe('User State Persistence', () => {
-    it('should maintain user state during onboarding steps', async () => {
-      const userData = {
-        id: 'persistent-user',
-        email: 'persistent@example.com',
-        displayName: 'Persistent User',
-        tier: 'pro'
-      }
-
-      // Set initial user data
-      store.commit('setUserData', userData)
-
-      // Verify persistence through project setup
-      const mockProjectRef = { id: 'persistent-project' }
-      mockFirebaseOperations.createProject.mockResolvedValue(mockProjectRef)
+      // Start user enter process
+      const enterPromise = store.userEnter()
       
-      store.commit('setProject', mockProjectRef.id)
-      store.commit('setDefaultProject', mockProjectRef.id)
+      // Should be loading initially
+      expect(store.loadingUser).toBe(true)
 
-      // User data should remain intact
-      expect(store.state.user.email).toBe('persistent@example.com')
-      expect(store.state.user.tier).toBe('pro')
-      expect(store.state.user.defaultProject).toBe('persistent-project')
+      // Wait for completion
+      await enterPromise
+
+      // Should no longer be loading
+      expect(store.loadingUser).toBe(false)
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.project.id).toBe('slow-project')
     })
 
-    it('should handle loading states correctly', async () => {
-      expect(store.state.loadingUser).toBe(false)
+    it('should handle concurrent user operations correctly', async () => {
+      const userData = {
+        uid: 'concurrent-user',
+        email: 'concurrent@example.com',
+        displayName: 'Concurrent User',
+        tier: 'pro',
+        defaultProject: 'concurrent-project',
+        projects: ['concurrent-project']
+      }
 
-      store.commit('setLoadingUser', true)
-      expect(store.state.loadingUser).toBe(true)
-
-      // Simulate async operation completion
-      store.commit('setLoadingUser', false)
-      expect(store.state.loadingUser).toBe(false)
-    })
-  })
-
-  describe('Alert System During Onboarding', () => {
-    it('should show appropriate alerts during onboarding', () => {
-      // Initial state
-      expect(store.state.globalAlerts).toHaveLength(0)
-
-      // Simulate onboarding alerts
-      store.commit('alert', { 
-        type: 'info', 
-        message: 'New User Account Created!' 
+      mockFirebase.User.getUserAuth.mockResolvedValue(userData)
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'concurrent-project',
+        name: 'Concurrent Project', 
+        folders: []
       })
 
-      store.commit('alert', { 
-        type: 'info', 
-        message: 'Project added' 
-      })
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
 
-      store.commit('alert', { 
-        type: 'info', 
-        message: 'Default project set' 
-      })
+      // Start multiple concurrent operations
+      const enter1 = store.userEnter()
+      const enter2 = store.userEnter()
+      
+      await Promise.all([enter1, enter2])
 
-      expect(store.state.globalAlerts).toHaveLength(3)
-      expect(store.state.globalAlerts[0].message).toBe('New User Account Created!')
-      expect(store.state.globalAlerts[1].message).toBe('Project added')
-      expect(store.state.globalAlerts[2].message).toBe('Default project set')
+      // Should have consistent final state
+      expect(store.isUserLoggedIn).toBe(true)
+      expect(store.user.uid).toBe('concurrent-user')
+      expect(store.project.id).toBe('concurrent-project')
+      expect(store.loadingUser).toBe(false)
     })
   })
 }) 

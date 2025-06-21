@@ -352,14 +352,19 @@ export default {
             if (!this.get || this.loading) {
                 return;
             }
+            
+            // Don't sync comment marks if user is not logged in
+            if (!this.isUserLoggedIn) {
+                return;
+            }
 
             this.get().action((ctx) => {
                 try {
                     const view = ctx.get(editorViewCtx);
                     if (!view) return;
 
-                    const allComments = this.$store.state.selected.comments || [];
-                    const currentVersion = this.$store.state.selected.currentVersion;
+                    const allComments = this.$store.selected.comments || [];
+                    const currentVersion = this.$store.selected.currentVersion;
                     
                     // Filter comments based on current version
                     let relevantComments;
@@ -430,7 +435,7 @@ export default {
                     });
 
                     // If viewing a version and marks were updated, save the markedUpContent
-                    if (marksUpdated && this.$store.state.selected.currentVersion !== 'live') {
+                    if (marksUpdated && this.$store.selected.currentVersion !== 'live') {
                         this.$nextTick(() => {
                             this.saveMarkedUpContent();
                         });
@@ -460,9 +465,62 @@ export default {
             }
         },
 
+        // Method to remove all comment marks from the editor
+        removeAllCommentMarks() {
+            if (!this.get || this.loading) {
+                return;
+            }
+            
+            this.get().action((ctx) => {
+                try {
+                    const view = ctx.get(editorViewCtx);
+                    if (!view) return;
+
+                    const { state, dispatch } = view;
+                    const { schema } = state;
+                    const commentMarkType = schema.marks.comment;
+
+                    if (!commentMarkType) return;
+
+                    // Collect all ranges that contain comment marks
+                    const ranges = [];
+                    state.doc.descendants((node, pos) => {
+                        if (!node.isText) return;
+                        node.marks.forEach(mark => {
+                            if (mark.type === commentMarkType) {
+                                ranges.push({ from: pos, to: pos + node.nodeSize });
+                            }
+                        });
+                    });
+
+                    // Remove marks using mapping so every subsequent range is remapped
+                    if (ranges.length > 0) {
+                        let tr = state.tr;
+                        ranges.forEach(({ from, to }) => {
+                            const mappedFrom = tr.mapping.map(from);
+                            const mappedTo = tr.mapping.map(to);
+                            tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
+                        });
+                        dispatch(tr);
+
+                        // Force content update by getting the current markdown
+                        setTimeout(() => {
+                            const serializer = ctx.get(serializerCtx);
+                            const updatedMarkdown = serializer(view.state.doc);
+                            this.$emit('update:modelValue', updatedMarkdown);
+                        }, 100);
+                    } else {
+                        console.log('No comment marks found to remove');
+                    }
+                } catch (error) {
+                    console.warn('Error removing all comment marks:', error);
+                }
+            });
+        },
+
         // Method to save marked up content when viewing a version
         saveMarkedUpContent() {
-            if (!this.get || this.loading || this.$store.state.selected.currentVersion === 'live') {
+            if (!this.get || this.loading || this.$store.selected.currentVersion === 'live') {
                 return;
             }
 
@@ -475,10 +533,10 @@ export default {
                     const currentMarkdown = this.getCurrentMarkdown();
                     
                     if (currentMarkdown) {
-                        this.$store.dispatch('updateMarkedUpContent', {
-                            docID: this.$store.state.selected.id,
+                        this.$store.updateMarkedUpContent({
+                            docID: this.$store.selected.id,
                             versionContent: currentMarkdown,
-                            versionNumber: this.$store.state.selected.currentVersion
+                            versionNumber: this.$store.selected.currentVersion
                         });
                     }
                 });
@@ -643,7 +701,7 @@ export default {
     expose: ['createComment', 'getEditorView', 'forceUpdateContent'],
     computed: {
         isUserLoggedIn() {
-            return this.$store.getters.isUserLoggedIn;
+            return this.$store.isUserLoggedIn;
         },
         isDarkTheme() {
             return this.$vuetify.theme.global.current.dark
@@ -665,12 +723,25 @@ export default {
                 console.warn('Theme switching error:', error);
             }
         },
+        // Watch login status to remove comment marks when user logs out
+        isUserLoggedIn: {
+            handler(newVal, oldVal) {
+                if (newVal === false && oldVal === true) {
+                    // User logged out, remove all comment marks
+                    this.removeAllCommentMarks();
+                }
+            },
+            immediate: false
+        },
+
         // Watch both comments and version changes to filter comments by version
-        '$store.state.selected.comments': {
+        '$store.selected.comments': {
             handler(oldVal, newVal) {
                 if (oldVal === newVal && this.loading) return;
-                // Sync comment marks when comments change
-                this.syncCommentMarks();
+                // Sync comment marks when comments change (only if user is logged in)
+                if (this.isUserLoggedIn) {
+                    this.syncCommentMarks();
+                }
             },
             immediate: true,
             deep: true
@@ -686,15 +757,15 @@ export default {
                     this.processContentBeforeRender(newVal);
                 }
 
-                if (this.$store.state.selected.currentVersion !== 'live' && !this.loading) {
-                    this.$store.dispatch('updateMarkedUpContent', {
-                        docID: this.$store.state.selected.id, 
-                        versionContent: this.$store.state.selected.data.content, 
-                        versionNumber: this.$store.state.selected.currentVersion});
+                if (this.$store.selected.currentVersion !== 'live' && !this.loading) {
+                    this.$store.updateMarkedUpContent({
+                        docID: this.$store.selected.id, 
+                        versionContent: this.$store.selected.data.content, 
+                        versionNumber: this.$store.selected.currentVersion});
                     }
 
-                // Sync comment marks when document content changes
-                if (!this.loading) {
+                // Sync comment marks when document content changes (only if user is logged in)
+                if (!this.loading && this.isUserLoggedIn) {
                     this.$nextTick(() => {
                         this.syncCommentMarks();
                     });
@@ -747,7 +818,12 @@ export default {
             this.setupCommentClickHandler();
             // Initial sync of comment marks after component is mounted
             setTimeout(() => {
-                this.syncCommentMarks();
+                // If user is not logged in on first load, remove comment marks
+                if (!this.isUserLoggedIn) {
+                    this.removeAllCommentMarks();
+                } else {
+                    this.syncCommentMarks();
+                }
             }, 1000);
         });
     },

@@ -35,7 +35,7 @@ import { SlashProvider } from "@milkdown/kit/plugin/slash";
 //import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { useInstance } from '@milkdown/vue';
 import { usePluginViewContext } from '@prosemirror-adapter/vue';
-import { mapGetters } from 'vuex';
+import { useMainStore } from '../../../store/index.js';
 import { ref } from 'vue';
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { referenceLinkNode } from './index'
@@ -48,7 +48,8 @@ export default {
         const [loading, get] = useInstance();
         const genRef = ref(null);
         const tooltipProvider = new SlashProvider({content: genRef})
-        return {loading,get,view,prevState,genRef,tooltipProvider}
+        const store = useMainStore();
+        return {loading,get,view,prevState,genRef,tooltipProvider,store}
     },
     data() {
         return {
@@ -92,7 +93,7 @@ export default {
 
                 if (this.search === val) {
 
-                    const customNode = referenceLinkNode.type(ctx).create({ src: val, parent: this.$store.state.selected.id}); 
+                    const customNode = referenceLinkNode.type(ctx).create({ src: val, parent: this.store.selected.id}); 
 
                     dispatch(tr
                         .replaceSelectionWith(customNode)
@@ -139,7 +140,9 @@ export default {
         //this.tooltipProvider.update(this.view, this.prevState);
     },
     computed: {
-        ...mapGetters(['filteredDocuments']),
+        filteredDocuments() {
+            return this.store.filteredDocuments;
+        },
         flattenedDocuments() {
             return this.filteredDocuments.map(doc => ({
                 id: doc.id,

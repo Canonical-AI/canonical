@@ -39,10 +39,11 @@
         </v-container>
         <v-container v-else>
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
-            <h1 class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
-            <v-btn @click="createDocument" color="primary">Create Document</v-btn>
+            <h1 v-if="$store.user.uid" class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
+            <v-btn @click="createDocument" :disabled="!$store.user.uid" color="primary">Create Document</v-btn>
           </span>
-          <h1>It's quiet here... add some documents to your favorites</h1>
+          <h1 v-if="$store.user.uid">It's quiet here... add some documents to your favorites</h1>
+          <h1 v-else>you're not logged in :/</h1>
         </v-container>
       </v-main>
     </v-app>
@@ -66,8 +67,8 @@ export default {
   },
   computed: {
     favoriteDocuments() {
-      const favorites = this.$store.state.documents
-        .filter(doc => this.$store.getters.isFavorite(doc.id))
+      const favorites = this.$store.documents
+        .filter(doc => this.$store.isFavorite(doc.id))
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds);
 
       if (favorites.length > 0) {
@@ -77,7 +78,7 @@ export default {
       this.title = 'Recent Documents'
 
       // If no favorites, return the 5 most recent documents only if they have content
-      return this.$store.state.documents
+      return this.$store.documents
         .filter(doc => doc.data?.content)
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds)
         .slice(0, 5);
@@ -86,16 +87,48 @@ export default {
   watch: {
     favoriteDocuments: {
       handler(docs){
-        if (this.$store.state.user.uid) {
+        if (this.$store.user.uid) {
           this.loading = docs.length === 0;
         } else {
           this.loading = false;
         }
       },
       immediate: true,
+    },
+    // Check for login redirect conditions
+    '$store.isUserLoggedIn': {
+      handler(isLoggedIn) {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
+    },
+    '$store.project.id': {
+      handler() {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
+    },
+    '$store.documents': {
+      handler() {
+        this.checkRedirectToLogin();
+      },
+      immediate: true
     }
   },
   methods: {
+    checkRedirectToLogin() {
+      // Check if user is not logged in, no project ID set, and no documents
+      if (!this.$store.isUserLoggedIn && 
+          !this.$store.project.id && 
+          (!this.$store.documents || this.$store.documents.length === 0)) {
+        // Close side panel by setting drawer to null
+        if (this.$parent && this.$parent.drawer) {
+          this.$parent.drawer = null;
+        }
+        // Navigate to login
+        this.$router.push('/login');
+      }
+    },
     createDocument() {
       this.$router.push({ path: '/document/create-document' });
     },
@@ -145,7 +178,7 @@ export default {
       return {
         background: `linear-gradient(${Math.floor(Math.random() * 360)}deg, ${color1} 45%, ${color2} 76%, ${color3} 100%)`
       };
-    },
+    }
   }
 }
 </script>

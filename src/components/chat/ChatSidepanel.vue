@@ -172,7 +172,7 @@ export default {
   computed: {
     recentChats() {
       // Get the last 3 most recent chats, sorted by updated date
-      return this.$store.state.chats
+      return this.$store.chats
         .filter(chat => !chat.data.archived)
         .sort((a, b) => (b.data.updatedDate?.seconds || 0) - (a.data.updatedDate?.seconds || 0))
         .slice(0, 3);
@@ -180,8 +180,8 @@ export default {
   },
   async created() {
     // Load chats if not already loaded
-    if (this.$store.state.chats.length === 0 && this.$store.getters.isUserLoggedIn) {
-      await this.$store.commit('getChats');
+    if (this.$store.chats.length === 0 && this.$store.isUserLoggedIn) {
+      await this.$store.getChats();
     }
     await this.initializeChat();
   },
@@ -245,7 +245,7 @@ export default {
         
       } catch (error) {
         console.error('Error loading chat:', error);
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: 'Failed to load chat', 
           autoClear: true 
@@ -278,7 +278,7 @@ export default {
       };
 
       // Initialize chat instance
-      if (this.$store.getters.isUserLoggedIn) {
+      if (this.$store.isUserLoggedIn) {
         this.chatInstance = new Chat();
         await this.chatInstance.initChat();
       }
@@ -340,7 +340,7 @@ export default {
 
         const newChatHist = await ChatHistory.create(this.chatHist.data);
         this.chatHist.id = newChatHist.id;
-        this.$store.commit('getChats');
+        this.$store.getChats();
         return this.chatHist;
       } else {
         await ChatHistory.updateChat(this.chatHist.id, this.chatHist.data);

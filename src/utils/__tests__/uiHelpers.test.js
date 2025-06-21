@@ -1,44 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { showAlert, copyToClipboard, debounce, getRandomItem, placeCursorAtEnd } from '../uiHelpers.js'
+import { copyToClipboard, debounce, getRandomItem, placeCursorAtEnd } from '../uiHelpers.js'
+
+// Mock the store module
+vi.mock('../../store/index.js', () => ({
+  useMainStore: vi.fn()
+}))
 
 describe('uiHelpers', () => {
-  describe('showAlert', () => {
-    it('should commit alert to store with correct parameters', () => {
-      const mockStore = {
-        commit: vi.fn()
-      }
-      
-      showAlert(mockStore, 'success', 'Test message')
-      
-      expect(mockStore.commit).toHaveBeenCalledWith('alert', {
-        type: 'success',
-        message: 'Test message',
-        autoClear: true
-      })
-    })
+  let mockStore
 
-    it('should respect autoClear parameter', () => {
-      const mockStore = {
-        commit: vi.fn()
-      }
-      
-      showAlert(mockStore, 'error', 'Test message', false)
-      
-      expect(mockStore.commit).toHaveBeenCalledWith('alert', {
-        type: 'error',
-        message: 'Test message',
-        autoClear: false
-      })
-    })
+  beforeEach(async () => {
+    // Create mock store instance
+    mockStore = {
+      uiAlert: vi.fn()
+    }
+    
+    // Get the mocked useMainStore and set it up
+    const { useMainStore } = await import('../../store/index.js')
+    vi.mocked(useMainStore).mockReturnValue(mockStore)
   })
 
   describe('copyToClipboard', () => {
-    let mockStore
-
     beforeEach(() => {
-      mockStore = {
-        commit: vi.fn()
-      }
       // Mock navigator.clipboard
       Object.assign(navigator, {
         clipboard: {
@@ -50,37 +33,34 @@ describe('uiHelpers', () => {
     it('should copy text and show success message', async () => {
       navigator.clipboard.writeText.mockResolvedValue()
       
-      await copyToClipboard('test text', mockStore)
+      await copyToClipboard('test text')
       
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith('test text')
-      expect(mockStore.commit).toHaveBeenCalledWith('alert', {
+      expect(mockStore.uiAlert).toHaveBeenCalledWith({
         type: 'info',
-        message: 'Copied to clipboard!',
-        autoClear: true
+        message: 'Copied to clipboard!'
       })
     })
 
     it('should show error message when clipboard fails', async () => {
       navigator.clipboard.writeText.mockRejectedValue(new Error('Clipboard error'))
       
-      await copyToClipboard('test text', mockStore)
+      await copyToClipboard('test text')
       
-      expect(mockStore.commit).toHaveBeenCalledWith('alert', {
+      expect(mockStore.uiAlert).toHaveBeenCalledWith({
         type: 'error',
-        message: 'Failed to copy to clipboard',
-        autoClear: true
+        message: 'Failed to copy to clipboard'
       })
     })
 
     it('should use custom success message', async () => {
       navigator.clipboard.writeText.mockResolvedValue()
       
-      await copyToClipboard('test text', mockStore, 'Custom success!')
+      await copyToClipboard('test text', 'Custom success!')
       
-      expect(mockStore.commit).toHaveBeenCalledWith('alert', {
+      expect(mockStore.uiAlert).toHaveBeenCalledWith({
         type: 'info',
-        message: 'Custom success!',
-        autoClear: true
+        message: 'Custom success!'
       })
     })
   })

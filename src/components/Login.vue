@@ -17,8 +17,8 @@
         
         <div class="d-flex flex-column gap-1">
           <v-btn
-            color="white"
-            variant="outlined"
+            color="primary"
+            variant="flat"
             block
             @click="handleSocialSignIn('google')"
             class="mb-1"
@@ -28,8 +28,8 @@
           </v-btn>
           
           <v-btn
-            color="white"
-            variant="outlined"
+            color="primary"
+            variant="flat"
             block
             @click="handleSocialSignIn('github')"
             class="mb-1"
@@ -39,8 +39,8 @@
           </v-btn>
 
           <v-btn
-            color="white"
-            variant="outlined"
+            color=""
+            variant="tonal"
             block
             @click="showEmailForm = !showEmailForm"
             class="mb-1"
@@ -86,6 +86,18 @@
           </div>
         </v-expand-transition>
       </v-card-text>
+      
+      <v-card-actions class="justify-center pb-4">
+        <span class="text-body-2">
+          Not building yet? 
+          <span 
+            class="text-orange cursor-pointer font-weight-medium"
+            @click="goToSignup"
+          >
+            Sign up
+          </span>
+        </span>
+      </v-card-actions>
     </v-card>
   </v-sheet>
 </template>
@@ -93,7 +105,7 @@
 <script>
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useStore } from 'vuex';
+import { useMainStore } from '../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -108,7 +120,7 @@ import { firebaseApp } from '../firebase';
 export default {
   setup() {
     const router = useRouter();
-    const store = useStore();
+    const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
     const email = ref('');
@@ -117,8 +129,8 @@ export default {
     const error = ref('');
     const showEmailForm = ref(false);
     
-    const isLoggedIn = computed(() => store.getters.isLoggedIn);
-    const userEmail = computed(() => store.state.user?.email || '');
+    const isLoggedIn = computed(() => store.isUserLoggedIn);
+    const userEmail = computed(() => store.user?.email || '');
     
     const handleAuth = async () => {
       error.value = '';
@@ -128,7 +140,7 @@ export default {
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
         }
-        await store.dispatch('enter');
+        await store.userEnter();
         email.value = '';
         password.value = '';
         router.push('/');
@@ -140,8 +152,8 @@ export default {
     const handleSignOut = async () => {
       try {
         await signOut(auth);
-        store.commit('logout');
-        store.commit('alert', { type: 'info', message: 'Logged out successfully', autoClear: true });
+        store.userLogout();
+        store.uiAlert({ type: 'info', message: 'Logged out successfully', autoClear: true });
       } catch (err) {
         error.value = err.message;
       }
@@ -162,7 +174,7 @@ export default {
         await signInWithPopup(auth, authProvider).then(
           (userCred) => {
             console.log(userCred);
-            store.dispatch('enter');
+            store.userEnter();
             router.push('/');
           }
         );
@@ -183,6 +195,10 @@ export default {
       }
     };
     
+    const goToSignup = () => {
+      router.push('/login?signup=true');
+    };
+    
     return {
       email,
       password,
@@ -193,11 +209,19 @@ export default {
       showEmailForm,
       handleAuth,
       handleSignOut,
-      handleSocialSignIn
+      handleSocialSignIn,
+      goToSignup
     };
   }
 };
 </script>
 
 <style scoped>
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-pointer:hover {
+  text-decoration: underline;
+}
 </style>

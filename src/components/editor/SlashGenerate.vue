@@ -157,7 +157,7 @@ export default {
         this.tooltipProvider = new SlashProvider({
             content: YourDropdownUI,
             shouldShow: (view) => {
-                if (!this.$store.getters.canAccessAi) {
+                if (!this.$store.canAccessAi) {
                     return false;
                 }
 
