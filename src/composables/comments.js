@@ -1,4 +1,8 @@
-export const useComments = (store, eventStore) => {
+import { useMainStore } from '../store/index.js';
+
+export const useComments = (eventStore) => {
+  const store = useMainStore();
+  
   const handleAcceptSuggestion = async (payload, context) => {
     const { commentId, selectedText, suggestion } = payload;
     
@@ -18,7 +22,7 @@ export const useComments = (store, eventStore) => {
 
     if (!editorContent.includes(contentFrom)) {
       console.error('Selected text not found in editor content:', selectedText);
-      store.commit('alert', {
+      store.uiAlert({
         type: 'warning',
         message: 'selected text not found, resolving',
         autoClear: true
@@ -32,11 +36,11 @@ export const useComments = (store, eventStore) => {
     eventStore.emitEvent('replace-document-content', {contentfrom: selectedText, contentto: contentTo});
     
     // 4. Resolve the comment
-    store.dispatch('updateCommentData', {id: commentId, data: {resolved: true}});
+    await store.commentsUpdateData({id: commentId, data: {resolved: true}});
     
     
     // 5. Show a success message
-    store.commit('alert', {
+    store.uiAlert({
       type: 'success',
       message: 'Suggestion applied successfully',
       autoClear: true
@@ -73,9 +77,9 @@ export const useComments = (store, eventStore) => {
     context.refreshEditor(newContent);
     
     // Update the comment data
-    store.dispatch('updateCommentData', {id: id, data: {resolved: false}});
+    await store.commentsUpdateData({id: id, data: {resolved: false}});
     
-    store.commit('alert', {
+    store.uiAlert({
       type: 'success',
       message: 'Undo completed successfully',
       autoClear: true

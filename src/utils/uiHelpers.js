@@ -1,21 +1,5 @@
-/**
- * Utility functions for UI interactions and common operations
- */
-
-/**
- * Show alert message through the store
- * @param {Object} store - Vuex store instance
- * @param {string} type - Alert type ('success', 'error', 'warning', 'info')
- * @param {string} message - Alert message
- * @param {boolean} autoClear - Whether to auto-clear the alert
- */
-export function showAlert(store, type, message, autoClear = true) {
-  store.commit('alert', { 
-    type, 
-    message, 
-    autoClear 
-  })
-}
+import { useMainStore } from "../store/index.js";
+const getStore = () => useMainStore();
 
 /**
  * Copy text to clipboard with user feedback
@@ -23,13 +7,13 @@ export function showAlert(store, type, message, autoClear = true) {
  * @param {Object} store - Vuex store instance
  * @param {string} successMessage - Success message to show
  */
-export async function copyToClipboard(text, store, successMessage = 'Copied to clipboard!') {
+export async function copyToClipboard(text, successMessage = 'Copied to clipboard!') {
   try {
     await navigator.clipboard.writeText(text)
-    showAlert(store, 'info', successMessage)
+    getStore().uiAlert({ type: 'info', message: successMessage })
   } catch (error) {
     console.error('Failed to copy:', error)
-    showAlert(store, 'error', 'Failed to copy to clipboard')
+    getStore().uiAlert({ type: 'error', message: 'Failed to copy to clipboard' })
   }
 }
 

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory} from 'vue-router'
 import Home from '../components/Home.vue'
 import Login from '../components/Login.vue'
+import LoginScreen from '../components/LoginScreen.vue'
 import Chat from '../components/chat/Chat.vue'
 import Help from '../components/info/Help.vue'
 import About from '../components/info/About.vue'
@@ -9,17 +10,18 @@ import DocumentCreate from '../components/document/DocumentCreate.vue';
 import ProjectConfig from '../components/settings/ProjectConfig.vue';
 import UsersSettings from '../components/settings/UsersSettings.vue';
 import {User} from "../services/firebaseDataService";
-import store from '../store';
+import { useMainStore } from '../store/index.js';
 import TaskOverview from '../components/tasks/TaskOverview.vue';
 
 
 async function checkAuth(to, from, next) {
+  const store = useMainStore();
 
-  if(!store.getters.isUserLoggedIn){
-    await store.dispatch('enter')
+  if(!store.isUserLoggedIn){
+    await store.userEnter()
   }
 
-  if (store.getters.isUserLoggedIn) {
+  if (store.isUserLoggedIn) {
     next();
   } else {
     next('/login');
@@ -70,7 +72,7 @@ const routes = [
   {
     path: '/login',
     name: 'login',
-    component: Login
+    component: LoginScreen
   },
   {
     path: '/register',
@@ -104,9 +106,10 @@ const routes = [
     path: '/logout',
     name: 'logout',
     component: () => {
+      const store = useMainStore();
       User.logout();
-      this.$store.commit('logout')
-      this.$router.push('/')
+      store.user.logout();
+      // Navigation will be handled by the component
     }
   },
 ]
