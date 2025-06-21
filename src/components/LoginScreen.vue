@@ -412,7 +412,6 @@ export default {
       // Start animation
       animateScene();
       
-      console.log('Three.js scene initialized with dimensions:', width, 'x', height);
     };
     
     const animateScene = () => {

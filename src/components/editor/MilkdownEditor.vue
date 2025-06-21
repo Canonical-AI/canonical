@@ -471,19 +471,14 @@ export default {
                 return;
             }
             
-            console.log('removeAllCommentMarks called, loading:', this.loading, 'get:', !!this.get);
-
             this.get().action((ctx) => {
                 try {
-                    console.log('Inside action callback');
                     const view = ctx.get(editorViewCtx);
-                    console.log('Got view:', !!view);
                     if (!view) return;
 
                     const { state, dispatch } = view;
                     const { schema } = state;
                     const commentMarkType = schema.marks.comment;
-                    console.log('Got commentMarkType:', !!commentMarkType);
 
                     if (!commentMarkType) return;
 
@@ -498,8 +493,6 @@ export default {
                         });
                     });
 
-                    console.log('Found comment mark ranges:', ranges.length);
-
                     // Remove marks using mapping so every subsequent range is remapped
                     if (ranges.length > 0) {
                         let tr = state.tr;
@@ -509,13 +502,11 @@ export default {
                             tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
                         });
                         dispatch(tr);
-                        console.log('Dispatched transaction to remove', ranges.length, 'comment marks');
-                        
+
                         // Force content update by getting the current markdown
                         setTimeout(() => {
                             const serializer = ctx.get(serializerCtx);
                             const updatedMarkdown = serializer(view.state.doc);
-                            console.log('Updated markdown after removing marks:', updatedMarkdown.substring(0, 200) + '...');
                             this.$emit('update:modelValue', updatedMarkdown);
                         }, 100);
                     } else {
