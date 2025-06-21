@@ -165,7 +165,7 @@ describe('LoginScreen', () => {
     it('should render logo image', () => {
       wrapper = createWrapper()
       
-      const img = wrapper.find('img')
+      const img = wrapper.find('img[alt="Canonical"]')
       expect(img.attributes('src')).toBe('/canonical-logo.svg')
       expect(img.attributes('alt')).toBe('Canonical')
     })
