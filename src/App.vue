@@ -57,12 +57,11 @@
           offset-y>
           <template v-slot:activator="{ props }">
             <v-btn v-bind="props">
-              Login
+              Enter
           </v-btn>
           </template>
           <Login @login-success="loginMenuOpen=false"></Login>
         </v-menu>
-
 
         <v-menu
         v-if='$store.isUserLoggedIn === true && $store.user.email'
@@ -228,12 +227,18 @@
           <v-card-title>Welcome to Canonical 👋</v-card-title>
           <v-card-text>
             <p>We're glad to have you onboard!</p>
-            <p>Check out the demo documents to get started 🚀 </p>
-            <a class="text-blue-500 underline hover:text-blue-700" @click="$router.push('/document/wv2PNNrm32mTVbtZexcs'); welcomeDialog = false">Canonical Product Vision</a>
+            <p>Check out the demo or <span class="text-orange cursor-pointer underline" @click="$router.push('/login?signup=true'); welcomeDialog = false">register for free</span> to get started</p>
+            <v-btn 
+              class="text-none"
+              prepend-icon="mdi-rocket-launch"
+              color="primary" 
+              @click="$router.push('/document/wv2PNNrm32mTVbtZexcs'); welcomeDialog = false">
+                Demo - Canonical Product Vision
+              </v-btn>
           </v-card-text>
           <v-card-actions>
             <v-btn class="text-none" variant="text" href="https://github.com/Canonical-AI/.github">Documentation <v-icon>mdi-arrow-right</v-icon></v-btn>
-            <v-btn class="text-none" variant="elevated" color="primary" @click="$router.push('/register'); welcomeDialog = false"> Register for free</v-btn>
+            <v-btn class="text-none" variant="elevated" color="primary" @click="$router.push('/login?signup=true'); welcomeDialog = false"> Register for free</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>

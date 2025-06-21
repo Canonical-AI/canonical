@@ -1,13 +1,8 @@
 <template>
   <div class="login-screen-container">
-    <!-- Animated Background -->
-    <div class="animated-background">
-      <div class="blob blob-1"></div>
-      <div class="blob blob-2"></div>
-      <div class="blob blob-3"></div>
-      <div class="blob blob-4"></div>
-      <div class="blob blob-5"></div>
-      <div class="blur-overlay"></div>
+    <!-- WebGL Background -->
+    <div ref="backgroundContainer" class="background-container">
+      <img ref="backgroundImage" src="/login-background.avif" alt="" class="background-image-hidden" />
     </div>
     
     <v-container class="d-flex align-center justify-center pa-0 position-relative">
@@ -259,7 +254,7 @@
 </template>
 
 <script>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useMainStore } from '../store/index.js';
 import { 
@@ -271,6 +266,16 @@ import {
   signInWithEmailAndPassword
 } from 'firebase/auth';
 import { firebaseApp } from '../firebase';
+import { 
+  Scene, 
+  OrthographicCamera, 
+  WebGLRenderer, 
+  PlaneGeometry, 
+  ShaderMaterial, 
+  Mesh, 
+  TextureLoader,
+  Vector2 
+} from 'three';
 
 export default {
   name: 'LoginScreen',
@@ -281,6 +286,20 @@ export default {
     
     const selectedOption = ref(null);
     const error = ref('');
+    const backgroundContainer = ref(null);
+    const backgroundImage = ref(null);
+    
+    // Three.js scene variables
+    let scene, camera, renderer, planeMesh;
+    let animationId = null;
+    
+    // Animation state
+    let animationTime = 0;
+    
+    const ANIMATION_CONFIG = {
+      waveIntensity: 0.060,
+      timeSpeed: 0.008
+    };
     
     // Check for signup query parameter
     const route = useRoute();
@@ -296,6 +315,139 @@ export default {
     const signupEmail = ref('');
     const signupPassword = ref('');
     const confirmPassword = ref('');
+    
+    // Shaders
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    
+    const fragmentShader = `
+      uniform float u_time;
+      uniform vec2 u_mouse;
+      uniform float u_intensity;
+      uniform sampler2D u_texture;
+      varying vec2 vUv;
+
+      void main() {
+        vec2 uv = vUv;
+        float wave1 = sin(uv.x * 10.0 + u_time * 0.5 + u_mouse.x * 5.0) * u_intensity;
+        float wave2 = sin(uv.y * 12.0 + u_time * 0.8 + u_mouse.y * 4.0) * u_intensity;
+        float wave3 = cos(uv.x * 8.0 + u_time * 0.5 + u_mouse.x * 3.0) * u_intensity;
+        float wave4 = cos(uv.y * 9.0 + u_time * 0.7 + u_mouse.y * 3.5) * u_intensity;
+
+        uv.y += wave1 + wave2;
+        uv.x += wave3 + wave4;
+        
+        gl_FragColor = texture2D(u_texture, uv);
+      }
+    `;
+    
+    const initializeScene = (texture) => {
+      const container = backgroundContainer.value;
+      if (!container) {
+        console.warn('Container not available for Three.js initialization');
+        return;
+      }
+      
+      // Ensure container has dimensions
+      const width = container.offsetWidth || window.innerWidth;
+      const height = container.offsetHeight || window.innerHeight;
+      
+      if (width === 0 || height === 0) {
+        console.warn('Container has no dimensions, retrying...');
+        setTimeout(() => initializeScene(texture), 100);
+        return;
+      }
+      
+      // Camera setup - use orthographic camera for full coverage
+      camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+      camera.position.z = 1;
+      
+      // Scene creation
+      scene = new Scene();
+      
+      // Uniforms
+      const shaderUniforms = {
+        u_time: { type: "f", value: 1.0 },
+        u_mouse: { type: "v2", value: new Vector2(0.5, 0.5) },
+        u_intensity: { type: "f", value: ANIMATION_CONFIG.waveIntensity },
+        u_texture: { type: "t", value: texture }
+      };
+      
+      // Create a plane mesh that covers the full viewport
+      planeMesh = new Mesh(
+        new PlaneGeometry(2, 2),
+        new ShaderMaterial({
+          uniforms: shaderUniforms,
+          vertexShader,
+          fragmentShader
+        })
+      );
+      
+      // Add mesh to the scene
+      scene.add(planeMesh);
+      
+      // Renderer
+      renderer = new WebGLRenderer({ 
+        alpha: false, 
+        antialias: true,
+        preserveDrawingBuffer: false,
+        powerPreference: "high-performance"
+      });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      
+      // Clear any existing canvas
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      
+      // Create canvas
+      container.appendChild(renderer.domElement);
+      
+      // Start animation
+      animateScene();
+      
+      console.log('Three.js scene initialized with dimensions:', width, 'x', height);
+    };
+    
+    const animateScene = () => {
+      if (!planeMesh || !renderer) return;
+      
+      animationId = requestAnimationFrame(animateScene);
+      
+      // Update animation time
+      animationTime += ANIMATION_CONFIG.timeSpeed;
+      
+      // Create gentle looping movement for the wave center
+      const loopX = 0.5 + Math.sin(animationTime * 0.3) * 1.6;
+      const loopY = 0.5 + Math.cos(animationTime * 0.2) * 1.2;
+      
+      // Update uniforms
+      const uniforms = planeMesh.material.uniforms;
+      uniforms.u_intensity.value = ANIMATION_CONFIG.waveIntensity;
+      uniforms.u_time.value = animationTime;
+      uniforms.u_mouse.value.set(loopX, loopY);
+      
+      // Render
+      renderer.render(scene, camera);
+    };
+    
+
+    
+    const handleResize = () => {
+      if (!camera || !renderer || !backgroundContainer.value) return;
+      
+      const container = backgroundContainer.value;
+      // For orthographic camera, we don't need to update aspect ratio
+      // The camera already covers the full viewport with -1 to 1 coordinates
+      renderer.setSize(container.offsetWidth, container.offsetHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    };
     
     const handleSignIn = async () => {
       error.value = '';
@@ -365,6 +517,39 @@ export default {
       }
     };
     
+    onMounted(() => {
+      // Add resize listener first
+      window.addEventListener('resize', handleResize);
+      
+      // Wait for next tick to ensure DOM is fully rendered
+      nextTick(() => {
+        // Small delay to ensure container has proper dimensions
+        setTimeout(() => {
+          const textureLoader = new TextureLoader();
+          textureLoader.load('/login-background.avif', (texture) => {
+            initializeScene(texture);
+            // Force a resize after initialization to ensure proper sizing
+            setTimeout(() => {
+              handleResize();
+            }, 100);
+          });
+        }, 50);
+      });
+    });
+    
+    onUnmounted(() => {
+      // Cleanup
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      
+      if (renderer) {
+        renderer.dispose();
+      }
+      
+      window.removeEventListener('resize', handleResize);
+    });
+    
     return {
       selectedOption,
       error,
@@ -373,6 +558,8 @@ export default {
       signupEmail,
       signupPassword,
       confirmPassword,
+      backgroundContainer,
+      backgroundImage,
       handleSignIn,
       handleSignUp,
       handleSocialSignIn,
@@ -394,99 +581,28 @@ export default {
   overflow: hidden;
 }
 
-/* Animated Background */
-.animated-background {
+/* WebGL Background */
+.background-container {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   z-index: 0;
-  pointer-events: none;
+  overflow: hidden;
+  filter: blur(15px);
 }
 
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  animation: float 20s infinite linear;
-  filter: none; /* Remove individual blur, we'll blur everything together */
+.background-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  filter: saturate(80%);
 }
 
-.blob-1 {
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(var(--v-theme-primary), 0.9), rgba(var(--v-theme-secondary), 0.4));
-  top: -175px;
-  left: -175px;
-  animation-duration: 25s;
-  animation-delay: 0s;
-}
-
-.blob-2 {
-  width: 280px;
-  height: 280px;
-  background: radial-gradient(circle, rgba(var(--v-theme-success), 0.8), rgba(var(--v-theme-info), 0.7));
-  top: 20%;
-  right: -140px;
-  animation-duration: 30s;
-  animation-delay: -5s;
-}
-
-.blob-3 {
-  width: 320px;
-  height: 320px;
-  background: radial-gradient(circle, rgba(var(--v-theme-secondary), 0.7), rgba(var(--v-theme-primary), 0.3));
-  bottom: -160px;
-  left: 10%;
-  animation-duration: 35s;
-  animation-delay: -10s;
-}
-
-.blob-4 {
-  width: 240px;
-  height: 240px;
-  background: radial-gradient(circle, rgba(var(--v-theme-info), 0.9), rgba(var(--v-theme-success), 0.4));
-  top: 60%;
-  right: 15%;
-  animation-duration: 28s;
-  animation-delay: -15s;
-}
-
-.blob-5 {
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(var(--v-theme-primary), 0.9), rgba(var(--v-theme-secondary), 0.4));
-  top: 15%;
-  left: 25%;
-  animation-duration: 22s;
-  animation-delay: -8s;
-}
-
-/* Blur overlay that blends all blobs together */
-.blur-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  backdrop-filter: blur(70px);
-  z-index: 2;
-  pointer-events: none;
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg) scale(1);
-  }
-  25% {
-    transform: translate(40px, -60px) rotate(90deg) scale(1.1);
-  }
-  50% {
-    transform: translate(-30px, 30px) rotate(180deg) scale(0.9);
-  }
-  75% {
-    transform: translate(60px, 40px) rotate(270deg) scale(1.05);
-  }
+.background-image-hidden {
+  display: none;
 }
 
 .login-card {
@@ -497,21 +613,22 @@ export default {
   transform-origin: center;
   position: relative;
   z-index: 3;
-  backdrop-filter: blur(10px);
-  background: rgba(var(--v-theme-surface), 0.95);
+  backdrop-filter: blur(20px);
+  background: rgba(var(--v-theme-surface), 0.30) !important; 
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .options-panel {
-  background-color: rgba(var(--v-theme-surface-variant), 0.4);
-  border-right: 1px solid rgba(var(--v-theme-outline), 0.12);
+  background-color: rgba(var(--v-theme-surface-variant), 0.2);
+  border-right: 1px solid rgba(var(--v-theme-outline), 0.15);
   transition: all 0.3s ease;
-  backdrop-filter: blur(5px);
+  backdrop-filter: blur(15px);
 }
 
 .forms-panel {
-  background-color: rgba(var(--v-theme-surface), 0.8);
+  background-color: rgba(var(--v-theme-surface), 0.4);
   transition: all 0.3s ease;
-  backdrop-filter: blur(5px);
+  backdrop-filter: blur(15px);
 }
 
 .option-btn {
@@ -546,10 +663,14 @@ export default {
 @media (max-width: 959px) {
   .login-screen-container {
     min-height: 100vh;
-    min-height: 100dvh; /* Use dynamic viewport height when supported */
+    min-height: 100dvh;
     align-items: flex-start;
     padding: 12px 8px 20px 8px;
     overflow-y: auto;
+  }
+  
+  .background-container canvas {
+    filter: saturate(70%);
   }
   
   .login-card {
@@ -557,17 +678,17 @@ export default {
     min-height: auto;
     margin-top: auto;
     margin-bottom: auto;
-    background: rgba(var(--v-theme-surface), 0.98);
+    background: rgba(var(--v-theme-surface), 0.75) !important;
   }
   
   .options-panel {
     border-right: none;
-    border-bottom: 1px solid rgba(var(--v-theme-outline), 0.12);
-    background-color: rgba(var(--v-theme-surface-variant), 0.5);
+    border-bottom: 1px solid rgba(var(--v-theme-outline), 0.15);
+    background-color: rgba(var(--v-theme-surface-variant), 0.3);
   }
   
   .forms-panel {
-    background-color: rgba(var(--v-theme-surface), 0.9);
+    background-color: rgba(var(--v-theme-surface), 0.5);
   }
   
   .option-btn {
@@ -615,48 +736,8 @@ export default {
 
 /* Reduce motion for users who prefer it */
 @media (prefers-reduced-motion: reduce) {
-  .blob-1, .blob-2, .blob-3, .blob-4, .blob-5 {
-    animation: none;
-  }
-  
   .option-btn:hover {
     transform: none;
-  }
-}
-
-/* Mobile optimizations */
-@media (max-width: 768px) {
-  .blob-1 {
-    width: 250px;
-    height: 250px;
-    top: -125px;
-    left: -125px;
-  }
-  
-  .blob-2 {
-    width: 200px;
-    height: 200px;
-    right: -100px;
-  }
-  
-  .blob-3 {
-    width: 220px;
-    height: 220px;
-    bottom: -110px;
-  }
-  
-  .blob-4 {
-    width: 180px;
-    height: 180px;
-  }
-  
-  .blob-5 {
-    width: 150px;
-    height: 150px;
-  }
-  
-  .blur-overlay {
-    backdrop-filter: blur(20px);
   }
 }
 </style> 
