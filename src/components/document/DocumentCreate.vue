@@ -724,6 +724,10 @@ export default {
     "document.data": {
       async handler() {
 
+        if (this.$store.isUserLoggedIn === false) {
+          return;
+        }
+
         if (this.isEditable === false) {
           return;
         }

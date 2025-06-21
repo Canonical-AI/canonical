@@ -29,8 +29,8 @@ export const collectionMap = {
 // Auth guard - returns true if logged in, false if not
 function requireAuth() {
   if (!getStore().user.uid) {
-    getStore().uiAlert({ type: 'error', message: 'Please log in to continue', autoClear: true });
     console.warn( 'not logged in')
+    getStore().uiAlert({ type: 'error', message: 'Please log in to continue', autoClear: true });
     return false;
   }
   return true;

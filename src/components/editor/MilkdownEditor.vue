@@ -352,6 +352,11 @@ export default {
             if (!this.get || this.loading) {
                 return;
             }
+            
+            // Don't sync comment marks if user is not logged in
+            if (!this.isUserLoggedIn) {
+                return;
+            }
 
             this.get().action((ctx) => {
                 try {
@@ -458,6 +463,68 @@ export default {
                 console.warn('Error removing comment mark:', error);
                 return false;
             }
+        },
+
+        // Method to remove all comment marks from the editor
+        removeAllCommentMarks() {
+            if (!this.get || this.loading) {
+                return;
+            }
+            
+            console.log('removeAllCommentMarks called, loading:', this.loading, 'get:', !!this.get);
+
+            this.get().action((ctx) => {
+                try {
+                    console.log('Inside action callback');
+                    const view = ctx.get(editorViewCtx);
+                    console.log('Got view:', !!view);
+                    if (!view) return;
+
+                    const { state, dispatch } = view;
+                    const { schema } = state;
+                    const commentMarkType = schema.marks.comment;
+                    console.log('Got commentMarkType:', !!commentMarkType);
+
+                    if (!commentMarkType) return;
+
+                    // Collect all ranges that contain comment marks
+                    const ranges = [];
+                    state.doc.descendants((node, pos) => {
+                        if (!node.isText) return;
+                        node.marks.forEach(mark => {
+                            if (mark.type === commentMarkType) {
+                                ranges.push({ from: pos, to: pos + node.nodeSize });
+                            }
+                        });
+                    });
+
+                    console.log('Found comment mark ranges:', ranges.length);
+
+                    // Remove marks using mapping so every subsequent range is remapped
+                    if (ranges.length > 0) {
+                        let tr = state.tr;
+                        ranges.forEach(({ from, to }) => {
+                            const mappedFrom = tr.mapping.map(from);
+                            const mappedTo = tr.mapping.map(to);
+                            tr = tr.removeMark(mappedFrom, mappedTo, commentMarkType);
+                        });
+                        dispatch(tr);
+                        console.log('Dispatched transaction to remove', ranges.length, 'comment marks');
+                        
+                        // Force content update by getting the current markdown
+                        setTimeout(() => {
+                            const serializer = ctx.get(serializerCtx);
+                            const updatedMarkdown = serializer(view.state.doc);
+                            console.log('Updated markdown after removing marks:', updatedMarkdown.substring(0, 200) + '...');
+                            this.$emit('update:modelValue', updatedMarkdown);
+                        }, 100);
+                    } else {
+                        console.log('No comment marks found to remove');
+                    }
+                } catch (error) {
+                    console.warn('Error removing all comment marks:', error);
+                }
+            });
         },
 
         // Method to save marked up content when viewing a version
@@ -665,12 +732,25 @@ export default {
                 console.warn('Theme switching error:', error);
             }
         },
+        // Watch login status to remove comment marks when user logs out
+        isUserLoggedIn: {
+            handler(newVal, oldVal) {
+                if (newVal === false && oldVal === true) {
+                    // User logged out, remove all comment marks
+                    this.removeAllCommentMarks();
+                }
+            },
+            immediate: false
+        },
+
         // Watch both comments and version changes to filter comments by version
         '$store.selected.comments': {
             handler(oldVal, newVal) {
                 if (oldVal === newVal && this.loading) return;
-                // Sync comment marks when comments change
-                this.syncCommentMarks();
+                // Sync comment marks when comments change (only if user is logged in)
+                if (this.isUserLoggedIn) {
+                    this.syncCommentMarks();
+                }
             },
             immediate: true,
             deep: true
@@ -693,8 +773,8 @@ export default {
                         versionNumber: this.$store.selected.currentVersion});
                     }
 
-                // Sync comment marks when document content changes
-                if (!this.loading) {
+                // Sync comment marks when document content changes (only if user is logged in)
+                if (!this.loading && this.isUserLoggedIn) {
                     this.$nextTick(() => {
                         this.syncCommentMarks();
                     });
@@ -747,7 +827,12 @@ export default {
             this.setupCommentClickHandler();
             // Initial sync of comment marks after component is mounted
             setTimeout(() => {
-                this.syncCommentMarks();
+                // If user is not logged in on first load, remove comment marks
+                if (!this.isUserLoggedIn) {
+                    this.removeAllCommentMarks();
+                } else {
+                    this.syncCommentMarks();
+                }
             }, 1000);
         });
     },
