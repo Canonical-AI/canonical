@@ -232,10 +232,10 @@ export class User{
 
   // COLLABORATION METHODS
   static async inviteUserToProject(email, projectId, role = 'user') {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Check if current user is admin of this project
-    const currentUserRole = await this.getUserRoleInProject(store.state.user.uid, projectId);
+    const currentUserRole = await this.getUserRoleInProject(getStore().user.uid, projectId);
     if (currentUserRole !== 'admin') {
       throw new Error('Only project admins can invite users');
     }
@@ -254,7 +254,7 @@ export class User{
     const invitation = {
       email,
       projectId,
-      invitedBy: store.state.user.uid,
+      invitedBy: getStore().user.uid,
       role,
       status: 'pending',
       inviteToken,
@@ -267,7 +267,7 @@ export class User{
     // Generate shareable invitation link
     const inviteLink = `${window.location.origin}/invite/${inviteToken}`;
     
-    store.commit('alert', { 
+    getStore().uiAlert({ 
       type: 'success', 
       message: `Invitation link generated for ${email}`, 
       autoClear: true 
@@ -308,7 +308,7 @@ export class User{
   }
 
   static async acceptInvitation(inviteToken) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Find invitation
     const invitationsRef = collection(db, "invitations");
@@ -331,12 +331,12 @@ export class User{
     }
 
     // Check if user email matches invitation
-    if (store.state.user.email !== invitation.email) {
+    if (getStore().user.email !== invitation.email) {
       throw new Error('This invitation is for a different email address');
     }
 
     // Add user to project
-    await Project.addUserToProject(store.state.user.uid, invitation.projectId, invitation.role);
+    await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role);
 
     // Update invitation status
     await updateDoc(doc(db, "invitations", inviteDoc.id), {
@@ -345,19 +345,19 @@ export class User{
     });
 
     // Set as default project if user doesn't have one
-    if (!store.state.user.defaultProject) {
+    if (!getStore().user.defaultProject) {
       await this.setDefaultProject(invitation.projectId);
     }
 
     // Refresh user data to include new project
-    await store.dispatch('enter');
+    await getStore().userEnter();
 
-    store.commit('alert', { type: 'success', message: 'Successfully joined project!', autoClear: true });
+    getStore().uiAlert({ type: 'success', message: 'Successfully joined project!', autoClear: true });
     return invitation.projectId;
   }
 
   static async getPendingInvitations(userEmail = null) {
-    const email = userEmail || store.state.user?.email;
+    const email = userEmail || getStore().user?.email;
     if (!email) return [];
 
     const invitationsRef = collection(db, "invitations");
@@ -374,7 +374,7 @@ export class User{
   }
 
   static async cancelInvitation(inviteId) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Get invitation to check permissions
     const inviteRef = doc(db, "invitations", inviteId);
@@ -387,8 +387,8 @@ export class User{
     const invitation = inviteDoc.data();
     
     // Check if current user is admin of the project or the one who sent the invitation
-    const currentUserRole = await this.getUserRoleInProject(store.state.user.uid, invitation.projectId);
-    if (currentUserRole !== 'admin' && invitation.invitedBy !== store.state.user.uid) {
+    const currentUserRole = await this.getUserRoleInProject(getStore().user.uid, invitation.projectId);
+    if (currentUserRole !== 'admin' && invitation.invitedBy !== getStore().user.uid) {
       throw new Error('Only project admins can cancel invitations');
     }
 
@@ -396,10 +396,10 @@ export class User{
     await updateDoc(inviteRef, {
       status: 'cancelled',
       cancelledAt: serverTimestamp(),
-      cancelledBy: store.state.user.uid
+      cancelledBy: getStore().user.uid
     });
 
-    store.commit('alert', { type: 'success', message: 'Invitation cancelled', autoClear: true });
+    getStore().uiAlert({ type: 'success', message: 'Invitation cancelled', autoClear: true });
   }
 }
 
@@ -502,10 +502,10 @@ export class Project {
   }
 
   static async updateUserRole(userId, projectId, newRole) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Check if current user is admin
-    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    const currentUserRole = await User.getUserRoleInProject(getStore().user.uid, projectId);
     if (currentUserRole !== 'admin') {
       throw new Error('Only project admins can change user roles');
     }
@@ -528,15 +528,15 @@ export class Project {
 
     if (!snapshot.empty) {
       await updateDoc(snapshot.docs[0].ref, { role: newRole });
-      store.commit('alert', { type: 'success', message: 'User role updated', autoClear: true });
+      getStore().uiAlert({ type: 'success', message: 'User role updated', autoClear: true });
     }
   }
 
   static async removeUserFromProject(userId, projectId) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Check if current user is admin
-    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    const currentUserRole = await User.getUserRoleInProject(getStore().user.uid, projectId);
     if (currentUserRole !== 'admin') {
       throw new Error('Only project admins can remove users');
     }
@@ -562,9 +562,9 @@ export class Project {
       await updateDoc(snapshot.docs[0].ref, { 
         status: 'removed',
         removedAt: serverTimestamp(),
-        removedBy: store.state.user.uid
+        removedBy: getStore().user.uid
       });
-      store.commit('alert', { type: 'success', message: 'User removed from project', autoClear: true });
+      getStore().uiAlert({ type: 'success', message: 'User removed from project', autoClear: true });
     }
   }
 
@@ -583,10 +583,10 @@ export class Project {
 
 
   static async getProjectInvitations(projectId) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Check if user is admin
-    const currentUserRole = await User.getUserRoleInProject(store.state.user.uid, projectId);
+    const currentUserRole = await User.getUserRoleInProject(getStore().user.uid, projectId);
     
     // Also check if user is the project creator as fallback
     let isProjectCreator = false;
@@ -594,7 +594,7 @@ export class Project {
       const projectRef = doc(db, "project", projectId);
       const projectDoc = await getDoc(projectRef);
       if (projectDoc.exists()) {
-        isProjectCreator = projectDoc.data().createdBy === store.state.user.uid;
+        isProjectCreator = projectDoc.data().createdBy === getStore().user.uid;
       }
     }
     
