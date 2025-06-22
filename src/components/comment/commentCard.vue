@@ -291,9 +291,9 @@ export default {
   },
   computed:{
     user() {
-      const foundUser = this.$store.state.project.users.find(user => user.id === this.comment.createdBy)
+      const foundUser = this.$store.project.users.find(user => user.id === this.comment.createdBy)
       
-      if (foundUser?.id === this.$store.state.user.uid) {
+      if (foundUser?.id === this.$store.user.uid) {
         return { ...foundUser, displayName: 'you' }
       }
 
@@ -316,15 +316,15 @@ export default {
     },
     canShowSuggestion() {
       // Only show suggestion if the original text can be found in the current document content
-      if (!this.originalText || !this.$store.state.selected?.data?.content) {
+      if (!this.originalText || !this.$store.selected?.data?.content) {
         return false;
       }
       
-      const canShow = this.$store.state.selected.data.content.includes(this.originalText);
+      const canShow = this.$store.selected.data.content.includes(this.originalText);
       return canShow;
     },
     canUndo() {
-      if( this.$store.state.selected.data.content.includes(this.comment.suggestion) && this.comment.resolved){
+      if( this.$store.selected.data.content.includes(this.comment.suggestion) && this.comment.resolved){
         return true;
       } else {
         return false;
@@ -346,7 +346,7 @@ export default {
     },
 
     async updateComment (id,updatedComment) {
-      await this.$store.dispatch('updateComment',{id,updatedComment})
+      await this.$store.commentsUpdate({id,updatedComment})
       this.resetForm()
     },
 
@@ -368,7 +368,7 @@ export default {
           documentVersion: this.comment.documentVersion
         };
 
-        await this.$store.dispatch('addReply', { 
+        await this.$store.commentsAddReply({ 
           parentId: this.comment.parentId || this.comment.id, 
           comment: replyData 
         });

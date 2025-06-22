@@ -4,7 +4,7 @@
             <v-select
                 density="compact"
                 v-model="projectData.name"
-                :items="this.$store.state.projects"
+                :items="this.$store.projects"
                 item-title="name"
                 item-value="id"
                 object
@@ -77,8 +77,8 @@
                 <v-btn class="mx-1" density="compact" @click="reset()">reset</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="isNewProject" type="submit" color="primary">Initalize</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="primary">Update</v-btn>
-                <v-btn :disabled="projectData.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="warning">Archive</v-btn>
-                <v-btn :disabled="projectData.id === $store.state.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="error">Delete</v-btn>
+                <v-btn :disabled="projectData.id === $store.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="warning">Archive</v-btn>
+                <v-btn :disabled="projectData.id === $store.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="error">Delete</v-btn>
             </div>
 
             <div>
@@ -104,7 +104,7 @@
                                 <v-btn density="compact" class="text-none"  @click="removeUser(user.id)" color="primary">Approve</v-btn>
                                 <v-btn density="compact" class="text-none" @click="removeUser(user.id)" color="error">Reject</v-btn>
                             </span>
-                            <span v-else-if="user.id !== $store.state.user.uid" density="compact">
+                            <span v-else-if="user.id !== $store.user.uid" density="compact">
                                 <v-menu>
                                     <template v-slot:activator="{ props }">
                                         <v-btn density="compact" class="text-none" variant="tonal" color="secondary" v-bind="props">{{ user.role }}</v-btn>
@@ -378,10 +378,10 @@ export default {
             return
         }
 
-        this.isNewProject = this.$store.state.project === null
+        this.isNewProject = this.$store.project === null
         
         if (!this.isNewProject) {
-            this.projectData = { ...this.$store.state.project }
+            this.projectData = { ...this.$store.project }
             this.selectedFolders = this.projectData.folders.map(folder => folder.name);
             
             // Update the URL to reflect the current project ID
@@ -394,19 +394,19 @@ export default {
         if(this.newUserSetup){
             this.projectData = {
                 name: 'My Project',
-                users: [this.$store.state.user.uid],
+                users: [this.$store.user.uid],
                 folders: this.folders.map(folder => ({ name: folder })), /// setup with default folders
-                owner: this.$store.state.user.uid
+                owner: this.$store.user.uid
             }
             
             this.selectedFolders = [...this.folders];
             this.default = { ...this.projectData }
-            this.users = [{ ...this.$store.state.user, role: 'admin' }]
+            this.users = [{ ...this.$store.user, role: 'admin' }]
             return
         }
 
-        if (!this.isNewProject && this.$store.state.project?.id) {
-            this.users = await Project.getUsersForProject(this.$store.state.project.id, true);
+        if (!this.isNewProject && this.$store.project?.id) {
+            this.users = await Project.getUsersForProject(this.$store.project.id, true);
             await this.loadPendingInvitations();
             
             // Set up periodic refresh to catch when invitations are accepted
@@ -422,16 +422,16 @@ export default {
 
         async selectProject(value){
             try {
-                // Use commit for the store mutation (even though it's async)
-                await this.$store.commit('setProject', value)
+                console.log('selectProject', value)
+                await this.$store.projectSet(value)
                 
                 // Now that project is loaded, set up the component data
-                this.projectData = { ...this.$store.state.project }
+                this.projectData = { ...this.$store.project }
                 this.selectedFolders = this.projectData.folders.map(folder => folder.name);
                 this.default = { ...this.projectData }
                 
                 // Load users for this project FIRST
-                this.users = await Project.getUsersForProject(this.$store.state.project.id, true)
+                this.users = await Project.getUsersForProject(this.$store.project.id, true)
                 
                 // Then load invitations (which requires admin permissions)
                 await this.loadPendingInvitations();
@@ -440,12 +440,12 @@ export default {
                 this.setupPeriodicRefresh();
                 
                 // Update the route to reflect the selected project
-                if (this.$route.params.id !== this.$store.state.project.id) {
-                    this.$router.push({ path: `/settings/project/${this.$store.state.project.id}` })
+                if (this.$route.params.id !== this.$store.project.id) {
+                    this.$router.push({ path: `/settings/project/${this.$store.project.id}` })
                 }
             } catch (error) {
                 console.error('Error in selectProject:', error);
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'error', 
                     message: `Error loading project: ${error.message}`, 
                     autoClear: true 
@@ -460,18 +460,17 @@ export default {
 
             this.projectData =  {
                 name: 'New Project',
-                users: [this.$store.state.user.uid],
+                users: [this.$store.user.uid],
                 folders: [],
                 owner: ''
             },
 
             this.selectedFolders = [...this.folders]
-            this.users = [{ ...this.$store.state.user, role: 'admin' }]
+            this.users = [{ ...this.$store.user, role: 'admin' }]
         },
 
         setTempProject(){
             const projectCopy = JSON.parse(JSON.stringify(this.projectData));
-           // this.$store.commit('setTempProject', projectCopy)
         },
 
         async handleSubmit() { 
@@ -480,7 +479,7 @@ export default {
                 console.log('Creating new project:', this.projectData);
 
                 const projectRef = await Project.create(newProjectData)
-                this.$store.commit('setProject', projectRef.id )
+                this.$store.projectSet(projectRef.id )
                 this.$router.push({ path: `/document/create-document`})
  
             } else {

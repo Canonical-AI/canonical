@@ -2,8 +2,11 @@ import {firebaseApp} from "../firebase";
 import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDoc, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, increment, collectionGroup } from "firebase/firestore";
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
-import store from "../store";
+import { useMainStore } from "../store/index.js";
 import _ from 'lodash';
+
+// Helper function to get store instance
+const getStore = () => useMainStore();
  // Load environment variables from .env file
 
 // Initialize Cloud Firestore and get a reference to the service
@@ -16,7 +19,6 @@ export const collectionMap = {
   approval:'approvals',
   document:'documents',
   change:'documentChanges',
-  template:'templates',
   favorites:'favorites',
   project:'projects',
   task:'tasks',
@@ -25,12 +27,15 @@ export const collectionMap = {
 }
 
 
-function checkUserLoggedIn() {
-  if (!store.state.user.uid) {
-    store.commit('alert', { type: 'error', message: 'Cannot proceed: not logged in', autoClear: true });
-    throw new Error('Cannot proceed: not logged in');
+
+// Auth guard - returns true if logged in, false if not
+function requireAuth() {
+  if (!getStore().user.uid) {
+    console.warn( 'not logged in')
+    getStore().uiAlert({ type: 'error', message: 'Please log in to continue', autoClear: true });
+    return false;
   }
-  return true
+  return true;
 }
 
 function withTimeout(fn, timeoutDuration) {
@@ -43,7 +48,8 @@ function withTimeout(fn, timeoutDuration) {
       return await Promise.race([fn.apply(this, args), timeoutPromise]);
     } catch (error) {
       // Commit an alert to the store when a timeout occurs
-      store.commit('alert', { type: 'error', message: error.message, autoClear: true });
+      
+     getStore().uiAlert({ type: 'error', message: error.message, autoClear: true });
       throw error; // Re-throw the error after committing the alert
     }
   };
@@ -74,10 +80,11 @@ function wrapAsyncMethodsWithTimeout(targetClass, timeoutDuration) {
 }
 
 export function addInDefaults(value) {
-  checkUserLoggedIn()
-  value.createdBy = value.createdBy || store.state.user.uid;
-  value.updatedBy = store.state.user.uid;
-  value.project = value.project || store.state.project.id;
+  if (!requireAuth()) return value; // Return original value if not authenticated
+  
+  value.createdBy = value.createdBy || getStore().user.uid;
+  value.updatedBy = getStore().user.uid;
+  value.project = value.project || getStore().project.id;
   value.createDate = value.createDate || serverTimestamp();
   value.updatedDate = serverTimestamp(); // Add this line
   value.archived = false;
@@ -87,10 +94,11 @@ export function addInDefaults(value) {
 // users
 export class User{
   constructor(value) {
+    
     this.displayName = value.displayName || "";
     this.email = value.email || "";
     this.defaultProject = value.defaultProject || null;
-    this.org = value.org || store.state.user.email.split('@')[1];
+    this.org = value.org || getStore().user.email.split('@')[1];
     this.tier = value.tier || 'free';
     this.createDate =  serverTimestamp();
     this.updatedDate = serverTimestamp(); // Add this line
@@ -102,7 +110,7 @@ export class User{
     const userDoc = await getDoc(userRef);
     const userProjects = await this.getProjectsForUser(id)
     
-    return { id: userDoc.id, ...userDoc.data() , projects: userProjects };
+    return { uid: userDoc.id, ...userDoc.data() , projects: userProjects };
   }
   
   static async getUserAuth() {
@@ -135,9 +143,10 @@ export class User{
 
   static async logout(){
     const auth = getAuth();
+    
     await signOut(auth);
-    store.commit('logout')
-    store.commit('alert',{type:'info',message:'logged out',autoClear:true})
+    getStore().userLogout();
+   getStore().uiAlert({type:'info',message:'logged out',autoClear:true})
   }
   
   static async createUser(payload){
@@ -151,8 +160,9 @@ export class User{
 
     await setDoc(doc(db, "users", payload.uid), newUser);
 
+    
     const userDataForStore = { ...newUser, id: payload.uid};
-    await store.commit('setUserData', userDataForStore);
+    getStore().userSetData(userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
 
     // Check for pending invitations for this email
     const pendingInvitations = await this.getPendingInvitations(payload.email);
@@ -162,7 +172,7 @@ export class User{
       const firstInvitation = pendingInvitations[0];
       try {
         const projectId = await this.acceptInvitation(firstInvitation.inviteToken);
-        store.commit('alert', { 
+        getStore().uiAlert({ 
           type: 'success', 
           message: `Welcome! You've been automatically added to your project.`,
           autoClear: true 
@@ -177,24 +187,26 @@ export class User{
     
     // Normal new user flow - no pending invitations
     router.push('/new-user');
-    store.commit('alert', { type: 'info', message: 'New User Account Created!' });
-    return;
+    getStore().uiAlert({ type: 'info', message: 'New User Account Created!' });
+    return
   }
 
   static async setDefaultProject(value) {
-    checkUserLoggedIn()
-    const userRef = doc(db, "users", store.state.user.uid);
+    if (!requireAuth()) return;
+    
+    const userRef = doc(db, "users", getStore().user.uid);
     await updateDoc(userRef, { defaultProject: value });
-    store.commit('alert', { type: 'info', message: 'Default project set', autoClear: true });
+   getStore().uiAlert({ type: 'info', message: 'Default project set', autoClear: true });
   }
 
    // USER PROJECTS
   static async addUserToProject(userId, projectId, role='user') {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     // todo check if current user is admin of project
+    
     const userProjectRef = collection(db, "userProjects");
     await addDoc(userProjectRef, { userId, projectId, role });
-    store.commit('alert', { type: 'info', message: 'User added to project', autoClear: true });
+    getStore().uiAlert({ type: 'info', message: 'User added to project', autoClear: true });
   }
 
   static async getProjectsForUser(userId) {
@@ -205,9 +217,10 @@ export class User{
   }
 
   static async updatefield(id, field, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const userRef = doc(db, "users", id);
     await updateDoc(userRef, {[field]: value});
+    getStore().uiAlert({type: 'success', message: 'User updated', autoClear: true});
   }
 
   
@@ -392,22 +405,24 @@ export class User{
 
 export class Project {
   constructor(value) {
+    
     this.name = value.name || ""; // String
-    this.createdBy = value.createdBy || store.state.user.uid;
+    this.createdBy = value.createdBy || getStore().user.uid;
     this.folders = value.folders || [];
-    this.org = value.org || store.state.user.email.split('@')[1];
+    this.org = value.org || getStore().user.email.split('@')[1];
     Object.assign(this, addInDefaults(this));
   }
   
   static async create(value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return null;
+    
     const projectInstance = new Project(value);
     const docRef = await addDoc(collection(db, "project"), {...projectInstance});
     
     // Make the project creator an admin
-    await this.addUserToProject(store.state.user.uid, docRef.id, 'admin');
+    await this.addUserToProject(getStore().user.uid, docRef.id, 'admin');
     
-    store.commit('alert', {type: 'info', message: `Project added`, autoClear: true});
+    getStore().uiAlert({type: 'info', message: `Project added`, autoClear: true});
     return docRef;
   }
   
@@ -415,7 +430,7 @@ export class Project {
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
     let users = []
-    if (store.state.user.uid) {
+    if (getStore().user.uid) {
       users = await this.getUsersForProject(id, userDetails);
     } 
     return {
@@ -426,39 +441,41 @@ export class Project {
   }
   
   static async update(id, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, value);
+    getStore().uiAlert({type: 'success', message: 'Project updated', autoClear: true});
   }
 
   
   static async updatefield(id, field, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "project", id);
     await updateDoc(documentRef, {[field]: value});
     await updateDoc(documentRef, {updatedDate: serverTimestamp()});
+    getStore().uiAlert({type: 'success', message: 'Project updated', autoClear: true});
   }
 
   static async archive(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
-    store.commit('alert', {type: 'info', message: `Project archived`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
   }
 
   static async delete(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
-    store.commit('alert', {type: 'info', message: `Project archived`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
   }
 
   // ENHANCED USER MANAGEMENT
   static async addUserToProject(userId, projectId, role='user') {
-    checkUserLoggedIn();
+    if (!requireAuth()) return;
     
     // Check if user is already in the project (only for non-creator additions)
-    const isCreatorAddingSelf = userId === store.state.user.uid;
+    const isCreatorAddingSelf = userId === getStore().user.uid;
     if (!isCreatorAddingSelf) {
       const existingRole = await User.getUserRoleInProject(userId, projectId);
       if (existingRole) {
@@ -473,7 +490,7 @@ export class Project {
       role,
       status: 'active',
       joinedDate: serverTimestamp(),
-      invitedBy: isCreatorAddingSelf ? null : store.state.user.uid, // No inviter for project creator
+      invitedBy: isCreatorAddingSelf ? null : getStore().user.uid, // No inviter for project creator
       isCreator: isCreatorAddingSelf // Mark if this user is the project creator
     });
     
@@ -481,7 +498,7 @@ export class Project {
       `Project created and you are now an ${role}` : 
       'User added to project';
     
-    store.commit('alert', { type: 'info', message, autoClear: true });
+    getStore().uiAlert({ type: 'info', message, autoClear: true });
   }
 
   static async updateUserRole(userId, projectId, newRole) {
@@ -606,7 +623,7 @@ export class Project {
 
   // Update existing getUsersForProject to filter by active status
   static async getUsersForProject(projectId, details = false) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return [];
     const userProjectsRef = collection(db, "userProjects");
     const q = query(userProjectsRef, 
       where('projectId', '==', projectId),
@@ -682,7 +699,7 @@ export class Document {
   static async getAll(includeArchived = false, includeDraft = false) {
     
     // Check if project.id exists before using it in the query
-    if (!store.state.project?.id) {
+    if (!getStore().project?.id) {
       console.warn('No project ID available, returning empty array');
       return [];
     }
@@ -690,14 +707,14 @@ export class Document {
     const documentsRef = collection(db, "documents");
 
     const conditions = [
-      where("project", "==", store.state.project.id)
+      where("project", "==", getStore().project.id)
     ];
 
     if (!includeArchived) {
       conditions.push(where("archived", "==", false));
     }
 
-    if (!store.state.user.uid && !includeDraft) {
+    if (!getStore().user.uid && !includeDraft) {
       conditions.push(where("draft", "==", false));
     }
 
@@ -708,7 +725,6 @@ export class Document {
       id: doc.id,
       data: doc.data()
     })));
-
 
     return documents;
   }
@@ -726,11 +742,11 @@ export class Document {
     }
     
     const docData = docSnapshot.data();
-    const isUserLoggedIn = store.getters.isUserLoggedIn;
+    const isUserLoggedIn = getStore().isUserLoggedIn;
     
     // Permission check 1: Check if user is not logged in and document is in draft mode
     if (!isUserLoggedIn && docData.draft) {
-      store.commit('alert', { 
+      getStore().uiAlert( { 
         type: 'error', 
         message: 'This document is not publicly available. Please sign in to view it.' 
       });
@@ -739,11 +755,11 @@ export class Document {
     
     // Permission check 2: If user is logged in, check additional permissions
     if (isUserLoggedIn) {
-      const currentUserId = store.state.user.uid;
+      const currentUserId = getStore().user.uid;
       
       // If document is in draft mode, check if user is the creator
       // if (docData.draft && docData.createdBy !== currentUserId) {
-      //   store.commit('alert', { 
+      //   getStore().uiAlert( { 
       //     type: 'error', 
       //     message: 'This document is a draft and can only be viewed by its creator.' 
       //   });
@@ -754,11 +770,11 @@ export class Document {
       const projectId = docData.project;
       if (projectId) {
         // Get user's projects
-        const userProjects = store.state.user.projects || [];
+        const userProjects = getStore().user.projects || [];
         
         // Check if user is in the document's project
         if (!userProjects.includes(projectId)) {
-          store.commit('alert', { 
+          getStore().uiAlert( { 
             type: 'error', 
             message: 'You do not have access to this document. Please contact the project administrator.' 
           });
@@ -786,52 +802,52 @@ export class Document {
   }
   
   static async create(value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
 
     const doc = new Document(value)
     const newDoc = addInDefaults(doc.defaultValues);
     
     const docRef = await addDoc(collection(db, "documents"), newDoc);
-    store.commit('alert', {type: 'info', message: `document added`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document added`, autoClear: true});
 
     return docRef;
   }
 
   
   static async updateDoc(id, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
 
     const docData = addInDefaults(value); // Add defaults including serverTimestamp()
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, docData);
-    store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document updated`, autoClear: true});
   }
 
   
   static async updateDocField(id, field, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, {
       [field]: value,
       updatedDate: serverTimestamp()
     });
-    store.commit('alert', {type: 'info', message: `document updated`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document updated`, autoClear: true});
   }
 
   
   static async archiveDoc(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, {archived: true});
-    store.commit('alert', {type: 'info', message: `document archived`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document archived`, autoClear: true});
   }
 
   
   static async deleteDocByID(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "documents", id);
     await deleteDoc(documentRef);
-    store.commit('alert', {type: 'info', message: `document deleted`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document deleted`, autoClear: true});
   }
 
 
@@ -840,7 +856,7 @@ export class Document {
   ///-----------------------------------  
   
   static async createComment(docID, comment) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
     const documentRef = doc(db, "documents", docID);
     
     // If this is a child comment (has parentId), enforce single-level nesting
@@ -862,7 +878,7 @@ export class Document {
   }
 
   static async updateComment(docID, id, comment) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {updatedDate: serverTimestamp(), comment: comment});
@@ -870,7 +886,7 @@ export class Document {
   } 
 
   static async updateCommentData(docID, id, values) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {updatedDate: serverTimestamp(), ...values});
@@ -879,14 +895,14 @@ export class Document {
   } 
 
   static async archiveComment(docID, id) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {archived: true});
   }
 
   static async deleteComment(docID, id) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await deleteDoc(commentRef);
@@ -908,10 +924,9 @@ export class Document {
         id: doc.id, 
         ...doc.data()}))[0];
   }
-
   
   static async createVersion(docId, versionContent, versionNumber) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
 
     // Get the current document
     const documentRef = doc(db, "documents", docId);
@@ -922,14 +937,14 @@ export class Document {
     const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
 
     if (existingVersionNumbers.includes(versionNumber)) {
-      store.commit('alert', { type: 'info', message: `Version ${versionNumber} already exists`, autoClear: true, color: 'error' });
+      getStore().uiAlert( { type: 'info', message: `Version ${versionNumber} already exists`, autoClear: true, color: 'error' });
       throw new Error(`Version number ${versionNumber} already exists for this document.`);
     }
 
     // Create a new version
     const newVersion = {
       content: versionContent,
-      createdBy: store.state.user.uid,
+      createdBy: getStore().user.uid,
       createDate: serverTimestamp(),
       versionNumber: versionNumber,
       released: false,
@@ -938,13 +953,13 @@ export class Document {
     // Add the new version to the versions subcollection
     const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
 
-    store.commit('alert', { type: 'info', message: `Version ${newVersion.versionNumber} created`, autoClear: true });
+    getStore().uiAlert( { type: 'info', message: `Version ${newVersion.versionNumber} created`, autoClear: true });
     return versionRef;
   }
 
   
   static async deleteVersion(docId, versionNumber) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
 
     const documentRef = doc(db, "documents", docId);
     const versionsRef = collection(documentRef, "versions");
@@ -953,15 +968,15 @@ export class Document {
     if (!versionSnapshot.empty) {
         const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
         await deleteDoc(versionDocRef); // Delete the specific version document
-        store.commit('alert', {type: 'info', message: `doc version deleted`, autoClear: true});
+        getStore().uiAlert( {type: 'info', message: `doc version deleted`, autoClear: true});
     } else {
-        store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+        getStore().uiAlert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   } 
 
 
   static async updateMarkedUpContent(docID, versionContent , versionNumber) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
     const q = query(versionsRef, where("versionNumber", "==", versionNumber));
@@ -970,38 +985,28 @@ export class Document {
       const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
       await updateDoc(versionDocRef, {markedUpContent: versionContent});
     } else {
-      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+      getStore().uiAlert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   }
 
   static async toggleVersionReleased(docID, versionNumber, released) {
-    checkUserLoggedIn();
+    if (!requireAuth()) return value;;
+    console.log('toggleVersionReleased', docID, versionNumber, released)
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
     const q = query(versionsRef, where("versionNumber", "==", versionNumber));
     const versionSnapshot = await getDocs(q);
+    console.log('versionSnapshot', versionSnapshot)
     if (!versionSnapshot.empty) {
       const versionDocRef = versionSnapshot.docs[0].ref; // Get the reference of the first matching version
       await updateDoc(versionDocRef, {released: released});
     } else {
-      store.commit('alert', {type: 'error', message: `Version not found`, autoClear: true});
+      getStore().uiAlert( {type: 'error', message: `Version not found`, autoClear: true});
     }
   }
 
 }
 
-export class Template {
-  constructor(value) {
-    this.name = value.name; // String
-    this.content = value.content; // HTML
-  }
-
-  static async getAll() {
-    const templatesRef = collection(db, "templates");
-    const snapshot = await getDocs(templatesRef);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  }
-}
 
 export class ChatHistory {
   constructor(value) {
@@ -1014,18 +1019,18 @@ export class ChatHistory {
 
   
   static async create(value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     value = addInDefaults(value);
     const docRef = await addDoc(collection(db, "chats"), value);
-    store.commit('alert', {type: 'info', message: `document added`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `document added`, autoClear: true});
     return docRef;
   }
   
   static async getAll() {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     
     // Ensure user.uid exists before using it in the query
-    if (!store.state.user?.uid) {
+    if (!getStore().user?.uid) {
       console.warn('No user ID available, returning empty array');
       return [];
     }
@@ -1033,7 +1038,7 @@ export class ChatHistory {
     const chatsRef = collection(db, "chats");
     const q = query(chatsRef,
       where("archived", "==", false),
-      where("createdBy", "==", store.state.user.uid)
+      where("createdBy", "==", getStore().user.uid)
     );
     const snapshot = await getDocs(q);
 
@@ -1047,7 +1052,7 @@ export class ChatHistory {
 
   
   static async getDocById(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "chats", id);
     const snapshot = await getDoc(documentRef);
     return {
@@ -1058,14 +1063,14 @@ export class ChatHistory {
 
   
   static async updateChat(id, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, value);
     return await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   static async updateChatField(id, field, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, {[field]: value});
     await updateDoc(documentRef, {updatedDate: serverTimestamp()});
@@ -1073,18 +1078,18 @@ export class ChatHistory {
 
   
   static async archiveChat(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, {archived: true});
-    store.commit('alert', {type: 'info', message: `chat archived`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `chat archived`, autoClear: true});
   }
 
   
   static async deleteChat(id) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const documentRef = doc(db, "chats", id);
     await deleteDoc(documentRef);
-    store.commit('alert', {type: 'info', message: `chat deleted`, autoClear: true});
+    getStore().uiAlert( {type: 'info', message: `chat deleted`, autoClear: true});
   }
 }
 
@@ -1118,10 +1123,10 @@ export class UsageLogger {
 export class Favorites {
 
   static async getAll() {
-    checkUserLoggedIn()
-    const favoritesRef = doc(db, "favorites", store.state.user.uid);
+    if (!requireAuth()) return value;
+    const favoritesRef = doc(db, "favorites", getStore().user.uid);
     const snapshot = await getDoc(favoritesRef);
-    if (snapshot.exists() && snapshot.data().createdBy === store.state.user.uid) { // Check if created by logged-in user
+    if (snapshot.exists() && snapshot.data().createdBy === getStore().user.uid) { // Check if created by logged-in user
       return snapshot.data().documentIds || [];
     } else {
       return [];
@@ -1129,32 +1134,37 @@ export class Favorites {
   }
   
   static async updateFavorites(favorites) {
-    checkUserLoggedIn()
-    const favoritesRef = doc(db, "favorites", store.state.user.uid);
+    if (!requireAuth()) return value;
+    const favoritesRef = doc(db, "favorites", getStore().user.uid);
     const data = addInDefaults({ documentIds: favorites });
     await setDoc(favoritesRef, data, { merge: true });
-    store.commit('alert', { type: 'info', message: 'Favorites updated', autoClear: true });
+    getStore().uiAlert( { type: 'info', message: 'Favorites updated', autoClear: true });
   }
 }
 
 export class Task {
   static async getAll() {
-    checkUserLoggedIn()
+    // Check if user is logged in first, return empty array if not
+    
+    if (!getStore().user?.uid) {
+      console.warn('User not logged in, returning empty tasks array');
+      return [];
+    }
     
     // Check if project.id exists before using it in the query
-    if (!store.state.project?.id) {
+    if (!getStore().project?.id) {
       console.warn('No project ID available for tasks, returning empty array');
       return [];
     }
     
     const tasksRef = collection(db, "tasks");
-    const q = query(tasksRef, where("project", "==", store.state.project.id));
+    const q = query(tasksRef, where("project", "==", getStore().project.id));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
   }
 
   static async updateTasks(docID, documentContent) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     const tasksRef = doc(db, "tasks", docID);
     const snapshot = await getDoc(tasksRef);
 
@@ -1196,7 +1206,7 @@ export class Task {
 
     const data = addInDefaults({
       docID: docID,
-      createdBy: store.state.user.uid,
+      createdBy: getStore().user.uid,
       tasks: updatedTasks
     });
 
@@ -1206,7 +1216,7 @@ export class Task {
 
 
   static async updateTask(docID, identity, value) {
-    checkUserLoggedIn()
+    if (!requireAuth()) return value;
     console.log('updating task', docID, identity)
     const tasksRef = doc(db, "tasks", docID);
     const snapshot = await getDoc(tasksRef);
@@ -1238,7 +1248,6 @@ export class Task {
 wrapAsyncMethodsWithTimeout(User, 5000); // 5 seconds timeout
 wrapAsyncMethodsWithTimeout(Comment, 5000);
 wrapAsyncMethodsWithTimeout(Document, 5000);
-wrapAsyncMethodsWithTimeout(Template, 5000);
 wrapAsyncMethodsWithTimeout(ChatHistory, 5000);
 wrapAsyncMethodsWithTimeout(UsageLogger, 5000);
 wrapAsyncMethodsWithTimeout(Favorites, 5000);
