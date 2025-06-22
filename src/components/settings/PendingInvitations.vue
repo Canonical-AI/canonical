@@ -56,12 +56,12 @@ export default {
     };
   },
   async mounted() {
-    if (this.$store.getters.isUserLoggedIn) {
+    if (this.$store.isUserLoggedIn) {
       await this.loadInvitations();
     }
   },
   watch: {
-    '$store.getters.isUserLoggedIn'(isLoggedIn) {
+    '$store.isUserLoggedIn'(isLoggedIn) {
       if (isLoggedIn) {
         this.loadInvitations();
       } else {
@@ -106,7 +106,7 @@ export default {
         this.$router.push(`/settings/project/${projectId}`);
         
       } catch (error) {
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: error.message,
           autoClear: true 
@@ -121,7 +121,7 @@ export default {
       // For now, just hide it locally
       this.invitations = this.invitations.filter(inv => inv.id !== invitation.id);
       
-      this.$store.commit('alert', { 
+      this.$store.uiAlert({ 
         type: 'info', 
         message: 'Invitation declined',
         autoClear: true 

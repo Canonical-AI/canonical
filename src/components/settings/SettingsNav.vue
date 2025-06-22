@@ -15,7 +15,7 @@ export default {
     methods: {
         navigateToProject() {
             // Navigate to current project if available, otherwise just go to project settings
-            const projectId = this.$store.state.project?.id;
+            const projectId = this.$store.project?.id;
             if (projectId) {
                 this.$router.push(`/settings/project/${projectId}`);
             } else {

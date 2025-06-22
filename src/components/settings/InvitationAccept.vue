@@ -21,12 +21,12 @@
           <p class="text-caption">Invited by: {{ inviterName }}</p>
         </div>
         
-        <v-alert v-if="!$store.getters.isUserLoggedIn" type="info" class="mb-4">
+        <v-alert v-if="!$store.isUserLoggedIn" type="info" class="mb-4">
           Please sign in with the email address <strong>{{ invitation.email }}</strong> to accept this invitation.
         </v-alert>
 
         <!-- Login Component for non-authenticated users -->
-        <div v-if="!$store.getters.isUserLoggedIn" class="mt-4">
+        <div v-if="!$store.isUserLoggedIn" class="mt-4">
           <Login :prefilled-email="invitation.email" @auth-success="handleAuthSuccess" />
         </div>
       </v-card-text>
@@ -37,7 +37,7 @@
         </v-alert>
       </v-card-text>
 
-      <v-card-actions v-if="!loading && !error && !accepted && $store.getters.isUserLoggedIn">
+      <v-card-actions v-if="!loading && !error && !accepted && $store.isUserLoggedIn">
         <v-spacer></v-spacer>
         <v-btn @click="declineInvitation" variant="text">Decline</v-btn>
         <v-btn 
@@ -83,11 +83,11 @@ export default {
     }
 
     // Logout any existing user to ensure clean state for invitation acceptance
-    if (this.$store.getters.isUserLoggedIn) {
+    if (this.$store.isUserLoggedIn) {
       await User.logout();
-      this.$store.commit('logout');
+      this.$store.userLogout();
       
-      this.$store.commit('alert', { 
+      this.$store.uiAlert({ 
         type: 'info', 
         message: 'Logged out to ensure clean invitation acceptance. Please sign in with the invited email address.',
         autoClear: true 
@@ -137,8 +137,8 @@ export default {
     },
 
     async acceptInvitation() {
-      if (!this.$store.getters.isUserLoggedIn) {
-        this.$store.commit('alert', { 
+      if (!this.$store.isUserLoggedIn) {
+        this.$store.uiAlert({ 
           type: 'warning', 
           message: 'Please sign in to accept the invitation',
           autoClear: true 
@@ -146,8 +146,8 @@ export default {
         return;
       }
 
-      if (this.$store.state.user.email !== this.invitation.email) {
-        this.$store.commit('alert', { 
+      if (this.$store.user.email !== this.invitation.email) {
+        this.$store.uiAlert({ 
           type: 'error', 
           message: `This invitation is for ${this.invitation.email}. Please sign in with that email address.`,
           autoClear: true 
@@ -166,7 +166,7 @@ export default {
         }, 2000);
 
       } catch (error) {
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: error.message,
           autoClear: true 
@@ -183,13 +183,13 @@ export default {
 
     async handleAuthSuccess() {
       // User has successfully signed in, now try to accept the invitation
-      await this.$store.dispatch('enter'); // Refresh user state
+      await this.$store.userEnter(); // Refresh user state
       
       // Check if the user signed in with the correct email
-      if (this.$store.state.user.email === this.invitation.email) {
+      if (this.$store.user.email === this.invitation.email) {
         await this.acceptInvitation();
       } else {
-        this.$store.commit('alert', { 
+        this.$store.uiAlert({ 
           type: 'error', 
           message: `Please sign in with the invited email address: ${this.invitation.email}`,
           autoClear: true 

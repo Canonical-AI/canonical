@@ -315,11 +315,11 @@ export default {
     },
     computed: {
         isCurrentUserAdmin() {
-            const currentUser = this.users.find(u => u.id === this.$store.state.user.uid);
+            const currentUser = this.users.find(u => u.id === this.$store.user.uid);
             const isAdmin = currentUser?.role === 'admin';
             
             // Also check if user is the project creator
-            const isCreator = this.$store.state.project?.createdBy === this.$store.state.user.uid;
+            const isCreator = this.$store.project?.createdBy === this.$store.user.uid;
             
             return isAdmin || isCreator;
         }
@@ -360,7 +360,7 @@ export default {
         // Watch for changes in project users (to refresh invitations when someone accepts)
         'users.length': {
             handler() {
-                if (this.isCurrentUserAdmin && this.$store.state.project?.id) {
+                if (this.isCurrentUserAdmin && this.$store.project?.id) {
                     this.loadPendingInvitations();
                 }
             }
@@ -368,7 +368,7 @@ export default {
     },
     async mounted() {
         // Wait for user auth to complete (similar to DocumentCreate.vue)
-        while (this.$store.state.loadingUser) {
+        while (this.$store.loadingUser) {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
@@ -385,8 +385,8 @@ export default {
             this.selectedFolders = this.projectData.folders.map(folder => folder.name);
             
             // Update the URL to reflect the current project ID
-            if (this.$store.state.project?.id) {
-                this.$router.replace({ path: `/settings/project/${this.$store.state.project.id}` })
+            if (this.$store.project?.id) {
+                this.$router.replace({ path: `/settings/project/${this.$store.project.id}` })
             }
         }
 
@@ -506,9 +506,9 @@ export default {
                 
                 if (existingUser) {
                     // User exists, add them directly to the project
-                    await Project.addUserToProject(existingUser.id, this.$store.state.project.id, this.newUserRole);
+                    await Project.addUserToProject(existingUser.id, this.$store.project.id, this.newUserRole);
                     
-                    this.$store.commit('alert', { 
+                    this.$store.uiAlert({ 
                         type: 'success', 
                         message: `${this.newUserEmail} has been added to the project!`, 
                         autoClear: true 
@@ -520,7 +520,7 @@ export default {
                     // User doesn't exist, create invitation
                     const invitation = await User.inviteUserToProject(
                         this.newUserEmail, 
-                        this.$store.state.project.id, 
+                        this.$store.project.id, 
                         this.newUserRole
                     );
                     
@@ -565,7 +565,7 @@ export default {
         copyInvitationLink() {
             navigator.clipboard.writeText(this.invitationDialog.link).then(() => {
                 this.invitationDialog.copied = true;
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'success', 
                     message: 'Link copied to clipboard!', 
                     autoClear: true 
@@ -578,7 +578,7 @@ export default {
                     }
                 }, 3000);
             }).catch(() => {
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'error', 
                     message: 'Failed to copy link', 
                     autoClear: true 
@@ -606,10 +606,10 @@ Thanks!`);
 
         async changeUserRole(userId, newRole) {
             try {
-                await Project.updateUserRole(userId, this.$store.state.project.id, newRole);
+                await Project.updateUserRole(userId, this.$store.project.id, newRole);
                 await this.refreshUserList();
             } catch (error) {
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'error', 
                     message: error.message, 
                     autoClear: true 
@@ -628,11 +628,11 @@ Thanks!`);
 
         async removeUser(userId) {
             try {
-                await Project.removeUserFromProject(userId, this.$store.state.project.id);
+                await Project.removeUserFromProject(userId, this.$store.project.id);
                 await this.refreshUserList();
                 this.confirmDialog.show = false;
             } catch (error) {
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'error', 
                     message: error.message, 
                     autoClear: true 
@@ -644,7 +644,7 @@ Thanks!`);
             try {
                 // Only try to load invitations if user is admin
                 if (this.isCurrentUserAdmin) {
-                    this.pendingInvitations = await Project.getProjectInvitations(this.$store.state.project.id);
+                    this.pendingInvitations = await Project.getProjectInvitations(this.$store.project.id);
                 } else {
                     // If not admin, just set empty array
                     this.pendingInvitations = [];
@@ -653,7 +653,7 @@ Thanks!`);
                 console.error('Error loading invitations:', error);
                 // Don't show error alert for permission issues, just log it
                 if (!error.message.includes('Only project admins')) {
-                    this.$store.commit('alert', { 
+                    this.$store.uiAlert({ 
                         type: 'error', 
                         message: `Error loading invitations: ${error.message}`, 
                         autoClear: true 
@@ -668,7 +668,7 @@ Thanks!`);
                 await User.cancelInvitation(inviteId);
                 await this.loadPendingInvitations();
             } catch (error) {
-                this.$store.commit('alert', { 
+                this.$store.uiAlert({ 
                     type: 'error', 
                     message: error.message, 
                     autoClear: true 
@@ -677,8 +677,8 @@ Thanks!`);
         },
 
         async refreshUserList() {
-            if (this.$store.state.project?.id) {
-                this.users = await Project.getUsersForProject(this.$store.state.project.id, true);
+            if (this.$store.project?.id) {
+                this.users = await Project.getUsersForProject(this.$store.project.id, true);
             }
         },
 
@@ -690,7 +690,7 @@ Thanks!`);
             
             // Refresh user list and invitations every 10 seconds to catch accepted invitations
             this.refreshInterval = setInterval(async () => {
-                if (this.$store.state.project?.id && this.isCurrentUserAdmin) {
+                if (this.$store.project?.id && this.isCurrentUserAdmin) {
                     await this.refreshUserList();
                     await this.loadPendingInvitations();
                 }
