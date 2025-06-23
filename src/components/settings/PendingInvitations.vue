@@ -1,32 +1,47 @@
 <template>
-  <v-card v-if="invitations.length > 0" class="mb-4">
-    <v-card-title>
-      <v-icon left>mdi-email</v-icon>
-      Pending Invitations
-    </v-card-title>
-    
-    <v-card-text>
-      <v-list>
-        <v-list-item 
-          v-for="invitation in invitations" 
-          :key="invitation.id"
-          class="mb-2"
-        >
-          <v-list-item-content>
-            <v-list-item-title>{{ invitation.projectName || 'Project Invitation' }}</v-list-item-title>
-            <v-list-item-subtitle>
-              Role: {{ invitation.role }} • 
-              Invited {{ formatDate(invitation.createdDate) }}
-            </v-list-item-subtitle>
-          </v-list-item-content>
-          
-          <v-list-item-action>
-            <div class="d-flex gap-2">
+  <div v-if="$store.pendingInvitations.length > 0" class="mt-8">
+    <hr class="my-5">
+    <div class="d-flex justify-space-between align-center mb-4">
+      <h2>Pending Project Invitations</h2>
+      <v-chip 
+        color="primary" 
+        variant="tonal" 
+        size="small"
+      >
+        {{ $store.pendingInvitations.length }} pending
+      </v-chip>
+    </div>
+
+    <v-table density="compact">
+      <thead>
+        <tr>
+          <th class="text-left">Project</th>
+          <th class="text-left">Role</th>
+          <th class="text-left">Invited</th>
+          <th class="text-left">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="invitation in $store.pendingInvitations" :key="invitation.id">
+          <td>{{ invitation.projectName || 'Project Invitation' }}</td>
+          <td>
+            <v-chip 
+              :color="invitation.role === 'admin' ? 'orange' : 'blue'" 
+              variant="tonal" 
+              size="small"
+            >
+              {{ invitation.role }}
+            </v-chip>
+          </td>
+          <td>{{ formatDate(invitation.createdDate) }}</td>
+          <td>
+            <div class="d-flex">
               <v-btn 
                 size="small" 
                 color="primary" 
                 @click="acceptInvitation(invitation)"
                 :loading="accepting === invitation.id"
+                class="text-none mr-2"
               >
                 Accept
               </v-btn>
@@ -34,98 +49,84 @@
                 size="small" 
                 variant="outlined" 
                 @click="declineInvitation(invitation)"
+                class="text-none"
               >
                 Decline
               </v-btn>
             </div>
-          </v-list-item-action>
-        </v-list-item>
-      </v-list>
-    </v-card-text>
-  </v-card>
+          </td>
+        </tr>
+      </tbody>
+    </v-table>
+  </div>
+
+  <!-- Show message when no pending invitations -->
+  <div v-else class="mt-8">
+    <hr class="my-5">
+    <h2>Pending Project Invitations</h2>
+    <v-alert type="info" variant="tonal" class="mt-4">
+      You have no pending project invitations.
+    </v-alert>
+  </div>
 </template>
 
 <script>
-import { User, Project } from '../../services/firebaseDataService';
-
 export default {
   data() {
     return {
-      invitations: [],
       accepting: null
     };
   },
   async mounted() {
     if (this.$store.isUserLoggedIn) {
-      await this.loadInvitations();
+      await this.$store.userGetPendingInvitations();
     }
   },
   watch: {
     '$store.isUserLoggedIn'(isLoggedIn) {
       if (isLoggedIn) {
-        this.loadInvitations();
-      } else {
-        this.invitations = [];
+        this.$store.userGetPendingInvitations();
       }
     }
   },
   methods: {
-    async loadInvitations() {
-      try {
-        const invites = await User.getPendingInvitations();
-        
-        // Load project names for each invitation
-        this.invitations = await Promise.all(
-          invites.map(async (invite) => {
-            try {
-              const project = await Project.getById(invite.projectId);
-              return {
-                ...invite,
-                projectName: project.name
-              };
-            } catch (error) {
-              console.error('Error loading project for invitation:', error);
-              return invite;
-            }
-          })
-        );
-      } catch (error) {
-        console.error('Error loading invitations:', error);
-      }
-    },
-
     async acceptInvitation(invitation) {
       this.accepting = invitation.id;
       try {
-        const projectId = await User.acceptInvitation(invitation.inviteToken);
+        const projectId = await this.$store.userAcceptInvitation(invitation.inviteToken);
         
-        // Remove from local list
-        this.invitations = this.invitations.filter(inv => inv.id !== invitation.id);
+        // Show success message
+        this.$store.uiAlert({ 
+          type: 'success', 
+          message: `Successfully joined ${invitation.projectName || 'project'}!`, 
+          autoClear: true 
+        });
         
         // Optionally redirect to the project
         this.$router.push(`/settings/project/${projectId}`);
         
       } catch (error) {
-        this.$store.uiAlert({ 
-          type: 'error', 
-          message: error.message,
-          autoClear: true 
-        });
+        // Error already handled in store method
+        console.error('Error accepting invitation:', error);
       } finally {
         this.accepting = null;
       }
     },
 
     async declineInvitation(invitation) {
-      // TODO: Implement decline invitation functionality
-      // For now, just hide it locally
-      this.invitations = this.invitations.filter(inv => inv.id !== invitation.id);
-      
-      this.$store.uiAlert({ 
-        type: 'info', 
-        message: 'Invitation declined',
-        autoClear: true 
-      });
+      try {
+        await this.$store.userDeclineInvitation(invitation.id);
+        
+        // Show success message
+        this.$store.uiAlert({ 
+          type: 'info', 
+          message: 'Invitation declined', 
+          autoClear: true 
+        });
+      } catch (error) {
+        // Error already handled in store method
+        console.error('Error declining invitation:', error);
+      }
     },
 
     formatDate(timestamp) {
@@ -138,7 +139,5 @@ export default {
 </script>
 
 <style scoped>
-.gap-2 {
-  gap: 8px;
-}
+/* Component-specific styles */
 </style> 

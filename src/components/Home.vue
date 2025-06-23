@@ -19,9 +19,6 @@
           </v-row>
         </v-container>
         <v-container v-else-if="favoriteDocuments.length > 0">
-          <!-- Pending Invitations -->
-          <PendingInvitations />
-          
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
             <h1 class="mr-3">{{title}}</h1> <!-- Added Vuetify margin class -->
             <v-btn @click="createDocument" color="primary">Create Document</v-btn>
@@ -41,9 +38,6 @@
           </v-row>
         </v-container>
         <v-container v-else>
-          <!-- Pending Invitations -->
-          <PendingInvitations />
-          
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
             <h1 v-if="$store.user.uid" class="mr-3">Favorites</h1> <!-- Added Vuetify margin class -->
             <v-btn @click="createDocument" :disabled="!$store.user.uid" color="primary">Create Document</v-btn>
@@ -59,13 +53,11 @@
 <script>
 import { marked } from 'marked';
 import ReferenceLink from './editor/reference-link/ReferenceLink.vue';
-import PendingInvitations from './settings/PendingInvitations.vue';
 
 export default {
   name: 'Home',
   components: {
     ReferenceLink,
-    PendingInvitations,
   },
   data() {
     return {

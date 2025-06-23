@@ -262,6 +262,72 @@ export class User{
     return snapshot.docs[0].data().role;
   }
 
+  static async getPendingInvitations(email = null) {
+    // Use current user's email if no email provided
+    const targetEmail = email || getStore().user?.email;
+    
+    if (!targetEmail) {
+      console.warn('No email provided for getPendingInvitations');
+      return [];
+    }
+
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('email', '==', targetEmail),
+      where('status', '==', 'pending')
+    );
+    const snapshot = await getDocs(q);
+    
+    // Filter out expired invitations
+    const now = new Date();
+    const validInvitations = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .filter(invitation => {
+        const expiresAt = invitation.expiresAt?.toDate?.() || new Date(invitation.expiresAt);
+        return expiresAt > now;
+      });
+
+    return validInvitations;
+  }
+
+  static async declineInvitation(inviteId) {
+    if (!requireAuth()) return;
+    
+    const invitationRef = doc(db, "invitations", inviteId);
+    await updateDoc(invitationRef, {
+      status: 'declined',
+      declinedAt: serverTimestamp(),
+      declinedBy: getStore().user.uid
+    });
+
+    getStore().uiAlert({ type: 'info', message: 'Invitation declined', autoClear: true });
+  }
+
+  static async getInvitationByToken(token) {
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('inviteToken', '==', token),
+      where('status', '==', 'pending')
+    );
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      throw new Error('Invitation not found or has expired');
+    }
+
+    const invitation = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    
+    // Check if invitation is expired
+    if (invitation.expiresAt.toDate() < new Date()) {
+      throw new Error('This invitation has expired');
+    }
+
+    return invitation;
+  }
+
   static async acceptInvitation(inviteToken) {
     if (!requireAuth()) return;
     
@@ -341,7 +407,6 @@ export class Project {
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
 
-
     let invitations = []
     let users = []
     if (getStore().isProjectAdmin) {
@@ -389,10 +454,16 @@ export class Project {
   // ENHANCED USER MANAGEMENT
 
   static async getInvitation(projectId, email = null) {
+    //TODO need a way to check if user recently created an account but did not accept invitation
     const invitationRef = collection(db, "invitations");
-    const q = query(invitationRef, where('projectId', '==', projectId));
+    let q;
     if (email) {
-      q.push(where('email', '==', email));
+      q = query(invitationRef, 
+        where('projectId', '==', projectId),
+        where('email', '==', email)
+      );
+    } else {
+      q = query(invitationRef, where('projectId', '==', projectId));
     }
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({
@@ -422,13 +493,15 @@ export class Project {
     }
 
     // check if user is already invited
-    const existingInvitation = await this.getInvitation(projectId, email);
-    if (existingInvitation) {
+    const existingInvitations = await this.getInvitation(projectId, email);
+    if (existingInvitations.length > 0) {
+      const existingInvitation = existingInvitations[0];
       getStore().uiAlert({ type: 'info', message: 'User already invited', autoClear: true });
       return {success: true, id: existingInvitation.id, ...existingInvitation};
     }
 
-    const inviteToken = crypto.randomUUID();
+    const inviteToken = crypto.randomUUID ? crypto.randomUUID() : 
+      'invite_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now().toString(36);
     const invitation = {
       email,
       projectId,
@@ -504,24 +577,19 @@ export class Project {
       }
     }
 
-    // Update role
-    const userProjectsRef = collection(db, "userProjects");
-    const q = query(userProjectsRef, 
-      where('userId', '==', userId),
-      where('projectId', '==', projectId)
-    );
-    const snapshot = await getDocs(q);
+    // Use the general update method
+    await this.updateUserProjectStatus({
+      userId,
+      projectId,
+      updates: { role: newRole }
+    });
 
-    if (!snapshot.empty) {
-      await updateDoc(snapshot.docs[0].ref, { role: newRole });
-      getStore().uiAlert({ type: 'success', message: 'User role updated', autoClear: true });
-    }
+    getStore().uiAlert({ type: 'success', message: 'User role updated', autoClear: true });
   }
 
   static async removeUserFromProject({userId, projectId}) {
     if (!requireAuth()) return;
     if (!getStore().isProjectAdmin) return;
-
 
     // Prevent removing the last admin
     const project = await this.getById(projectId);
@@ -531,23 +599,59 @@ export class Project {
       return {success: false, message: 'Cannot remove the last admin from the project'};
     }
 
-    // Update status to removed instead of deleting
+    // Use the general update method
+    await this.updateUserProjectStatus({
+      userId,
+      projectId,
+      updates: {
+        status: 'removed',
+        removedAt: serverTimestamp(),
+        removedBy: getStore().user.uid
+      }
+    });
+
+    getStore().uiAlert({ type: 'success', message: 'User removed from project', autoClear: true });
+  }
+
+  static async updateUserProjectStatus({userId, projectId, updates}) {
+    if (!requireAuth()) return;
+    if (!getStore().isProjectAdmin) return;
+
     const userProjectsRef = collection(db, "userProjects");
     const q = query(userProjectsRef, 
       where('userId', '==', userId),
       where('projectId', '==', projectId)
     );
     const snapshot = await getDocs(q);
-    console.log(snapshot)
 
     if (!snapshot.empty) {
-      await updateDoc(snapshot.docs[0].ref, { 
-        status: 'removed',
-        removedAt: serverTimestamp(),
-        removedBy: getStore().user.uid
+      await updateDoc(snapshot.docs[0].ref, {
+        ...updates,
+        updatedAt: serverTimestamp(),
+        updatedBy: getStore().user.uid
       });
-      getStore().uiAlert({ type: 'success', message: 'User removed from project', autoClear: true });
+      return { success: true };
+    } else {
+      throw new Error('User project relationship not found');
     }
+  }
+
+  static async reinstateUser({userId, projectId}) {
+    if (!requireAuth()) return;
+    if (!getStore().isProjectAdmin) return;
+
+    await this.updateUserProjectStatus({
+      userId,
+      projectId,
+      updates: {
+        status: 'active',
+        reinstatedAt: serverTimestamp(),
+        reinstatedBy: getStore().user.uid
+      }
+    });
+
+    getStore().uiAlert({ type: 'success', message: 'User reinstated successfully', autoClear: true });
+    return { success: true };
   }
 
   static async getProjectAdmins(projectId) {
@@ -614,8 +718,6 @@ export class Project {
       ...doc.data()
     }));
 
-    console.log(users)
-
     // If details is true, get the user details
     if (details) {
       const userIds = users.map(u => u.userId);
@@ -641,8 +743,6 @@ export class Project {
       
       return usersDetail;
     }
-
-    console.log(users)
 
     return users;
   }
@@ -712,6 +812,38 @@ export class Document {
   }
 
   
+  // Helper function to ensure project creator is in userProjects
+  static async ensureProjectCreatorAccess(projectId, userId) {
+    // Get project details to check if user is the creator
+    const projectRef = doc(db, "project", projectId);
+    const projectDoc = await getDoc(projectRef);
+    
+    if (!projectDoc.exists()) {
+      return false;
+    }
+    
+    const projectData = projectDoc.data();
+    
+    // If user is the project creator, ensure they're in userProjects
+    if (projectData.createdBy === userId) {
+      // Check if user is already in userProjects
+      const userRole = await User.getUserRoleInProject(userId, projectId);
+      
+      if (!userRole) {
+        // User is project creator but not in userProjects - add them as admin
+        await Project.addUserToProject(userId, projectId, 'admin');
+        
+        // Refresh user data to include the new project relationship
+        await getStore().userEnter();
+        
+        console.log('Auto-added project creator to userProjects');
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
   static async getDocById(id) {
     // Get document ref first to use in the permission checks
     const documentRef = doc(db, "documents", id);
@@ -737,30 +869,24 @@ export class Document {
     
     // Permission check 2: If user is logged in, check additional permissions
     if (isUserLoggedIn) {
-      const currentUserId = getStore().user.uid;
-      
-      // If document is in draft mode, check if user is the creator
-      // if (docData.draft && docData.createdBy !== currentUserId) {
-      //   getStore().uiAlert( { 
-      //     type: 'error', 
-      //     message: 'This document is a draft and can only be viewed by its creator.' 
-      //   });
-      //   throw new Error('Permission denied: Draft document can only be viewed by creator');
-      // }
-      
-      // Check if user is in the document's project
       const projectId = docData.project;
       if (projectId) {
         // Get user's projects
-        const userProjects = getStore().user.projects || [];
+        let userProjects = getStore().user.projects || [];
+        const userProjectIds = userProjects.map(p => p.projectId || p.id);
         
         // Check if user is in the document's project
-        if (!userProjects.includes(projectId)) {
-          getStore().uiAlert( { 
-            type: 'error', 
-            message: 'You do not have access to this document. Please contact the project administrator.' 
-          });
-          throw new Error('Permission denied: User is not a member of the document\'s project');
+        if (!userProjectIds.includes(projectId)) {
+          // Try to auto-add project creator if they're missing from userProjects
+          const wasAdded = await this.ensureProjectCreatorAccess(projectId, getStore().user.uid);
+          
+          if (!wasAdded) {
+            getStore().uiAlert( { 
+              type: 'error', 
+              message: 'You do not have access to this document. Please contact the project administrator.' 
+            });
+            throw new Error('Permission denied: User is not a member of the document\'s project');
+          }
         }
       }
     }

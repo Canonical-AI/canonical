@@ -122,6 +122,10 @@ export default {
     prefilledEmail: {
       type: String,
       default: ''
+    },
+    defaultToSignUp: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['auth-success'],
@@ -132,7 +136,7 @@ export default {
     
     const email = ref(props.prefilledEmail || '');
     const password = ref('');
-    const isSignUp = ref(false);
+    const isSignUp = ref(props.defaultToSignUp || !!props.prefilledEmail); // Default to sign-up if email is prefilled
     const error = ref('');
     const showEmailForm = ref(!!props.prefilledEmail); // Show email form if email is prefilled
     

@@ -27,7 +27,11 @@
 
         <!-- Login Component for non-authenticated users -->
         <div v-if="!$store.isUserLoggedIn" class="mt-4">
-          <Login :prefilled-email="invitation.email" @auth-success="handleAuthSuccess" />
+          <Login 
+            :prefilled-email="invitation.email" 
+            :default-to-sign-up="true"
+            @auth-success="handleAuthSuccess" 
+          />
         </div>
       </v-card-text>
 
@@ -54,9 +58,6 @@
 </template>
 
 <script>
-import { User, Project } from '../../services/firebaseDataService';
-import db from '../../services/firebaseDataService';
-import { collection, query, where, getDocs } from 'firebase/firestore';
 import Login from '../auth/Login.vue';
 
 export default {
@@ -84,7 +85,7 @@ export default {
 
     // Logout any existing user to ensure clean state for invitation acceptance
     if (this.$store.isUserLoggedIn) {
-      await User.logout();
+      await this.$store.userLogoutAction();
       this.$store.userLogout();
       
       this.$store.uiAlert({ 
@@ -99,37 +100,14 @@ export default {
   methods: {
     async loadInvitation(token) {
       try {
-        // Get invitation by token
-        const invitationsRef = collection(db, "invitations");
-        const q = query(invitationsRef, 
-          where('inviteToken', '==', token),
-          where('status', '==', 'pending')
-        );
-        const snapshot = await getDocs(q);
+        const invitationDetails = await this.$store.userGetInvitationByToken(token);
         
-        if (snapshot.empty) {
-          this.error = 'Invitation not found or has expired';
-          return;
-        }
-
-        this.invitation = snapshot.docs[0].data();
-        
-        // Check if invitation is expired
-        if (this.invitation.expiresAt.toDate() < new Date()) {
-          this.error = 'This invitation has expired';
-          return;
-        }
-
-        // Load project details
-        const project = await Project.getById(this.invitation.projectId);
-        this.projectName = project.name;
-
-        // Load inviter details
-        const inviter = await User.getUserData(this.invitation.invitedBy);
-        this.inviterName = inviter.displayName || inviter.email;
+        this.invitation = invitationDetails;
+        this.projectName = invitationDetails.projectName;
+        this.inviterName = invitationDetails.inviterName;
 
       } catch (error) {
-        this.error = 'Failed to load invitation details';
+        this.error = error.message || 'Failed to load invitation details';
         console.error('Error loading invitation:', error);
       } finally {
         this.loading = false;
@@ -157,7 +135,7 @@ export default {
 
       this.accepting = true;
       try {
-        const projectId = await User.acceptInvitation(this.$route.params.token);
+        const projectId = await this.$store.userAcceptInvitation(this.$route.params.token);
         this.accepted = true;
         
         // Redirect to project after a brief delay
@@ -166,11 +144,8 @@ export default {
         }, 2000);
 
       } catch (error) {
-        this.$store.uiAlert({ 
-          type: 'error', 
-          message: error.message,
-          autoClear: true 
-        });
+        // Error already handled in store method
+        console.error('Error accepting invitation:', error);
       } finally {
         this.accepting = false;
       }

@@ -195,6 +195,88 @@
         </v-snackbar> 
       </div>
 
+      <!-- Pending Invitations Dialog -->
+      <v-dialog 
+        v-model="showPendingInvitationsDialog" 
+        max-width="600" 
+        persistent
+        v-if="$store.pendingInvitations.length > 0 && !$store.pendingInvitationsDismissed && $store.isUserLoggedIn"
+      >
+        <v-card>
+          <v-card-title class="d-flex justify-space-between align-center">
+            <div>
+              <v-icon left>mdi-email</v-icon>
+              Pending Project Invitations
+            </div>
+            <v-btn 
+              icon="mdi-close" 
+              variant="text" 
+              size="small"
+              @click="dismissPendingInvitations"
+            ></v-btn>
+          </v-card-title>
+          
+          <v-card-text>
+            <v-alert type="info" class="mb-4">
+              You have {{ $store.pendingInvitations.length }} pending project invitation{{ $store.pendingInvitations.length !== 1 ? 's' : '' }}.
+            </v-alert>
+            
+            <v-list>
+              <v-list-item 
+                v-for="invitation in $store.pendingInvitations" 
+                :key="invitation.id"
+                class="mb-2"
+              >
+                <v-list-item-content>
+                  <v-list-item-title>{{ invitation.projectName || 'Project Invitation' }}</v-list-item-title>
+                  <v-list-item-subtitle>
+                    Role: {{ invitation.role }} • 
+                    Invited {{ formatDate(invitation.createdDate) }}
+                  </v-list-item-subtitle>
+                </v-list-item-content>
+                
+                <v-list-item-action>
+                  <div class="d-flex">
+                    <v-btn 
+                      size="small" 
+                      color="primary" 
+                      @click="acceptInvitation(invitation)"
+                      :loading="acceptingInvitation === invitation.id"
+                      class="mr-2"
+                    >
+                      Accept
+                    </v-btn>
+                    <v-btn 
+                      size="small" 
+                      variant="outlined" 
+                      @click="declineInvitation(invitation)"
+                    >
+                      Decline
+                    </v-btn>
+                  </div>
+                </v-list-item-action>
+              </v-list-item>
+            </v-list>
+          </v-card-text>
+          
+          <v-card-actions class="justify-space-between">
+            <v-btn 
+              variant="text" 
+              @click="dismissPendingInvitations"
+            >
+              Dismiss for now
+            </v-btn>
+            <v-btn 
+              color="primary"
+              variant="text"
+              @click="goToUserSettings"
+            >
+              View in Settings
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <v-dialog v-model="isRegisterDialogOpen" max-width="500">
         <v-card>
           <v-card-title>Login</v-card-title>
@@ -278,7 +360,9 @@ export default {
     isNewUser: false,
     helpDialog: false,
     welcomeDialog: false,
-    isNavOpen: true
+    isNavOpen: true,
+    showPendingInvitationsDialog: true,
+    acceptingInvitation: null
   }),
   setup(){
     const theme = useTheme()
@@ -300,6 +384,15 @@ export default {
         }
       },
       immediate: true
+    },
+    '$store.pendingInvitations.length': {
+      handler(newCount, oldCount) {
+        // Show dialog again if new invitations come in
+        if (newCount > oldCount && newCount > 0) {
+          this.showPendingInvitationsDialog = true;
+          this.$store.userShowPendingInvitations();
+        }
+      }
     },
     $route: {
       handler(to) {
@@ -364,7 +457,7 @@ export default {
   },
   methods: {
     logout(){
-      User.logout()
+      this.$store.userLogoutAction()
     },
     switchTheme(themeName) {
       const darkMode = this.$vuetify.theme.themes[themeName].dark;
@@ -402,6 +495,66 @@ export default {
     },
     dismissAlert(alert) {
       alert.show = false;
+    },
+    dismissPendingInvitations() {
+      this.showPendingInvitationsDialog = false;
+      this.$store.userDismissPendingInvitations();
+    },
+    async acceptInvitation(invitation) {
+      this.acceptingInvitation = invitation.id;
+      try {
+        const projectId = await this.$store.userAcceptInvitation(invitation.inviteToken);
+        
+        // Show success message
+        this.$store.uiAlert({ 
+          type: 'success', 
+          message: `Successfully joined ${invitation.projectName || 'project'}!`, 
+          autoClear: true 
+        });
+        
+        // Close dialog if no more invitations
+        if (this.$store.pendingInvitations.length === 0) {
+          this.showPendingInvitationsDialog = false;
+        }
+        
+        // Optionally redirect to the project
+        this.$router.push(`/settings/project/${projectId}`);
+        
+      } catch (error) {
+        // Error already handled in store method
+        console.error('Error accepting invitation:', error);
+      } finally {
+        this.acceptingInvitation = null;
+      }
+    },
+    async declineInvitation(invitation) {
+      try {
+        await this.$store.userDeclineInvitation(invitation.id);
+        
+        // Show success message
+        this.$store.uiAlert({ 
+          type: 'info', 
+          message: 'Invitation declined', 
+          autoClear: true 
+        });
+        
+        // Close dialog if no more invitations
+        if (this.$store.pendingInvitations.length === 0) {
+          this.showPendingInvitationsDialog = false;
+        }
+      } catch (error) {
+        // Error already handled in store method
+        console.error('Error declining invitation:', error);
+      }
+    },
+    goToUserSettings() {
+      this.dismissPendingInvitations();
+      this.$router.push('/settings/user');
+    },
+    formatDate(timestamp) {
+      if (!timestamp) return '';
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString();
     }
   },
   created() {
