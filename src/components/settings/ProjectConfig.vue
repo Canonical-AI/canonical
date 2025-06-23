@@ -98,7 +98,7 @@
                     <tr v-for="user in users" :key="user.id">
                         <td>{{ user.displayName }}</td>
                         <td>{{ user.email }}</td>
-                        <td>{{ user.role }}</td>
+                        <td>{{ user.status === 'removed'? 'removed': user.role }}</td>
                         <td>
                             <span v-if="user.pending">
                                 <v-btn density="compact" class="text-none"  @click="removeUser(user.id)" color="primary">Approve</v-btn>
@@ -133,7 +133,8 @@
                         <tr>
                             <th class="text-left">Email</th>
                             <th class="text-left">Role</th>
-                            <th class="text-left">Sent</th>
+                            <th class="text-left">Created</th>
+                            <th class="text-left">Expires</th>
                             <th class="text-left">Action</th>
                         </tr>
                     </thead>
@@ -142,6 +143,7 @@
                             <td>{{ invite.email }}</td>
                             <td>{{ invite.role }}</td>
                             <td>{{ formatDate(invite.createdDate) }}</td>
+                            <td>{{ invite.expiresAt.toDate().toLocaleDateString() }}</td>
                             <td>
                                 <v-btn 
                                     density="compact" 
@@ -230,7 +232,7 @@
                     </v-alert>
                     
                     <v-text-field
-                        v-model="invitationDialog.link"
+                        :value="fullInvitationUrl"
                         label="Invitation Link"
                         readonly
                         append-icon="mdi-content-copy"
@@ -322,6 +324,9 @@ export default {
             const isCreator = this.$store.project?.createdBy === this.$store.user.uid;
             
             return isAdmin || isCreator;
+        },
+        fullInvitationUrl() {
+            return this.invitationDialog.token ? `${window.location.origin}/invite/${this.invitationDialog.token}` : '';
         }
     },
     props: {
@@ -368,9 +373,21 @@ export default {
     },
     async mounted() {
         // Wait for user auth to complete (similar to DocumentCreate.vue)
+        let tries = 0
         while (this.$store.loadingUser) {
             await new Promise(resolve => setTimeout(resolve, 100));
+            tries++
+            if (tries > 10) {
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: 'Error loading project', 
+                    autoClear: true 
+                });
+                return
+            }
         }
+
+        await this.$store.projectRefresh(details = true)
 
         if (this.$route.params.id) {
             await this.selectProject(this.$route.params.id)
@@ -406,7 +423,7 @@ export default {
         }
 
         if (!this.isNewProject && this.$store.project?.id) {
-            this.users = await Project.getUsersForProject(this.$store.project.id, true);
+            this.users = this.$store.project.users
             await this.loadPendingInvitations();
             
             // Set up periodic refresh to catch when invitations are accepted
@@ -423,7 +440,7 @@ export default {
         async selectProject(value){
             try {
                 console.log('selectProject', value)
-                await this.$store.projectSet(value)
+                await this.$store.projectSet(value, true)
                 
                 // Now that project is loaded, set up the component data
                 this.projectData = { ...this.$store.project }
@@ -431,7 +448,7 @@ export default {
                 this.default = { ...this.projectData }
                 
                 // Load users for this project FIRST
-                this.users = await Project.getUsersForProject(this.$store.project.id, true)
+                this.users = this.$store.project.users
                 
                 // Then load invitations (which requires admin permissions)
                 await this.loadPendingInvitations();
@@ -479,7 +496,7 @@ export default {
                 console.log('Creating new project:', this.projectData);
 
                 const projectRef = await Project.create(newProjectData)
-                this.$store.projectSet(projectRef.id )
+                this.$store.projectSet(projectRef.id , true)
                 this.$router.push({ path: `/document/create-document`})
  
             } else {
@@ -498,44 +515,17 @@ export default {
         async sendInvitation() {
             if (!this.newUserEmail || !this.isCurrentUserAdmin) return;
 
-            try {
-                this.inviteError = '';
-                
-                // First check if user already exists
-                const existingUser = await User.getUserByEmail(this.newUserEmail);
-                
-                if (existingUser) {
-                    // User exists, add them directly to the project
-                    await Project.addUserToProject(existingUser.id, this.$store.project.id, this.newUserRole);
-                    
-                    this.$store.uiAlert({ 
-                        type: 'success', 
-                        message: `${this.newUserEmail} has been added to the project!`, 
-                        autoClear: true 
-                    });
-                    
-                    // Refresh user list
-                    await this.refreshUserList();
-                } else {
-                    // User doesn't exist, create invitation
-                    const invitation = await User.inviteUserToProject(
-                        this.newUserEmail, 
-                        this.$store.project.id, 
-                        this.newUserRole
-                    );
-                    
-                    // Show the invitation link dialog
-                    this.showInvitationDialog(invitation);
-                    
-                    await this.loadPendingInvitations(); // Refresh invitations
-                }
-                
-                this.newUserEmail = '';
-                this.newUserRole = 'user';
-                
-            } catch (error) {
-                this.inviteError = error.message;
-                console.error('Error sending invitation:', error);
+            const result = await this.$store.projectCreateInvitation({
+                projectId: this.$store.project.id,
+                email: this.newUserEmail,
+                role: this.newUserRole
+            })
+            
+            if (result.success) {
+                if (result.id) {
+                    this.showInvitationDialog(result);
+                    await this.loadPendingInvitations();
+                } 
             }
         },
 
@@ -544,7 +534,7 @@ export default {
                 show: true,
                 email: invitation.email,
                 role: invitation.role,
-                link: invitation.inviteLink,
+                token: `${window.location.origin}/invite/${invitation.inviteToken}`,
                 copied: false
             };
         },
@@ -557,13 +547,13 @@ export default {
                 show: true,
                 email: invite.email,
                 role: invite.role,
-                link: inviteLink,
+                token: invite.inviteToken,
                 copied: false
             };
         },
 
         copyInvitationLink() {
-            navigator.clipboard.writeText(this.invitationDialog.link).then(() => {
+            navigator.clipboard.writeText(`${window.location.origin}/invite/${this.invitationDialog.token}`).then(() => {
                 this.invitationDialog.copied = true;
                 this.$store.uiAlert({ 
                     type: 'success', 
@@ -594,7 +584,7 @@ You've been invited to join our project with ${invitation.role} access.
 
 Please sign up using the email address: ${invitation.email}
 
-Click this link to join: ${invitation.link}
+Click this link to join: ${window.location.origin}/invite/${invitation.token}
 
 Important: You must sign up with the exact email address (${invitation.email}) for the invitation to work.
 
@@ -607,7 +597,7 @@ Thanks!`);
         async changeUserRole(userId, newRole) {
             try {
                 await Project.updateUserRole(userId, this.$store.project.id, newRole);
-                await this.refreshUserList();
+
             } catch (error) {
                 this.$store.uiAlert({ 
                     type: 'error', 
@@ -627,17 +617,8 @@ Thanks!`);
         },
 
         async removeUser(userId) {
-            try {
-                await Project.removeUserFromProject(userId, this.$store.project.id);
-                await this.refreshUserList();
-                this.confirmDialog.show = false;
-            } catch (error) {
-                this.$store.uiAlert({ 
-                    type: 'error', 
-                    message: error.message, 
-                    autoClear: true 
-                });
-            }
+            await this.$store.projectRemoveUserFromProject({userId, projectId: this.$store.project.id})
+            this.confirmDialog.show = false;
         },
 
         async loadPendingInvitations() {
@@ -676,11 +657,7 @@ Thanks!`);
             }
         },
 
-        async refreshUserList() {
-            if (this.$store.project?.id) {
-                this.users = await Project.getUsersForProject(this.$store.project.id, true);
-            }
-        },
+
 
         setupPeriodicRefresh() {
             // Clear existing interval if any
@@ -691,7 +668,6 @@ Thanks!`);
             // Refresh user list and invitations every 10 seconds to catch accepted invitations
             this.refreshInterval = setInterval(async () => {
                 if (this.$store.project?.id && this.isCurrentUserAdmin) {
-                    await this.refreshUserList();
                     await this.loadPendingInvitations();
                 }
             }, 10000);

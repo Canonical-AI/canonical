@@ -34,7 +34,7 @@ export const useMainStore = defineStore('main', {
       email: null,
       tier: null,
       defaultProject: null,
-      projects: []
+      projects: [],
     },
     loadingUser: true,
     project: {
@@ -42,7 +42,9 @@ export const useMainStore = defineStore('main', {
       folders: [],
       name: null,
       createdBy: null,
-      users: []
+      users: [],
+      invitation: [],
+      projectRole: null,
     },
     projects: [],
     documents: [],
@@ -74,6 +76,8 @@ export const useMainStore = defineStore('main', {
     isUserLoggedIn: (state) => state.user.uid !== null,
     
     canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
+    
+    isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id)?.role === 'admin',
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
@@ -192,7 +196,7 @@ export const useMainStore = defineStore('main', {
         email: payload.email,
         tier: payload.tier,
         defaultProject: payload.defaultProject,
-        projects: payload.projects
+        projects: payload.projects,
       };
     },
 
@@ -230,11 +234,6 @@ export const useMainStore = defineStore('main', {
       this.templates = [];
     },
 
-    async userGetData() {
-      this.loadingUser = true;
-      this.user = await User.getById(this.user.uid);
-      this.loadingUser = false;
-    },
 
     async userSetDefaultProject(payload) {
       await User.setDefaultProject(payload);
@@ -242,19 +241,20 @@ export const useMainStore = defineStore('main', {
     },
 
     // Project Management
-    async projectSet(projectId) {
+    async projectSet(projectId, details = false) {
       if (!projectId) return;
       
-      this.project = await Project.getById(projectId);
+      this.project = await Project.getById(projectId, true);
       
       if (this.isUserLoggedIn) {
         await this.projectGetAllData();
       }
     },
 
-    projectSetTemp(payload) {
-      this.project = payload;
+    async projectRefresh(details = false) {
+      this.project = await Project.getById(this.project.id, details);
     },
+
 
     async projectGetAllData() {
 
@@ -276,7 +276,7 @@ export const useMainStore = defineStore('main', {
         // Load projects (with safety check for user.projects)
         if (this.user.projects && this.user.projects.length > 0) {
           this.projects = await Promise.all(
-            this.user.projects.map(projectId => Project.getById(projectId))
+            this.user.projects.map(project => Project.getById(project.projectId))
           );
         }
         
@@ -300,6 +300,35 @@ export const useMainStore = defineStore('main', {
           message: 'Failed to load project data. Please try refreshing the page.',
           autoClear: true
         });
+      }
+    },
+    
+
+    async projectGetInvitation() {
+      this.project.invitation = await Project.getInvitation(this.project.id);
+    },
+    
+    async projectCreateInvitation({projectId, email, role}) { 
+      const result = await Project.inviteUserToProject({projectId, email, role});
+      return  result
+    },
+
+    async projectUpdateInvitation(payload) {
+      this.project.invitation = await Project.updateInvitation(payload);
+    },
+
+    async projectRemoveUserFromProject({userId, projectId}) {
+      await Project.removeUserFromProject({userId, projectId});
+      
+      // Update local project users state to mark user as removed
+      if (this.project.users) {
+        const userIndex = this.project.users.findIndex(user => user.userId === userId );
+        if (userIndex !== -1) {
+          this.project.users[userIndex] = {
+            ...this.project.users[userIndex],
+            removed: 'removed'
+          };
+        }
       }
     },
 
@@ -468,8 +497,6 @@ export const useMainStore = defineStore('main', {
     documentsUpdate(document) {
       this.selected = { ...this.selected, ...document };
     },
-
-
 
     // Comments Management
     async commentsAdd(comment) {

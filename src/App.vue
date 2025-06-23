@@ -252,7 +252,7 @@ import {User} from "./services/firebaseDataService";
 import { useTheme } from 'vuetify'
 import ChatNav from './components/chat/ChatNav.vue'
 import DocumentTree from "./components/document/DocumentTree.vue";
-import Login from "./components/Login.vue";
+import Login from "./components/auth/Login.vue";
 import SettingsNav from "./components/settings/SettingsNav.vue";
 import GetStarted from "./components/settings/GetStarted.vue";
 import { logEvent } from "firebase/analytics";

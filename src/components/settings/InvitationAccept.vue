@@ -57,7 +57,7 @@
 import { User, Project } from '../../services/firebaseDataService';
 import db from '../../services/firebaseDataService';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import Login from '../Login.vue';
+import Login from '../auth/Login.vue';
 
 export default {
   components: {

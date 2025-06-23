@@ -254,9 +254,9 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { useMainStore } from '../store/index.js';
+
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -265,7 +265,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword
 } from 'firebase/auth';
-import { firebaseApp } from '../firebase';
+import { firebaseApp } from '../../firebase.js';
+import { useMainStore } from '../../store/index.js';
 import { 
   Scene, 
   OrthographicCamera, 
@@ -306,6 +307,18 @@ export default {
     if (route.query.signup === 'true') {
       selectedOption.value = 'signup';
     }
+    
+    // Watch for user authentication changes and redirect when logged in
+    watch(
+      () => [store.isUserLoggedIn, store.loadingUser],
+      ([isLoggedIn, loadingUser]) => {
+        // Only redirect when loading is complete and user is logged in
+        if (!loadingUser && isLoggedIn) {
+          router.push('/');
+        }
+      },
+      { immediate: true }
+    );
     
     // Login form data
     const loginEmail = ref('');

@@ -105,7 +105,7 @@
 <script>
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useMainStore } from '../store/index.js';
+import { useMainStore } from '../../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -115,7 +115,7 @@ import {
   signInWithEmailAndPassword,
   signOut
 } from 'firebase/auth';
-import { firebaseApp } from '../firebase';
+import { firebaseApp } from '../../firebase';
 
 export default {
   props: {
