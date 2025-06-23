@@ -96,8 +96,8 @@
            </div>
 
             <div>
-                <hr class="my-5">
                 <UserManagement 
+                    v-if="!newUserSetup && $store.isProjectAdmin"
                     :project-id="$store.project?.id || ''"
                     :users="users"
                     @users-updated="handleUsersUpdated"
@@ -182,10 +182,10 @@ export default {
     async mounted() {
         // Wait for user auth to complete (similar to DocumentCreate.vue)
         let tries = 0
-        while (this.$store.loadingUser) {
+        while (this.$store.loading.user) {
             await new Promise(resolve => setTimeout(resolve, 100));
             tries++
-            if (tries > 10) {
+            if (tries > 20) {
                 this.$store.uiAlert({ 
                     type: 'error', 
                     message: 'Error loading project', 
@@ -240,10 +240,10 @@ export default {
         async selectProject(value){
             if (this.isLoading) return
             this.isLoading = true
+            
             try {
-                console.log('selectProject', value)
-                
-                await this.$store.projectSet(value, true)
+                const result = await this.$store.projectSet(value, true)
+                if (!result) return;
                 
                 // Now that project is loaded, set up the component data
                 this.projectData = { ...this.$store.project }

@@ -38,6 +38,19 @@ function requireAuth() {
   return true;
 }
 
+function requireProject() {
+  //if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+  if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+    getStore().uiAlert({
+      type: 'error',
+      message: 'You are not a member of this project',
+      autoClear: true
+    });
+    return false;
+  }
+  return true;
+}
+
 function withTimeout(fn, timeoutDuration) {
   return async function(...args) {
     const timeoutPromise = new Promise((_, reject) => 
@@ -167,15 +180,19 @@ export class User{
     const pendingInvitations = await this.getPendingInvitations(payload.email);
     
     if (pendingInvitations.length > 0) {
-      // Auto-accept the first invitation and set it as default project
+      // Auto-accept the first invitation using the store method to ensure proper setup
       const firstInvitation = pendingInvitations[0];
       try {
-        const projectId = await this.acceptInvitation(firstInvitation.inviteToken);
+        // Use the store's userAcceptInvitation method to ensure default project is set
+        // and documents are loaded
+        const projectId = await getStore().userAcceptInvitation(firstInvitation.inviteToken);
+        
         getStore().uiAlert({ 
           type: 'success', 
           message: `Welcome! You've been automatically added to your project.`,
           autoClear: true 
         });
+        
         // Skip the new-user setup since they already have a project
         return;
       } catch (error) {
@@ -199,14 +216,6 @@ export class User{
   }
 
    // USER PROJECTS
-  static async addUserToProject(userId, projectId, role='user') {
-    if (!requireAuth()) return value;
-    // todo check if current user is admin of project
-    
-    const userProjectRef = collection(db, "userProjects");
-    await addDoc(userProjectRef, { userId, projectId, role });
-    getStore().uiAlert({ type: 'info', message: 'User added to project', autoClear: true });
-  }
 
   static async getProjectsForUser(userId) {
     const userProjectsRef = collection(db, "userProjects");
@@ -357,7 +366,7 @@ export class User{
     }
 
     // Add user to project
-    await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role);
+    await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role, invitation);
 
     // Update invitation status
     await updateDoc(doc(db, "invitations", inviteDoc.id), {
@@ -392,6 +401,7 @@ export class Project {
   
   static async create(value) {
     if (!requireAuth()) return null;
+    if (!requireProject()) return null;
     
     const projectInstance = new Project(value);
     const docRef = await addDoc(collection(db, "project"), {...projectInstance});
@@ -404,6 +414,7 @@ export class Project {
   }
   
   static async getById(id, userDetails = false) {
+    if (!requireProject()) return null;
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
 
@@ -424,6 +435,7 @@ export class Project {
   
   static async update(id, value) {
     if (!requireAuth()) return value;
+    if (!requireProject()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, value);
     getStore().uiAlert({type: 'success', message: 'Project updated', autoClear: true});
@@ -431,6 +443,7 @@ export class Project {
   
   static async updatefield(id, field, value) {
     if (!requireAuth()) return value;
+    if (!requireProject()) return value;
     const documentRef = doc(db, "project", id);
     await updateDoc(documentRef, {[field]: value});
     await updateDoc(documentRef, {updatedDate: serverTimestamp()});
@@ -439,6 +452,7 @@ export class Project {
 
   static async archive(id) {
     if (!requireAuth()) return value;
+    if (!requireProject()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
     getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
@@ -446,6 +460,7 @@ export class Project {
 
   static async delete(id) {
     if (!requireAuth()) return value;
+    if (!requireProject()) return value;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
     getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
@@ -530,7 +545,7 @@ export class Project {
   }
 
 
-  static async addUserToProject(userId, projectId, role='user') {
+  static async addUserToProject(userId, projectId, role='user', invite= null) {
     if (!requireAuth()) return;
     
     // Check if user is already in the project (only for non-creator additions)
@@ -541,6 +556,18 @@ export class Project {
         throw new Error('User is already a member of this project');
       }
     }
+
+    // double check user's invite token is valid
+    if (invite) {
+      const inviteExpirationDate = new Date(invite.expiresAt.toDate());
+      if (inviteExpirationDate < new Date()) {
+        throw new Error('Invitation has expired');
+      }
+      if (invite.email !== getStore().user.email) {
+        throw new Error('Invitation is for a different email address');
+      }
+    }
+    
     
     const userProjectRef = collection(db, "userProjects");
     await addDoc(userProjectRef, { 
@@ -549,7 +576,7 @@ export class Project {
       role,
       status: 'active',
       joinedDate: serverTimestamp(),
-      invitedBy: isCreatorAddingSelf ? null : getStore().user.uid, // No inviter for project creator
+      invitedBy: isCreatorAddingSelf ? null : invite ? invite.invitedBy : getStore().user.uid, // No inviter for project creator
       isCreator: isCreatorAddingSelf // Mark if this user is the project creator
     });
     
@@ -558,6 +585,7 @@ export class Project {
       'User added to project';
     
     getStore().uiAlert({ type: 'info', message, autoClear: true });
+    return true;
   }
 
   static async updateUserRole(userId, projectId, newRole) {
@@ -585,6 +613,7 @@ export class Project {
     });
 
     getStore().uiAlert({ type: 'success', message: 'User role updated', autoClear: true });
+    return true;
   }
 
   static async removeUserFromProject({userId, projectId}) {
@@ -785,20 +814,21 @@ export class Document {
       console.warn('No project ID available, returning empty array');
       return [];
     }
+
+    if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      getStore().uiAlert({
+        type: 'error',
+        message: 'You are not a member of this project',
+        autoClear: true
+      });
+      return [];
+    }
     
     const documentsRef = collection(db, "documents");
 
-    const conditions = [
-      where("project", "==", getStore().project.id)
-    ];
-
-    if (!includeArchived) {
-      conditions.push(where("archived", "==", false));
-    }
-
-    if (!getStore().user.uid && !includeDraft) {
-      conditions.push(where("draft", "==", false));
-    }
+    const conditions = [where("project", "==", getStore().project.id)];
+    if (!includeArchived) {conditions.push(where("archived", "==", false));}
+    if (!getStore().user.uid && !includeDraft) {conditions.push(where("draft", "==", false));}
 
     const q = query(documentsRef, ...conditions);
 

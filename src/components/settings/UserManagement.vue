@@ -1,5 +1,9 @@
 <template>
-    <div>
+    <div class="surface mb-48">
+
+        <v-divider class="my-2 border-opacity-0"></v-divider>
+
+        <v-sheet class="pa-2" color="surface-variant" rounded>
         <div class="d-flex justify-space-between align-center my-2">
             <h2>Manage Users</h2>
             <v-btn 
@@ -67,6 +71,9 @@
                 </tr>
             </tbody>
         </v-table>
+        </v-sheet>
+
+        <v-divider class="my-2 border-opacity-0"></v-divider>
 
         <!-- No users found message -->
         <v-alert 
@@ -79,17 +86,18 @@
         </v-alert>
 
         <!-- Invitations Section -->
-        <div v-if="filteredInvitations.length > 0 || cancelledInvitationsCount > 0" class="mt-4">
+        <v-sheet class="pa-2" color="surface-variant" rounded>
+        <div v-if="filteredInvitations.length > 0 || completeInvitationsCount > 0" class="mt-4">
             <div class="d-flex justify-space-between align-center mb-3">
                 <h3>Project Invitations</h3>
                 <v-btn 
-                    v-if="cancelledInvitationsCount > 0"
-                    @click="showCancelledInvitations = !showCancelledInvitations"
+                    v-if="completeInvitationsCount > 0"
+                    @click="showCompleteInvitations = !showCompleteInvitations"
                     variant="text"
                     size="small"
-                    :prepend-icon="showCancelledInvitations ? 'mdi-eye-off' : 'mdi-eye'"
+                    :prepend-icon="showCompleteInvitations ? 'mdi-eye-off' : 'mdi-eye'"
                 >
-                    {{ showCancelledInvitations ? 'Hide' : 'Show' }} Cancelled ({{ cancelledInvitationsCount }})
+                    {{ showCompleteInvitations ? 'Hide' : 'Show' }} Complete ({{ completeInvitationsCount }})
                 </v-btn>
             </div>
             <v-table density="compact">
@@ -104,23 +112,23 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="invite in filteredInvitations" :key="invite.id" :class="{ 'invitation-cancelled': invite?.status === 'cancelled' }">
+                    <tr v-for="invite in filteredInvitations" :key="invite.id" :class="{ 'invitation-complete': ['cancelled', 'accepted'].includes(invite?.status) }">
                         <td>{{ invite.email }}</td>
                         <td>{{ invite.role }}</td>
                         <td>
                             <v-chip 
-                                :color="invite?.status === 'cancelled' ? 'error' : 'warning'" 
+                                :color="getInvitationStatusColor(invite?.status)" 
                                 variant="tonal" 
                                 size="small"
                             >
-                                {{ invite?.status === 'cancelled' ? 'Cancelled' : 'Pending' }}
+                                {{ getInvitationStatusText(invite?.status) }}
                             </v-chip>
                         </td>
                         <td>{{ formatDate(invite.createdDate) }}</td>
                         <td>{{ invite.expiresAt.toDate().toLocaleDateString() }}</td>
                         <td>
-                            <span v-if="invite?.status === 'cancelled'" class="text-disabled">
-                                Cancelled
+                            <span v-if="['cancelled', 'accepted'].includes(invite?.status)" class="text-disabled">
+                                {{ invite?.status === 'cancelled' ? 'Cancelled' : 'Accepted' }}
                             </span>
                             <span v-else>
                                 <v-btn 
@@ -148,16 +156,17 @@
                 </tbody>
             </v-table>
 
-            <!-- Show message when no visible invitations but cancelled ones exist -->
+            <!-- Show message when no visible invitations but complete ones exist -->
             <v-alert 
-                v-if="filteredInvitations.length === 0 && cancelledInvitationsCount > 0" 
+                v-if="filteredInvitations.length === 0 && completeInvitationsCount > 0" 
                 type="info" 
                 variant="tonal" 
                 class="mt-4"
             >
-                No active invitations. {{ cancelledInvitationsCount }} cancelled invitation{{ cancelledInvitationsCount !== 1 ? 's' : '' }} hidden.
+                No active invitations. {{ completeInvitationsCount }} complete invitation{{ completeInvitationsCount !== 1 ? 's' : '' }} hidden.
             </v-alert>
         </div>
+        </v-sheet>
 
         <!-- Confirmation Dialog -->
         <v-dialog v-model="confirmDialog.show" max-width="400">
@@ -427,7 +436,7 @@ export default {
                 copied: false
             },
             refreshInterval: null,
-            showCancelledInvitations: false
+            showCompleteInvitations: false
         };
     },
     computed: {
@@ -535,17 +544,17 @@ export default {
         filteredInvitations() {
             if (!this.pendingInvitations || this.pendingInvitations.length === 0) return [];
             
-            if (this.showCancelledInvitations) {
+            if (this.showCompleteInvitations) {
                 // Show all invitations
                 return this.pendingInvitations;
             } else {
-                // Only show pending invitations (hide cancelled ones)
-                return this.pendingInvitations.filter(invite => invite?.status !== 'cancelled');
+                // Only show pending invitations (hide cancelled and accepted ones)
+                return this.pendingInvitations.filter(invite => !['cancelled', 'accepted'].includes(invite?.status));
             }
         },
-        cancelledInvitationsCount() {
+        completeInvitationsCount() {
             if (!this.pendingInvitations || this.pendingInvitations.length === 0) return 0;
-            return this.pendingInvitations.filter(invite => invite?.status === 'cancelled').length;
+            return this.pendingInvitations.filter(invite => ['cancelled', 'accepted'].includes(invite?.status)).length;
         }
     },
     watch: {
@@ -735,6 +744,30 @@ Thanks!`);
             }
         },
 
+        getInvitationStatusColor(status) {
+            switch (status) {
+                case 'cancelled':
+                    return 'error';
+                case 'accepted':
+                    return 'success';
+                case 'pending':
+                default:
+                    return 'warning';
+            }
+        },
+
+        getInvitationStatusText(status) {
+            switch (status) {
+                case 'cancelled':
+                    return 'Cancelled';
+                case 'accepted':
+                    return 'Accepted';
+                case 'pending':
+                default:
+                    return 'Pending';
+            }
+        },
+
         setupPeriodicRefresh() {
             // Clear existing interval if any
             if (this.refreshInterval) {
@@ -870,12 +903,12 @@ Thanks!`);
     color: rgba(var(--v-theme-on-surface), 0.6) !important;
 }
 
-.invitation-cancelled {
+.invitation-complete {
     opacity: 0.5;
     color: rgba(var(--v-theme-on-surface), 0.6) !important;
 }
 
-.invitation-cancelled td {
+.invitation-complete td {
     color: rgba(var(--v-theme-on-surface), 0.6) !important;
 }
 </style> 

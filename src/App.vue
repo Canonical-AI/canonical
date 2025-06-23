@@ -394,6 +394,24 @@ export default {
         }
       }
     },
+    '$store.user.defaultProject': {
+      handler(newDefaultProject) {
+        // If user gets a default project and the GetStarted modal is open, close it
+        if (newDefaultProject && this.isNewUser) {
+          this.isNewUser = false;
+          this.$store.uiAlert({ 
+            type: 'success', 
+            message: 'Project setup complete! Welcome to your project.', 
+            autoClear: true 
+          });
+          
+          // Redirect to home page to show the project
+          if (this.$route.path === '/new-user') {
+            this.$router.push('/');
+          }
+        }
+      }
+    },
     $route: {
       handler(to) {
         if (to.path.includes('document')) {

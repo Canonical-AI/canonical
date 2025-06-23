@@ -88,8 +88,10 @@ export const useMainStore = defineStore('main', {
     isUserLoggedIn: (state) => state.user.uid !== null,
     
     canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
+
+    isUserInProject: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.length > 0,
     
-    isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id)?.role === 'admin',
+    isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
@@ -373,17 +375,28 @@ export const useMainStore = defineStore('main', {
 
     // Project Management
     async projectSet(projectId, details = false) {
-      //if (this.loading.project) return;
-      this.loading.project = true;
-      console.log('projectSet', projectId)
-      if (!projectId) return;
-      
+
+      // if user is not in project dont let them set it and fetch (unless its demo)
+      // TODO: if the user has no project then we should set the default project to null and have them go through the project create
+        if (!this.isUserInProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+        this.uiAlert({
+          type: 'error',
+          message: 'You are not a member of this project',
+          autoClear: true
+        });
+        return false;
+      }
+
+      if (!projectId ) return false;
+   
+      this.project.id = projectId;
       this.project = await Project.getById(projectId, true);
       
       if (this.isUserLoggedIn) {
         await this.projectGetAllData();
       }
-      this.loading.project = false;
+
+      return true;
     },
 
     async projectRefresh(details = false) {
