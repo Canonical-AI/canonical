@@ -482,8 +482,9 @@ export default {
       
       try {
         await createUserWithEmailAndPassword(auth, signupEmail.value, signupPassword.value);
-        await store.userEnter();
-        router.push('/new-user');
+        // For signup, User.createUser() handles all setup including project setting
+        // So we don't call userEnter() to avoid timing issues
+        // Note: User.createUser() will navigate appropriately ('/new-user' or '/' with auto-accept)
       } catch (err) {
         error.value = err.message;
       }

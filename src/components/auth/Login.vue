@@ -148,10 +148,12 @@ export default {
       try {
         if (isSignUp.value) {
           await createUserWithEmailAndPassword(auth, email.value, password.value);
+          // For signup, User.createUser() handles all setup including project setting
+          // So we don't call userEnter() to avoid timing issues
         } else {
           await signInWithEmailAndPassword(auth, email.value, password.value);
+          await store.userEnter();
         }
-        await store.userEnter();
         email.value = '';
         password.value = '';
         

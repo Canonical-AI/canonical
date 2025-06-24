@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "canonical-dev-b6afd",
+    "default": "canonical-prod",
     "dev": "canonical-dev-b6afd",
     "gamma": "canonical-gamma",
     "prod": "canonical-prod"

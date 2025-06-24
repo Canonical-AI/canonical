@@ -195,12 +195,12 @@
         </v-snackbar> 
       </div>
 
-      <!-- Pending Invitations Dialog -->
+      <!-- Pending Invitations Dialog (only for existing users with manual invitations) -->
       <v-dialog 
         v-model="showPendingInvitationsDialog" 
         max-width="600" 
         persistent
-        v-if="$store.pendingInvitations.length > 0 && !$store.pendingInvitationsDismissed && $store.isUserLoggedIn"
+        v-if="$store.pendingInvitations.length > 0 && !$store.pendingInvitationsDismissed && $store.isUserLoggedIn && !isNewUserSession"
       >
         <v-card>
           <v-card-title class="d-flex justify-space-between align-center">
@@ -221,42 +221,12 @@
               You have {{ $store.pendingInvitations.length }} pending project invitation{{ $store.pendingInvitations.length !== 1 ? 's' : '' }}.
             </v-alert>
             
-            <v-list>
-              <v-list-item 
-                v-for="invitation in $store.pendingInvitations" 
-                :key="invitation.id"
-                class="mb-2"
-              >
-                <v-list-item-content>
-                  <v-list-item-title>{{ invitation.projectName || 'Project Invitation' }}</v-list-item-title>
-                  <v-list-item-subtitle>
-                    Role: {{ invitation.role }} • 
-                    Invited {{ formatDate(invitation.createdDate) }}
-                  </v-list-item-subtitle>
-                </v-list-item-content>
-                
-                <v-list-item-action>
-                  <div class="d-flex">
-                    <v-btn 
-                      size="small" 
-                      color="primary" 
-                      @click="acceptInvitation(invitation)"
-                      :loading="acceptingInvitation === invitation.id"
-                      class="mr-2"
-                    >
-                      Accept
-                    </v-btn>
-                    <v-btn 
-                      size="small" 
-                      variant="outlined" 
-                      @click="declineInvitation(invitation)"
-                    >
-                      Decline
-                    </v-btn>
-                  </div>
-                </v-list-item-action>
-              </v-list-item>
-            </v-list>
+            <PendingInvitations 
+              :compact="true" 
+              :show-when-empty="false"
+              :show-count="false"
+              @invitation-accepted="handleInvitationAccepted"
+            />
           </v-card-text>
           
           <v-card-actions class="justify-space-between">
@@ -360,6 +330,7 @@ import DocumentTree from "./components/document/DocumentTree.vue";
 import Login from "./components/auth/Login.vue";
 import SettingsNav from "./components/settings/SettingsNav.vue";
 import GetStarted from "./components/settings/GetStarted.vue";
+import PendingInvitations from "./components/settings/PendingInvitations.vue";
 import { logEvent } from "firebase/analytics";
 import { analytics } from "./firebase";
 
@@ -369,7 +340,8 @@ export default {
     ChatNav,
     SettingsNav,
     Login,
-    GetStarted
+    GetStarted,
+    PendingInvitations
   }, 
   name: 'App',
   data: () => ({
@@ -385,7 +357,7 @@ export default {
     welcomeDialog: false,
     isNavOpen: true,
     showPendingInvitationsDialog: true,
-    acceptingInvitation: null
+    isNewUserSession: false
   }),
   setup(){
     const theme = useTheme()
@@ -402,8 +374,16 @@ export default {
       handler(newValue) {
         if (newValue === true) {
           this.loginMenuOpen = false;
+          // Check if this is a new user session (user created in last 5 minutes)
+          const userCreatedDate = this.$store.user?.createdDate;
+          if (userCreatedDate) {
+            const createdAt = userCreatedDate.toDate ? userCreatedDate.toDate() : new Date(userCreatedDate);
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            this.isNewUserSession = createdAt > fiveMinutesAgo;
+          }
         } else {
           this.loginMenuOpen = true;
+          this.isNewUserSession = false;
         }
       },
       immediate: true
@@ -432,8 +412,12 @@ export default {
           if (this.$route.path === '/new-user') {
             this.$router.push('/');
           }
+        } else if (newDefaultProject === null && this.$store.loading.user === false && this.$store.isUserLoggedIn === true) {
+          this.isNewUser = true;
+          this.$router.push('/new-user');
         }
-      }
+      },
+      immediate: true
     },
     $route: {
       handler(to) {
@@ -541,61 +525,18 @@ export default {
       this.showPendingInvitationsDialog = false;
       this.$store.userDismissPendingInvitations();
     },
-    async acceptInvitation(invitation) {
-      this.acceptingInvitation = invitation.id;
-      try {
-        const projectId = await this.$store.userAcceptInvitation(invitation.inviteToken);
-        
-        // Show success message
-        this.$store.uiAlert({ 
-          type: 'success', 
-          message: `Successfully joined ${invitation.projectName || 'project'}!`, 
-          autoClear: true 
-        });
-        
-        // Close dialog if no more invitations
-        if (this.$store.pendingInvitations.length === 0) {
-          this.showPendingInvitationsDialog = false;
-        }
-        
-        // Optionally redirect to the project
-        this.$router.push(`/settings/project/${projectId}`);
-        
-      } catch (error) {
-        // Error already handled in store method
-        console.error('Error accepting invitation:', error);
-      } finally {
-        this.acceptingInvitation = null;
+    handleInvitationAccepted({ invitation, projectId }) {
+      // Close dialog if no more invitations
+      if (this.$store.pendingInvitations.length === 0) {
+        this.showPendingInvitationsDialog = false;
       }
-    },
-    async declineInvitation(invitation) {
-      try {
-        await this.$store.userDeclineInvitation(invitation.id);
-        
-        // Show success message
-        this.$store.uiAlert({ 
-          type: 'info', 
-          message: 'Invitation declined', 
-          autoClear: true 
-        });
-        
-        // Close dialog if no more invitations
-        if (this.$store.pendingInvitations.length === 0) {
-          this.showPendingInvitationsDialog = false;
-        }
-      } catch (error) {
-        // Error already handled in store method
-        console.error('Error declining invitation:', error);
-      }
+      
+      // Redirect to home page for consistency
+      this.$router.push('/');
     },
     goToUserSettings() {
       this.dismissPendingInvitations();
       this.$router.push('/settings/user');
-    },
-    formatDate(timestamp) {
-      if (!timestamp) return '';
-      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-      return date.toLocaleDateString();
     }
   },
   created() {

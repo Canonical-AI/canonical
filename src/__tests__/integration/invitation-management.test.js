@@ -664,19 +664,26 @@ describe('Invitation Management Integration Tests', () => {
         projects: []
       })
 
-      // Step 3: User accepts invitation
-      mockFirebase.User.acceptInvitation.mockResolvedValue('project-123')
-      mockFirebase.User.getUserAuth.mockResolvedValue({
-        uid: 'complete-flow-user-123',
-        email: 'complete-flow@example.com',
-        displayName: 'Complete Flow User',
-        tier: 'trial',
-        defaultProject: 'project-123',
-        projects: [{
-          projectId: 'project-123',
-          status: 'active',
-          role: 'user'
-        }]
+      // Step 3: User accepts invitation - Mock the full acceptInvitation behavior
+      mockFirebase.User.acceptInvitation.mockImplementation(async (inviteToken) => {
+        // Simulate the real acceptInvitation method behavior
+        const updatedUserData = {
+          uid: 'complete-flow-user-123',
+          email: 'complete-flow@example.com',
+          displayName: 'Complete Flow User',
+          tier: 'trial',
+          defaultProject: 'project-123',
+          projects: [{
+            projectId: 'project-123',
+            status: 'active',
+            role: 'user'
+          }]
+        };
+        
+        // Simulate what the real acceptInvitation does - update user data
+        store.userSetData(updatedUserData);
+        
+        return 'project-123';
       })
 
       const projectId = await store.userAcceptInvitation('complete-flow-token')

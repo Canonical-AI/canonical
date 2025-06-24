@@ -1,24 +1,26 @@
 <template>
   <div class="document-tree-container">
-    <!-- Fixed header section -->
-    <div class="tree-header">
-      <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
-      
-      <v-divider></v-divider>
-      <v-list-item>
-        <v-btn 
-          :disabled="!$store.isUserLoggedIn"
-          class="text-none" 
-          block 
-          @click="$router.push({ path: '/document/create-document' })" 
-          color="primary" 
-          density="compact">
+    <!-- Only show content if project exists -->
+    <div v-if="$store.project && $store.project.name">
+      <!-- Fixed header section -->
+      <div class="tree-header">
+        <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
+        
+        <v-divider></v-divider>
+        <v-list-item>
+          <v-btn 
+            :disabled="!$store.isUserLoggedIn"
+            class="text-none" 
+            block 
+            @click="$router.push({ path: '/document/create-document' })" 
+            color="primary" 
+            density="compact">
               Create Doc
           </v-btn>
-      </v-list-item>
-      <v-divider></v-divider>
-      
-      <div class="pa-2">
+        </v-list-item>
+        <v-divider></v-divider>
+        
+        <div class="pa-2">
           <v-text-field
             v-model="filter"
             label="Filter Documents"
@@ -35,135 +37,143 @@
               size="small">Add Folder 
               <v-icon icon="mdi-plus"></v-icon>
           </v-btn>
+        </div>
       </div>
-    </div>
 
-    <!-- Scrollable content section -->
-    <div class="tree-content">
+      <!-- Scrollable content section -->
+      <div class="tree-content">
 
         <div ref="Folders">
-            <v-list density="compact">
+          <v-list density="compact">
 
-                <v-list-item
-                v-for="el in folders" 
-                class="px-1 text-body-2"
-                :key="el.id"
-                :style="{ minHeight: '0' , paddingTop: '2px', paddingBottom: '2px' }"
-                @dragover="handleDragOver(el)"
-                @dragleave="handleDragLeave(el)"
-                >
+            <v-list-item
+            v-for="el in folders" 
+            class="px-1 text-body-2"
+            :key="el.id"
+            :style="{ minHeight: '0' , paddingTop: '2px', paddingBottom: '2px' }"
+            @dragover="handleDragOver(el)"
+            @dragleave="handleDragLeave(el)"
+            >
 
-                    <div class="d-flex align-center">
+              <div class="d-flex align-center">
 
-                        <v-icon small @click="toggle(el)" class="text-medium-emphasis">{{ el.children.length ? (el.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right') : '' }}</v-icon>
-                        <v-icon small class="text-medium-emphasis pr-1">{{ el.isOpen ? 'mdi-folder-open' :  'mdi-folder'  }}</v-icon>
+                <v-icon small @click="toggle(el)" class="text-medium-emphasis">{{ el.children.length ? (el.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right') : '' }}</v-icon>
+                <v-icon small class="text-medium-emphasis pr-1">{{ el.isOpen ? 'mdi-folder-open' :  'mdi-folder'  }}</v-icon>
 
-                        <span v-if="el.renaming">
-                            <input 
-                                :ref="'renameInput_' + el.id" 
-                                :value="el.data?.name" 
-                                @keyup.enter="submitRenameFolder(el, $event.target.value)" 
-                                @keyup.esc="cancelRenameFolder(el)" 
-                                @blur="cancelRenameFolder(el)" 
-                                />
-                        </span>
-                        <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
-                          <template v-slot:activator="{ props }">
-                            <span 
-                              v-bind="props"
-                              class="folder-name" 
-                              @click="!el.data.folder && handleItemClick(el)"
-                            >
-                              {{ el.data?.name }}
-                            </span>
-                          </template>
-                        </v-tooltip>
+                <span v-if="el.renaming">
+                  <input 
+                      :ref="'renameInput_' + el.id" 
+                      :value="el.data?.name" 
+                      @keyup.enter="submitRenameFolder(el, $event.target.value)" 
+                      @keyup.esc="cancelRenameFolder(el)" 
+                      @blur="cancelRenameFolder(el)" 
+                      />
+                </span>
+                <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
+                  <template v-slot:activator="{ props }">
+                    <span 
+                      v-bind="props"
+                      class="folder-name" 
+                      @click="!el.data.folder && handleItemClick(el)"
+                    >
+                      {{ el.data?.name }}
+                    </span>
+                  </template>
+                </v-tooltip>
 
-                        <v-spacer/>
+                <v-spacer/>
 
-                        <v-menu v-if="el.data.folder" offset-y>
-                            <template v-slot:activator="{ props }">
-                                <v-btn variant="plain" v-bind="props" density="compact">
-                                    <v-icon >mdi-dots-horizontal</v-icon>
-                                </v-btn>
-                            </template>
-                            <v-list density="compact" class="border border-surface-light">
-                                <v-list-item @click="renameFolder(el)">Rename</v-list-item>
-                                <v-list-item @click="deleteFolder(el.id)">Delete</v-list-item>
-                            </v-list>
-                        </v-menu>
-                    </div>
+                <v-menu v-if="el.data.folder" offset-y>
+                  <template v-slot:activator="{ props }">
+                    <v-btn variant="plain" v-bind="props" density="compact">
+                      <v-icon >mdi-dots-horizontal</v-icon>
+                    </v-btn>
+                  </template>
+                  <v-list density="compact" class="border border-surface-light">
+                    <v-list-item @click="renameFolder(el)">Rename</v-list-item>
+                    <v-list-item @click="deleteFolder(el.id)">Delete</v-list-item>
+                  </v-list>
+                </v-menu>
+              </div>
 
-                    <VueDraggable 
-                        class="text-ellipsis overflow-hidden whitespace-nowrap" 
-                        tag="ul" 
-                        v-model="el.children" 
-                        group="g1" 
-                        animation="150"
-                        ghostClass="ghost"
-                        @update="onUpdate"
-                        @add="(e) => onAdd(e,el)"
-                        @remove="(e) => remove(e,el)">
-                        <li 
-                            :class="{'selected-item': isSelected(child)}"
-                            v-if="el.isOpen || hasSelectedChild(el)"
-                            v-for="child in  el.children" 
-                            class=""
-                            :key="child.id || `temp-${child.data?.name || 'unnamed'}`"
-                            :style="{ paddingLeft: '24px' }"
-                            @click="handleItemClick(child)"
-                            >
-
-                            <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(child)" color="warning"></v-icon>
-                            <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
-                              <template v-slot:activator="{ props }">
-                                <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
-                              </template>
-                            </v-tooltip>
-
-                        </li>
-                </VueDraggable>
-
-
-                </v-list-item>
-            </v-list>
-        </div>
-
-        <div ref="Documents">
-            <VueDraggable 
-                class="text-ellipsis overflow-hidden whitespace-nowrap" 
-                tag="ul" 
-                v-model="documents" 
-                group="g1" 
-                animation="150"
-                ghostClass="ghost"
-                @update="onUpdate"
-                @add="(e) => onAdd(e)"
-                @remove="(e) => remove(e)"
-                @event="console.log($event)">
-
+              <VueDraggable 
+                  class="text-ellipsis overflow-hidden whitespace-nowrap" 
+                  tag="ul" 
+                  v-model="el.children" 
+                  group="g1" 
+                  animation="150"
+                  ghostClass="ghost"
+                  @update="onUpdate"
+                  @add="(e) => onAdd(e,el)"
+                  @remove="(e) => remove(e,el)">
                 <li 
-                    :class="{'selected-item': isSelected(el)}"
-                    v-for="el in documents" 
-                    class="pr-1 pl-6 list-item text-body-2"
-                    :key="el.id || `temp-${el.data?.name || 'unnamed'}`"
-                    @click="handleItemClick(el)"
+                    :class="{'selected-item': isSelected(child)}"
+                    v-if="el.isOpen || hasSelectedChild(el)"
+                    v-for="child in  el.children" 
+                    class=""
+                    :key="child.id || `temp-${child.data?.name || 'unnamed'}`"
+                    :style="{ paddingLeft: '24px' }"
+                    @click="handleItemClick(child)"
                     >
 
                     <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(el)" color="warning"></v-icon>
-                    
-                    <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
+                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(child)" color="warning"></v-icon>
+                    <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
                       <template v-slot:activator="{ props }">
-                        <span v-bind="props" class="document-name">{{ el.data?.name }}</span>
+                        <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
                       </template>
                     </v-tooltip>
+
                 </li>
-            </VueDraggable>
+              </VueDraggable>
+
+
+            </v-list-item>
+          </v-list>
+        </div>
+
+        <div ref="Documents">
+          <VueDraggable 
+              class="text-ellipsis overflow-hidden whitespace-nowrap" 
+              tag="ul" 
+              v-model="documents" 
+              group="g1" 
+              animation="150"
+              ghostClass="ghost"
+              @update="onUpdate"
+              @add="(e) => onAdd(e)"
+              @remove="(e) => remove(e)"
+              @event="console.log($event)">
+
+            <li 
+                :class="{'selected-item': isSelected(el)}"
+                v-for="el in documents" 
+                class="pr-1 pl-6 list-item text-body-2"
+                :key="el.id || `temp-${el.data?.name || 'unnamed'}`"
+                @click="handleItemClick(el)"
+                >
+
+                <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
+                <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(el)" color="warning"></v-icon>
+                
+                <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
+                  <template v-slot:activator="{ props }">
+                    <span v-bind="props" class="document-name">{{ el.data?.name }}</span>
+                  </template>
+                </v-tooltip>
+            </li>
+          </VueDraggable>
         </div>
       </div>
     </div>
+    
+    <!-- Show placeholder when no project is set -->
+    <div v-else class="no-project-placeholder pa-4 text-center">
+      <v-icon size="48" class="mb-2 text-medium-emphasis">mdi-folder-outline</v-icon>
+      <p class="text-body-2 text-medium-emphasis">No project selected</p>
+      <p class="text-caption text-medium-emphasis">Create or join a project to get started</p>
+    </div>
+  </div>
 </template>
 
 <script>

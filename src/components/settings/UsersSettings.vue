@@ -47,7 +47,7 @@
                     <!-- todo: add confirmation dialog -->
 
                     <!-- Pending Invitations Section -->
-                    <PendingInvitations />
+                    <PendingInvitations @invitation-accepted="handleInvitationAccepted" />
 
                     </v-container>
             </v-col>
@@ -85,6 +85,10 @@ export default {
         },
         setDefaultProject(projectId) {
             this.$store.userSetDefaultProject(this.user.defaultProject)
+        },
+        handleInvitationAccepted({ invitation, projectId }) {
+            // Navigate to the project settings page
+            this.$router.push(`/settings/project/${projectId}`);
         }
     }
 }

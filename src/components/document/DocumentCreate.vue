@@ -533,7 +533,6 @@ export default {
       });
       this.document.id = createdDoc.id;
       this.document.data.id = createdDoc.id;
-      this.$store.setSelectedDocument(this.document);
       
       await this.$router.replace({ path: `/document/${this.document.id}` });
       this.isCreatingDocument = false;

@@ -37,7 +37,7 @@
 
       <v-card-text v-else-if="accepted">
         <v-alert type="success">
-          Successfully joined the project! Redirecting...
+          Successfully joined the project! Redirecting to home page...
         </v-alert>
       </v-card-text>
 
@@ -138,9 +138,9 @@ export default {
         const projectId = await this.$store.userAcceptInvitation(this.$route.params.token);
         this.accepted = true;
         
-        // Redirect to project after a brief delay
+        // Redirect to home page after a brief delay
         setTimeout(() => {
-          this.$router.push(`/settings/project/${projectId}`);
+          this.$router.push('/');
         }, 2000);
 
       } catch (error) {

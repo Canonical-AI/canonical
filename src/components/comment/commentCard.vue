@@ -291,7 +291,7 @@ export default {
   },
   computed:{
     user() {
-      const foundUser = this.$store.project.users.find(user => user.id === this.comment.createdBy)
+      const foundUser = this.$store.project?.users?.find(user => user.id === this.comment.createdBy)
       
       if (foundUser?.id === this.$store.user.uid) {
         return { ...foundUser, displayName: 'you' }

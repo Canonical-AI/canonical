@@ -87,8 +87,8 @@ export default {
   watch: {
     favoriteDocuments: {
       handler(docs){
-        if (this.$store.user.uid) {
-          this.loading = docs.length === 0;
+        if (this.$store.user.uid && this.$store.loading.documents) {
+          this.loading = true;
         } else {
           this.loading = false;
         }
@@ -119,7 +119,7 @@ export default {
     checkRedirectToLogin() {
       // Check if user is not logged in, no project ID set, and no documents
       if (!this.$store.isUserLoggedIn && 
-          !this.$store.project.id && 
+          !this.$store.project?.id && 
           (!this.$store.documents || this.$store.documents.length === 0)) {
         // Close side panel by setting drawer to null
         if (this.$parent && this.$parent.drawer) {

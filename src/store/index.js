@@ -82,9 +82,9 @@ export const useMainStore = defineStore('main', {
     
     canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
 
-    isUserInProject: (state) => !!state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed'),
+    isUserInProject: (state) => !!state.user.projects?.find(project => project.projectId === state.project.id && project.status !== 'removed'),
     
-    isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
+    isProjectAdmin: (state) => state.user.projects?.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
@@ -92,7 +92,8 @@ export const useMainStore = defineStore('main', {
     
     projectFolderTree: (state) => {
       // Ensure documents is an array before trying to map
-      if (!Array.isArray(state.documents)) {
+
+     if (!Array.isArray(state.documents) || !state.project?.folders) {
         return [];
       }
       
@@ -103,7 +104,7 @@ export const useMainStore = defineStore('main', {
         return state.documents.sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
       }
       
-      const updatedFolders = state.project.folders.map(folder => {
+      const updatedFolders = state.project?.folders?.map(folder => {
         const updatedChildren = folder.children.map(childId => documentMap
           .get(childId))
           .filter(Boolean)
@@ -232,6 +233,7 @@ export const useMainStore = defineStore('main', {
       this.projects = [];
       this.documents = [];
       this.chats = [];
+      // TODO: get this shit out of here and into the user.acceptInvitation function
       this.pendingInvitations = [];
       this.pendingInvitationsDismissed = false;
       this.selected = {
@@ -255,6 +257,11 @@ export const useMainStore = defineStore('main', {
 
       try {
         const invites = await User.getPendingInvitations();
+        
+        if (invites.length === 0) {
+          this.pendingInvitations = [];
+          return [];
+        }
         
         // Load project names for each invitation
         this.pendingInvitations = await Promise.all(
@@ -284,6 +291,7 @@ export const useMainStore = defineStore('main', {
       if (!this.isUserLoggedIn) return;
       
       try {
+        // adds user to project 
         const projectId = await User.acceptInvitation(inviteToken);
         
         // Remove from local pending invitations list
@@ -297,8 +305,8 @@ export const useMainStore = defineStore('main', {
         // Set the project and load its data
         await this.projectSet(projectId, true);
         
-        // Refresh user data to get updated project list
-        await this.userEnter();
+        // NOTE: Removed userEnter() call here as it was resetting the project with stale data
+        // The user.acceptInvitation already refreshes user data internally
         
         return projectId;
       } catch (error) {
@@ -345,8 +353,8 @@ export const useMainStore = defineStore('main', {
       try {
         const invitation = await User.getInvitationByToken(token);
         
-        // Load project and inviter details
-        const project = await Project.getById(invitation.projectId);
+        // Load project and inviter details (skip auth check for invitation loading)
+        const project = await Project.getById(invitation.projectId, false, true);
         const inviter = await User.getUserData(invitation.invitedBy);
         
         return {
@@ -367,11 +375,23 @@ export const useMainStore = defineStore('main', {
     },
 
     // Project Management
+    async projectCreate(payload) {
+      const projectRef = await Project.create(payload);
+      this.project = projectRef;
+      return projectRef;
+    },
+    
     async projectSet(projectId, details = false) {
 
       // if user is not in project dont let them set it and fetch (unless its demo)
       // TODO: if the user has no project then we should set the default project to null and have them go through the project create
-        if (!this.isUserInProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      
+      // Fix: Check if user is in the SPECIFIC PROJECT being set, not the current project
+      const userInSpecificProject = this.user.projects?.find(project => 
+        project.projectId === projectId && project.status !== 'removed'
+      );
+      
+      if (!userInSpecificProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
         this.uiAlert({
           type: 'error',
           message: 'You are not a member of this project',
@@ -381,18 +401,31 @@ export const useMainStore = defineStore('main', {
       }
 
       if (!projectId ) return false;
+      console.log('projectId', projectId);
    
-      this.project.id = projectId;
-      this.project = await Project.getById(projectId, true);
-      
-      if (this.isUserLoggedIn) {
-        await this.projectGetAllData();
-      }
+      try {
+        this.project.id = projectId;
+        this.project = await Project.getById(projectId, true);
 
-      return true;
+        
+        if (this.isUserLoggedIn) {
+          await this.projectGetAllData();
+        }
+
+        return true;
+      } catch (error) {
+        console.error('Error setting project:', error);
+        this.uiAlert({
+          type: 'error',
+          message: error.message || 'Failed to load project',
+          autoClear: true
+        });
+        return false;
+      }
     },
 
     async projectRefresh(details = false) {
+      if (!this.project.id) return;
       this.project = await Project.getById(this.project.id, details);
     },
 

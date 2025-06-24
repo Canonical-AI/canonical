@@ -141,7 +141,9 @@ export class User{
 
         if (!userDetails || !userDetails.email) {
           await this.createUser(user);
-          return resolve(null);
+          // After createUser completes, get the updated user data
+          const newUserDetails = await this.getUserData(user.uid);
+          return resolve(newUserDetails);
         }
 
         if (!userDetails.defaultProject) {
@@ -173,31 +175,64 @@ export class User{
 
     await setDoc(doc(db, "users", payload.uid), newUser);
     
-    const userDataForStore = { ...newUser, id: payload.uid};
+    const userDataForStore = { ...newUser, uid: payload.uid, id: payload.uid};
     getStore().userSetData(userDataForStore); // step 2 /new-user will stop loading once we check that we have uid in state
 
     // Check for pending invitations for this email
     const pendingInvitations = await this.getPendingInvitations(payload.email);
     
     if (pendingInvitations.length > 0) {
-      // Auto-accept the first invitation using the store method to ensure proper setup
-      const firstInvitation = pendingInvitations[0];
-      try {
-        // Use the store's userAcceptInvitation method to ensure default project is set
-        // and documents are loaded
-        const projectId = await getStore().userAcceptInvitation(firstInvitation.inviteToken);
+      // Auto-accept ALL invitations for new users (Option C: Hybrid approach)
+      const acceptedProjects = [];
+      let defaultProjectId = null;
+      
+      for (const invitation of pendingInvitations) {
+        try {
+          // Call special method that bypasses auth check during user creation
+          const projectId = await this.acceptInvitationDuringCreation(invitation.inviteToken, payload.uid, payload.email);
+          acceptedProjects.push({
+            id: projectId,
+            name: invitation.projectName || 'Project',
+            role: invitation.role
+          });
+          
+          // Set the first project as default
+          if (!defaultProjectId) {
+            defaultProjectId = projectId;
+          }
+        } catch (error) {
+          console.error(`Error auto-accepting invitation for project ${invitation.projectId}:`, error);
+          // Continue with other invitations
+        }
+      }
+      
+      if (acceptedProjects.length > 0) {
+        // Refresh user data to get updated project memberships
+        const refreshedUserData = await this.getUserData(payload.uid);
+        getStore().userSetData(refreshedUserData);
+        
+        // Set the default project as the active project in the store
+        if (defaultProjectId) {
+          await getStore().projectSet(defaultProjectId, true);
+        }
+        
+        // Show comprehensive notification about auto-joined projects
+        const projectNames = acceptedProjects.map(p => p.name).join(', ');
+        const message = acceptedProjects.length === 1 
+          ? `Welcome! You've been automatically added to ${projectNames}.`
+          : `Welcome! You've been automatically added to ${acceptedProjects.length} projects: ${projectNames}.`;
         
         getStore().uiAlert({ 
           type: 'success', 
-          message: `Welcome! You've been automatically added to your project.`,
-          autoClear: true 
+          message,
+          autoClear: false  // Keep visible longer for multi-project notifications
         });
         
-        // Skip the new-user setup since they already have a project
+        // Navigate to home page after auto-accept flow completes
+        router.push('/');
+        
+        // Skip the new-user setup since they already have project(s)
         return;
-      } catch (error) {
-        console.error('Error auto-accepting invitation:', error);
-        // Fall through to normal new-user flow
       }
     }
     
@@ -321,6 +356,7 @@ export class User{
       where('inviteToken', '==', token),
       where('status', '==', 'pending')
     );
+    
     const snapshot = await getDocs(q);
     
     if (snapshot.empty) {
@@ -379,10 +415,62 @@ export class User{
       await this.setDefaultProject(invitation.projectId);
     }
 
-    // Refresh user data to include new project
-    await getStore().userEnter();
+    // Refresh user data to include new project without resetting project state
+    const refreshedUserData = await this.getUserData(getStore().user.uid);
+    getStore().userSetData(refreshedUserData);
 
     getStore().uiAlert({ type: 'success', message: 'Successfully joined project!', autoClear: true });
+    return invitation.projectId;
+  }
+
+  static async acceptInvitationDuringCreation(inviteToken, userId, userEmail) {
+    // Special method for auto-accepting invitations during user creation
+    // Bypasses auth check since user is being created
+    
+    // Find invitation
+    const invitationsRef = collection(db, "invitations");
+    const q = query(invitationsRef, 
+      where('inviteToken', '==', inviteToken),
+      where('status', '==', 'pending')
+    );
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      throw new Error('Invalid or expired invitation');
+    }
+
+    const inviteDoc = snapshot.docs[0];
+    const invitation = inviteDoc.data();
+
+    // Check if invitation is expired
+    if (invitation.expiresAt.toDate() < new Date()) {
+      throw new Error('Invitation has expired');
+    }
+
+    // Check if user email matches invitation
+    if (userEmail !== invitation.email) {
+      throw new Error('This invitation is for a different email address');
+    }
+
+    // Add user to project (bypass auth check during user creation)
+    await Project.addUserToProjectDuringCreation(userId, invitation.projectId, invitation.role, invitation);
+
+    // Update invitation status
+    await updateDoc(doc(db, "invitations", inviteDoc.id), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp()
+    });
+
+    // Set as default project if user doesn't have one (first invitation sets default)
+    if (!getStore().user.defaultProject) {
+      // Direct database update to bypass auth check during user creation
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, { defaultProject: invitation.projectId });
+      
+      // Update store
+      getStore().user.defaultProject = invitation.projectId;
+    }
+
     return invitation.projectId;
   }
 
@@ -401,24 +489,25 @@ export class Project {
   
   static async create(value) {
     if (!requireAuth()) return null;
-    if (!requireProject()) return null;
     
     const projectInstance = new Project(value);
     const docRef = await addDoc(collection(db, "project"), {...projectInstance});
+
     
     // Make the project creator an admin
     await this.addUserToProject(getStore().user.uid, docRef.id, 'admin');
     
     getStore().uiAlert({type: 'info', message: `Project added`, autoClear: true});
-    return docRef;
+    return {id: docRef.id, ...projectInstance};
   }
   
-  static async getById(id, userDetails = false) {
-    if (!requireProject()) return null;
+  static async getById(id, userDetails = false, skipAuthCheck = false) {
+    if (!id) return null;
+    if (!skipAuthCheck && !requireProject()) return null;
     const projectRef = doc(db, "project", id);
     const snapshot = await getDoc(projectRef);
 
-    let invitations = []
+    let invitations = [];
     let users = []
     if (getStore().isProjectAdmin) {
       invitations = await this.getInvitation(id);
@@ -585,6 +674,37 @@ export class Project {
       'User added to project';
     
     getStore().uiAlert({ type: 'info', message, autoClear: true });
+    return true;
+  }
+
+  static async addUserToProjectDuringCreation(userId, projectId, role='user', invite= null) {
+    // Special method for adding users during account creation - bypasses auth check
+    
+    // Check if user is already in the project
+    const existingRole = await User.getUserRoleInProject(userId, projectId);
+    if (existingRole) {
+      throw new Error('User is already a member of this project');
+    }
+
+    // Validate invite if provided
+    if (invite) {
+      const inviteExpirationDate = new Date(invite.expiresAt.toDate());
+      if (inviteExpirationDate < new Date()) {
+        throw new Error('Invitation has expired');
+      }
+    }
+    
+    const userProjectRef = collection(db, "userProjects");
+    await addDoc(userProjectRef, { 
+      userId, 
+      projectId, 
+      role,
+      status: 'active',
+      joinedDate: serverTimestamp(),
+      invitedBy: invite ? invite.invitedBy : null,
+      isCreator: false // Always false for invited users
+    });
+    
     return true;
   }
 

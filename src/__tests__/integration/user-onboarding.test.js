@@ -334,21 +334,26 @@ describe('User Onboarding Flow Integration Tests', () => {
 
       store.userSetData(newUser)
 
-      // STEP 3: User accepts invitation
-      mockFirebase.User.acceptInvitation.mockResolvedValue('project-456')
-      
-      // Mock updated user data after accepting invitation
-      mockFirebase.User.getUserAuth.mockResolvedValue({
-        uid: 'invited-user-789',
-        email: 'invited@example.com',
-        displayName: 'Invited User',
-        tier: 'trial',
-        defaultProject: 'project-456',
-        projects: [{
-          projectId: 'project-456',
-          status: 'active',
-          role: 'user'
-        }]
+      // STEP 3: User accepts invitation - Mock the full acceptInvitation behavior
+      mockFirebase.User.acceptInvitation.mockImplementation(async (inviteToken) => {
+        // Simulate the real acceptInvitation method behavior
+        const updatedUserData = {
+          uid: 'invited-user-789',
+          email: 'invited@example.com',
+          displayName: 'Invited User',
+          tier: 'trial',
+          defaultProject: 'project-456',
+          projects: [{
+            projectId: 'project-456',
+            status: 'active',
+            role: 'user'
+          }]
+        };
+        
+        // Simulate what the real acceptInvitation does - update user data
+        store.userSetData(updatedUserData);
+        
+        return 'project-456';
       })
 
       // Mock project loading after acceptance
