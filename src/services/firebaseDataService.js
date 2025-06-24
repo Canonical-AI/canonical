@@ -93,7 +93,7 @@ function wrapAsyncMethodsWithTimeout(targetClass, timeoutDuration) {
 }
 
 export function addInDefaults(value) {
-  if (!requireAuth()) return value; // Return original value if not authenticated
+  if (!requireAuth()) return null; // Return null if not authenticated
   
   value.createdBy = value.createdBy || getStore().user.uid;
   value.updatedBy = getStore().user.uid;
@@ -263,7 +263,7 @@ export class User{
   }
 
   static async updatefield(id, field, value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const userRef = doc(db, "users", id);
     await updateDoc(userRef, {[field]: value});
     getStore().uiAlert({type: 'success', message: 'User updated', autoClear: true});
@@ -523,16 +523,16 @@ export class Project {
   }
   
   static async update(id, value) {
-    if (!requireAuth()) return value;
-    if (!requireProject()) return value;
+    if (!requireAuth()) return null;
+    if (!requireProject()) return null;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, value);
     getStore().uiAlert({type: 'success', message: 'Project updated', autoClear: true});
   }
   
   static async updatefield(id, field, value) {
-    if (!requireAuth()) return value;
-    if (!requireProject()) return value;
+    if (!requireAuth()) return null;
+    if (!requireProject()) return null;
     const documentRef = doc(db, "project", id);
     await updateDoc(documentRef, {[field]: value});
     await updateDoc(documentRef, {updatedDate: serverTimestamp()});
@@ -540,16 +540,16 @@ export class Project {
   }
 
   static async archive(id) {
-    if (!requireAuth()) return value;
-    if (!requireProject()) return value;
+    if (!requireAuth()) return null;
+    if (!requireProject()) return null;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
     getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
   }
 
   static async delete(id) {
-    if (!requireAuth()) return value;
-    if (!requireProject()) return value;
+    if (!requireAuth()) return null;
+    if (!requireProject()) return null;
     const projectRef = doc(db, "project", id);
     await updateDoc(projectRef, { archived: true });
     getStore().uiAlert( {type: 'info', message: `Project archived`, autoClear: true});
@@ -1060,52 +1060,43 @@ export class Document {
   }
   
   static async create(value) {
-    if (!requireAuth()) return value;
-
-    const doc = new Document(value)
-    const newDoc = addInDefaults(doc.defaultValues);
-    
-    const docRef = await addDoc(collection(db, "documents"), newDoc);
-    getStore().uiAlert( {type: 'info', message: `document added`, autoClear: true});
-
-    return docRef;
+    if (!requireAuth()) return null;
+    value = addInDefaults(value);
+    const docRef = await addDoc(collection(db, "documents"), value);
+    getStore().uiAlert( { type: 'info', message: `document added`, autoClear: true });
+    return { id: docRef.id, data: value };
   }
 
   
   static async updateDoc(id, value) {
-    if (!requireAuth()) return value;
-
-    const docData = addInDefaults(value); // Add defaults including serverTimestamp()
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", id);
-    await updateDoc(documentRef, docData);
-    getStore().uiAlert( {type: 'info', message: `document updated`, autoClear: true});
+    await updateDoc(documentRef, value);
+    return await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   
   static async updateDocField(id, field, value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", id);
-    await updateDoc(documentRef, {
-      [field]: value,
-      updatedDate: serverTimestamp()
-    });
-    getStore().uiAlert( {type: 'info', message: `document updated`, autoClear: true});
+    await updateDoc(documentRef, {[field]: value});
+    await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   
   static async archiveDoc(id) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", id);
     await updateDoc(documentRef, {archived: true});
-    getStore().uiAlert( {type: 'info', message: `document archived`, autoClear: true});
+    getStore().uiAlert( { type: 'info', message: `document archived`, autoClear: true });
   }
 
   
   static async deleteDocByID(id) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", id);
     await deleteDoc(documentRef);
-    getStore().uiAlert( {type: 'info', message: `document deleted`, autoClear: true});
+    getStore().uiAlert( { type: 'info', message: `document deleted`, autoClear: true });
   }
 
 
@@ -1114,7 +1105,7 @@ export class Document {
   ///-----------------------------------  
   
   static async createComment(docID, comment) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     
     // If this is a child comment (has parentId), enforce single-level nesting
@@ -1136,31 +1127,29 @@ export class Document {
   }
 
   static async updateComment(docID, id, comment) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
-    await updateDoc(commentRef, {updatedDate: serverTimestamp(), comment: comment});
-    console.log('comment updated')
+    await updateDoc(commentRef, comment);
+    return await updateDoc(commentRef, {updatedDate: serverTimestamp()});
   } 
 
   static async updateCommentData(docID, id, values) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
-    await updateDoc(commentRef, {updatedDate: serverTimestamp(), ...values});
-    console.log('comment updated')
-    return
+    await updateDoc(commentRef, values);
   } 
 
   static async archiveComment(docID, id) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await updateDoc(commentRef, {archived: true});
   }
 
   static async deleteComment(docID, id) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     const commentRef = doc(documentRef, "comments", id);
     await deleteDoc(commentRef);
@@ -1184,7 +1173,7 @@ export class Document {
   }
   
   static async createVersion(docId, versionContent, versionNumber) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
 
     // Get the current document
     const documentRef = doc(db, "documents", docId);
@@ -1217,7 +1206,7 @@ export class Document {
 
   
   static async deleteVersion(docId, versionNumber) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
 
     const documentRef = doc(db, "documents", docId);
     const versionsRef = collection(documentRef, "versions");
@@ -1234,7 +1223,7 @@ export class Document {
 
 
   static async updateMarkedUpContent(docID, versionContent , versionNumber) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
     const q = query(versionsRef, where("versionNumber", "==", versionNumber));
@@ -1248,7 +1237,7 @@ export class Document {
   }
 
   static async toggleVersionReleased(docID, versionNumber, released) {
-    if (!requireAuth()) return value;;
+    if (!requireAuth()) return null;
     console.log('toggleVersionReleased', docID, versionNumber, released)
     const documentRef = doc(db, "documents", docID);
     const versionsRef = collection(documentRef, "versions");
@@ -1277,7 +1266,7 @@ export class ChatHistory {
 
   
   static async create(value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     value = addInDefaults(value);
     const docRef = await addDoc(collection(db, "chats"), value);
     getStore().uiAlert( {type: 'info', message: `document added`, autoClear: true});
@@ -1285,7 +1274,7 @@ export class ChatHistory {
   }
   
   static async getAll() {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return []; // Return empty array instead of value
     
     // Ensure user.uid exists before using it in the query
     if (!getStore().user?.uid) {
@@ -1310,7 +1299,7 @@ export class ChatHistory {
 
   
   static async getDocById(id) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "chats", id);
     const snapshot = await getDoc(documentRef);
     return {
@@ -1321,14 +1310,14 @@ export class ChatHistory {
 
   
   static async updateChat(id, value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, value);
     return await updateDoc(documentRef, {updatedDate: serverTimestamp()});
   }
 
   static async updateChatField(id, field, value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, {[field]: value});
     await updateDoc(documentRef, {updatedDate: serverTimestamp()});
@@ -1336,7 +1325,7 @@ export class ChatHistory {
 
   
   static async archiveChat(id) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "chats", id);
     await updateDoc(documentRef, {archived: true});
     getStore().uiAlert( {type: 'info', message: `chat archived`, autoClear: true});
@@ -1344,7 +1333,7 @@ export class ChatHistory {
 
   
   static async deleteChat(id) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const documentRef = doc(db, "chats", id);
     await deleteDoc(documentRef);
     getStore().uiAlert( {type: 'info', message: `chat deleted`, autoClear: true});
@@ -1381,22 +1370,28 @@ export class UsageLogger {
 export class Favorites {
 
   static async getAll() {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return []; // Return empty array instead of value
+    
+    // Ensure user.uid exists before using it in the query
+    if (!getStore().user?.uid) {
+      console.warn('No user ID available for favorites, returning empty array');
+      return [];
+    }
+    
     const favoritesRef = doc(db, "favorites", getStore().user.uid);
     const snapshot = await getDoc(favoritesRef);
-    if (snapshot.exists() && snapshot.data().createdBy === getStore().user.uid) { // Check if created by logged-in user
-      return snapshot.data().documentIds || [];
+    
+    if (snapshot.exists()) {
+      return snapshot.data().favorites || [];
     } else {
       return [];
     }
   }
   
   static async updateFavorites(favorites) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const favoritesRef = doc(db, "favorites", getStore().user.uid);
-    const data = addInDefaults({ documentIds: favorites });
-    await setDoc(favoritesRef, data, { merge: true });
-    getStore().uiAlert( { type: 'info', message: 'Favorites updated', autoClear: true });
+    await setDoc(favoritesRef, { favorites }, { merge: true });
   }
 }
 
@@ -1422,7 +1417,7 @@ export class Task {
   }
 
   static async updateTasks(docID, documentContent) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     const tasksRef = doc(db, "tasks", docID);
     const snapshot = await getDoc(tasksRef);
 
@@ -1474,7 +1469,7 @@ export class Task {
 
 
   static async updateTask(docID, identity, value) {
-    if (!requireAuth()) return value;
+    if (!requireAuth()) return null;
     console.log('updating task', docID, identity)
     const tasksRef = doc(db, "tasks", docID);
     const snapshot = await getDoc(tasksRef);

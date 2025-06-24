@@ -26,11 +26,15 @@ const analytics = getAnalytics(firebaseApp);
 // Enable analytics collection
 setAnalyticsCollectionEnabled(analytics, true);
 
-// Connect to emulators only when explicitly requested
-if (import.meta.env.VITE_USE_EMULATOR === 'true' && location.hostname === 'localhost') {
+// Enable App Check debug token in all development environments
+if (import.meta.env.DEV && location.hostname === 'localhost') {
   // Set debug token for App Check in development
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-  
+  console.log('🐛 App Check debug mode enabled for localhost development');
+}
+
+// Connect to emulators only when explicitly requested
+if (import.meta.env.VITE_USE_EMULATOR === 'true' && location.hostname === 'localhost') {
   console.log('🔧 Connecting to Firebase emulators...');
   
   // Connect to emulators (safe approach)
@@ -58,12 +62,15 @@ const appCheck = initializeAppCheck(firebaseApp, {
    isTokenAutoRefreshEnabled: true
 });
 
+
+
 getToken(appCheck)
-  .then(() => {
-    
+  .then((result) => {
+
   })
   .catch((error) => {
-    console.log(error.message)
+    console.warn('AppCheck token error (this is usually non-critical):', error.message);
+    // AppCheck errors are usually non-critical and don't prevent app functionality
   })
 
 export { firebaseApp, appCheck, analytics };

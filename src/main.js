@@ -41,6 +41,20 @@ window.addEventListener('unhandledrejection', function(event) {
     // Prevent the error from being logged to console
     event.preventDefault();
   }
+  
+  // Handle null promise rejections (from auth failures)
+  if (event.reason === null) {
+    console.warn('Caught null promise rejection (likely from auth check failure)');
+    event.preventDefault();
+  }
+  
+  // Handle AppCheck related promise rejections
+  if (event.reason && typeof event.reason === 'object' && 
+      (event.reason.code === 'appCheck/recaptcha-error' || 
+       event.reason.message?.includes('appCheck'))) {
+    console.warn('Caught AppCheck promise rejection:', event.reason.message || event.reason);
+    event.preventDefault();
+  }
 });
 
 const pinia = createPinia()
