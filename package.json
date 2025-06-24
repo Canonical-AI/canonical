@@ -9,7 +9,12 @@
 		"dev-local": "vite --host",
 		"test": "vitest",
 		"test:ui": "vitest --ui",
-		"test:run": "vitest run"
+		"test:run": "vitest run",
+		"test:invitation": "vitest run src/__tests__/integration/invitation-management.test.js",
+		"test:user-management": "vitest run src/components/__tests__/UserManagement.test.js",
+		"test:integration": "vitest run src/__tests__/integration/",
+		"test:components": "vitest run src/components/__tests__/",
+		"coverage": "vitest run --coverage"
 	},
 	"dependencies": {
 		"@mdi/font": "5.9.55",

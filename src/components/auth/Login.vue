@@ -105,7 +105,7 @@
 <script>
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { useMainStore } from '../store/index.js';
+import { useMainStore } from '../../store/index.js';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -115,19 +115,30 @@ import {
   signInWithEmailAndPassword,
   signOut
 } from 'firebase/auth';
-import { firebaseApp } from '../firebase';
+import { firebaseApp } from '../../firebase';
 
 export default {
-  setup() {
+  props: {
+    prefilledEmail: {
+      type: String,
+      default: ''
+    },
+    defaultToSignUp: {
+      type: Boolean,
+      default: false
+    }
+  },
+  emits: ['auth-success'],
+  setup(props, { emit }) {
     const router = useRouter();
     const store = useMainStore();
     const auth = getAuth(firebaseApp);
     
-    const email = ref('');
+    const email = ref(props.prefilledEmail || '');
     const password = ref('');
-    const isSignUp = ref(false);
+    const isSignUp = ref(props.defaultToSignUp || !!props.prefilledEmail); // Default to sign-up if email is prefilled
     const error = ref('');
-    const showEmailForm = ref(false);
+    const showEmailForm = ref(!!props.prefilledEmail); // Show email form if email is prefilled
     
     const isLoggedIn = computed(() => store.isUserLoggedIn);
     const userEmail = computed(() => store.user?.email || '');
@@ -143,7 +154,14 @@ export default {
         await store.userEnter();
         email.value = '';
         password.value = '';
-        router.push('/');
+        
+        // Emit auth success for invitation flow
+        emit('auth-success');
+        
+        // Only navigate if not in invitation flow
+        if (!props.prefilledEmail) {
+          router.push('/');
+        }
       } catch (err) {
         error.value = err.message;
       }
@@ -175,7 +193,14 @@ export default {
           (userCred) => {
             console.log(userCred);
             store.userEnter();
-            router.push('/');
+            
+            // Emit auth success for invitation flow
+            emit('auth-success');
+            
+            // Only navigate if not in invitation flow
+            if (!props.prefilledEmail) {
+              router.push('/');
+            }
           }
         );
       } catch (err) {

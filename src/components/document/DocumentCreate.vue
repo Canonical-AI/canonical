@@ -453,7 +453,7 @@ export default {
       this.showEditor = false;
       this.isLoading = true;
 
-      while (this.$store.loadingUser) {
+      while (this.$store.loading.user) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       

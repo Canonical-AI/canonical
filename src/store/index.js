@@ -34,7 +34,7 @@ export const useMainStore = defineStore('main', {
       email: null,
       tier: null,
       defaultProject: null,
-      projects: []
+      projects: [],
     },
     loadingUser: true,
     project: {
@@ -42,11 +42,25 @@ export const useMainStore = defineStore('main', {
       folders: [],
       name: null,
       createdBy: null,
-      users: []
+      users: [],
+      invitation: [],
+      projectRole: null,
+    },
+    loading: {
+      user: true,
+      project: false,
+      documents: false,
+      chats: false,
+      favorites: false,
+      tasks: false,
+      templates: false,
+      pendingInvitations: false,
     },
     projects: [],
     documents: [],
     chats: [],
+    pendingInvitations: [],
+    pendingInvitationsDismissed: false,
     loading: {
       personas: {
         loaded: false,
@@ -74,6 +88,10 @@ export const useMainStore = defineStore('main', {
     isUserLoggedIn: (state) => state.user.uid !== null,
     
     canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
+
+    isUserInProject: (state) => !!state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed'),
+    
+    isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
@@ -170,6 +188,9 @@ export const useMainStore = defineStore('main', {
           // WAIT for user data to be set before continuing
           this.userSetData(user);
 
+          // Load pending invitations for the user
+          await this.userGetPendingInvitations();
+
           // WAIT for project to be set before continuing
           if (user.defaultProject) {
             await this.projectSet(user.defaultProject);
@@ -192,7 +213,7 @@ export const useMainStore = defineStore('main', {
         email: payload.email,
         tier: payload.tier,
         defaultProject: payload.defaultProject,
-        projects: payload.projects
+        projects: payload.projects,
       };
     },
 
@@ -204,9 +225,22 @@ export const useMainStore = defineStore('main', {
         email: null,
         tier: null,
         defaultProject: null,
-        projects: []
+        projects: [],
       };
+      this.project = {
+        id: null,
+        folders: [],
+        name: null,
+        createdBy: null,
+        users: [],
+        invitation: [],
+        projectRole: null,
+      };
+      this.projects = [];
       this.documents = [];
+      this.chats = [];
+      this.pendingInvitations = [];
+      this.pendingInvitationsDismissed = false;
       this.selected = {
         id: null,
         data: {},
@@ -216,25 +250,123 @@ export const useMainStore = defineStore('main', {
         isVersion: false,
         currentVersion: 'live'
       };
-      this.project = {
-        id: null,
-        folders: [],
-        name: null,
-        createdBy: null,
-        users: []
-      };
-      this.projects = [];
-      this.chats = [];
-      this.tasks = [];
       this.favorites = [];
-      this.templates = [];
+      this.tasks = [];
     },
 
-    async userGetData() {
-      this.loadingUser = true;
-      this.user = await User.getById(this.user.uid);
-      this.loadingUser = false;
+    async userGetPendingInvitations() {
+      if (!this.isUserLoggedIn) {
+        this.pendingInvitations = [];
+        return [];
+      }
+
+      try {
+        const invites = await User.getPendingInvitations();
+        
+        // Load project names for each invitation
+        this.pendingInvitations = await Promise.all(
+          invites.map(async (invite) => {
+            try {
+              const project = await Project.getById(invite.projectId);
+              return {
+                ...invite,
+                projectName: project.name
+              };
+            } catch (error) {
+              console.error('Error loading project for invitation:', error);
+              return invite;
+            }
+          })
+        );
+        
+        return this.pendingInvitations;
+      } catch (error) {
+        console.error('Error loading invitations:', error);
+        this.pendingInvitations = [];
+        return [];
+      }
     },
+
+    async userAcceptInvitation(inviteToken) {
+      if (!this.isUserLoggedIn) return;
+      
+      try {
+        const projectId = await User.acceptInvitation(inviteToken);
+        
+        // Remove from local pending invitations list
+        this.pendingInvitations = this.pendingInvitations.filter(inv => inv.inviteToken !== inviteToken);
+        
+        // Set this project as the user's default project if they don't have one
+        if (!this.user.defaultProject) {
+          await this.userSetDefaultProject(projectId);
+        }
+        
+        // Set the project and load its data
+        await this.projectSet(projectId, true);
+        
+        // Refresh user data to get updated project list
+        await this.userEnter();
+        
+        return projectId;
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: error.message,
+          autoClear: true 
+        });
+        throw error;
+      }
+    },
+
+    async userDeclineInvitation(inviteId) {
+      if (!this.isUserLoggedIn) return;
+      
+      try {
+        await User.declineInvitation(inviteId);
+        
+        // Remove from local pending invitations list
+        this.pendingInvitations = this.pendingInvitations.filter(inv => inv.id !== inviteId);
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: error.message,
+          autoClear: true 
+        });
+        throw error;
+      }
+    },
+
+    userDismissPendingInvitations() {
+      this.pendingInvitationsDismissed = true;
+    },
+
+    userShowPendingInvitations() {
+      this.pendingInvitationsDismissed = false;
+    },
+
+    async userLogoutAction() {
+      await User.logout();
+    },
+
+    async userGetInvitationByToken(token) {
+      try {
+        const invitation = await User.getInvitationByToken(token);
+        
+        // Load project and inviter details
+        const project = await Project.getById(invitation.projectId);
+        const inviter = await User.getUserData(invitation.invitedBy);
+        
+        return {
+          ...invitation,
+          projectName: project.name,
+          inviterName: inviter.displayName || inviter.email
+        };
+      } catch (error) {
+        console.error('Error loading invitation:', error);
+        throw error;
+      }
+    },
+
 
     async userSetDefaultProject(payload) {
       await User.setDefaultProject(payload);
@@ -242,22 +374,37 @@ export const useMainStore = defineStore('main', {
     },
 
     // Project Management
-    async projectSet(projectId) {
-      if (!projectId) return;
-      
-      this.project = await Project.getById(projectId);
+    async projectSet(projectId, details = false) {
+
+      // if user is not in project dont let them set it and fetch (unless its demo)
+      // TODO: if the user has no project then we should set the default project to null and have them go through the project create
+        if (!this.isUserInProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+        this.uiAlert({
+          type: 'error',
+          message: 'You are not a member of this project',
+          autoClear: true
+        });
+        return false;
+      }
+
+      if (!projectId ) return false;
+   
+      this.project.id = projectId;
+      this.project = await Project.getById(projectId, true);
       
       if (this.isUserLoggedIn) {
         await this.projectGetAllData();
       }
+
+      return true;
     },
 
-    projectSetTemp(payload) {
-      this.project = payload;
+    async projectRefresh(details = false) {
+      this.project = await Project.getById(this.project.id, details);
     },
+
 
     async projectGetAllData() {
-
       
       // Double check user is logged in before proceeding
       if (!this.isUserLoggedIn || !this.user.uid) {
@@ -271,12 +418,11 @@ export const useMainStore = defineStore('main', {
         return;
       }
 
-      
       try {
         // Load projects (with safety check for user.projects)
         if (this.user.projects && this.user.projects.length > 0) {
           this.projects = await Promise.all(
-            this.user.projects.map(projectId => Project.getById(projectId))
+            this.user.projects.map(project => Project.getById(project.projectId))
           );
         }
         
@@ -300,6 +446,53 @@ export const useMainStore = defineStore('main', {
           message: 'Failed to load project data. Please try refreshing the page.',
           autoClear: true
         });
+      }
+
+      return true;
+    },
+    
+
+    async projectGetInvitation() {
+      this.project.invitation = await Project.getInvitation(this.project.id);
+    },
+    
+    async projectCreateInvitation({projectId, email, role}) { 
+      const result = await Project.inviteUserToProject({projectId, email, role});
+      return  result
+    },
+
+    async projectUpdateInvitation(payload) {
+      const { id, ...updateData } = payload;
+      await Project.updateInvitation(id, updateData);
+    },
+
+    async projectRemoveUserFromProject({userId, projectId}) {
+      await Project.removeUserFromProject({userId, projectId});
+      
+      // Update local project users state to mark user as removed
+      if (this.project.users) {
+        const userIndex = this.project.users.findIndex(user => user.userId === userId );
+        if (userIndex !== -1) {
+          this.project.users[userIndex] = {
+            ...this.project.users[userIndex],
+            status: 'removed'
+          };
+        }
+      }
+    },
+
+    async projectReinstateUser({userId, projectId}) {
+      await Project.reinstateUser({userId, projectId});
+      
+      // Update local project users state to mark user as active
+      if (this.project.users) {
+        const userIndex = this.project.users.findIndex(user => user.userId === userId );
+        if (userIndex !== -1) {
+          this.project.users[userIndex] = {
+            ...this.project.users[userIndex],
+            status: 'active'
+          };
+        }
       }
     },
 
@@ -468,8 +661,6 @@ export const useMainStore = defineStore('main', {
     documentsUpdate(document) {
       this.selected = { ...this.selected, ...document };
     },
-
-
 
     // Comments Management
     async commentsAdd(comment) {

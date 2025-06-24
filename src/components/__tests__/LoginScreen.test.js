@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useMainStore } from '../../store/index.js'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import LoginScreen from '../LoginScreen.vue'
+import LoginScreen from '../auth/LoginScreen.vue'
 
 // Mock Firebase
 vi.mock('../../firebase', () => ({
