@@ -89,7 +89,7 @@ export const useMainStore = defineStore('main', {
     
     canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
 
-    isUserInProject: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.length > 0,
+    isUserInProject: (state) => !!state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed'),
     
     isProjectAdmin: (state) => state.user.projects.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
     

@@ -9,12 +9,21 @@ vi.mock('../../services/firebaseDataService', () => ({
     createUser: vi.fn(),
     setDefaultProject: vi.fn(),
     getUserAuth: vi.fn(),
-    getUserData: vi.fn()
+    getUserData: vi.fn(),
+    getInvitationByToken: vi.fn(),
+    acceptInvitation: vi.fn(),
+    getPendingInvitations: vi.fn(),
+    getUserByEmail: vi.fn()
   },
   Project: {
     create: vi.fn(),
     addUserToProject: vi.fn(),
-    getById: vi.fn()
+    getById: vi.fn(),
+    inviteUserToProject: vi.fn(),
+    getProjectInvitations: vi.fn(),
+    updateInvitation: vi.fn(),
+    removeUserFromProject: vi.fn(),
+    reinstateUser: vi.fn()
   },
   Document: {
     create: vi.fn(),
@@ -228,6 +237,347 @@ describe('User Onboarding Flow Integration Tests', () => {
       expect(store.project.id).toBe('existing-project-789')
       expect(store.project.name).toBe('Existing Project')
     })
+
+    it('should handle user joining via invitation link', async () => {
+      // STEP 1: User visits invitation link before signing up
+      const mockInvitation = {
+        email: 'invited@example.com',
+        projectId: 'project-456',
+        invitedBy: 'admin-user-123',
+        role: 'user',
+        status: 'pending',
+        inviteToken: 'invitation-token-123'
+      }
+
+      const mockProject = {
+        id: 'project-456',
+        name: 'Invited Project'
+      }
+
+      const mockInviter = {
+        displayName: 'Project Admin',
+        email: 'admin@example.com'
+      }
+
+      // Mock invitation loading
+      mockFirebase.User.getInvitationByToken.mockResolvedValue(mockInvitation)
+      mockFirebase.Project.getById.mockResolvedValue(mockProject)
+      mockFirebase.User.getUserData.mockResolvedValue(mockInviter)
+
+      // User loads invitation details
+      const invitationDetails = await store.userGetInvitationByToken('invitation-token-123')
+
+      expect(invitationDetails.email).toBe('invited@example.com')
+      expect(invitationDetails.projectName).toBe('Invited Project')
+      expect(invitationDetails.inviterName).toBe('Project Admin')
+
+      // STEP 2: User signs up with the invited email
+      const newUser = {
+        uid: 'invited-user-789',
+        email: 'invited@example.com',
+        displayName: 'Invited User',
+        tier: 'trial',
+        defaultProject: null,
+        projects: []
+      }
+
+      mockFirebase.User.createUser.mockResolvedValue({
+        id: newUser.uid,
+        email: newUser.email,
+        displayName: newUser.displayName,
+        defaultProject: null,
+        tier: 'trial',
+        projects: []
+      })
+
+      store.userSetData(newUser)
+
+      // STEP 3: User accepts invitation
+      mockFirebase.User.acceptInvitation.mockResolvedValue('project-456')
+      
+      // Mock updated user data after accepting invitation
+      mockFirebase.User.getUserAuth.mockResolvedValue({
+        uid: 'invited-user-789',
+        email: 'invited@example.com',
+        displayName: 'Invited User',
+        tier: 'trial',
+        defaultProject: 'project-456',
+        projects: [{
+          projectId: 'project-456',
+          status: 'active',
+          role: 'user'
+        }]
+      })
+
+      // Mock project loading after acceptance
+      mockFirebase.Project.getById.mockImplementation((id) => {
+        if (id === 'project-456') {
+          return Promise.resolve({
+            id: 'project-456',
+            name: 'Invited Project',
+            users: [
+              {
+                id: 'invited-user-789',
+                email: 'invited@example.com',
+                displayName: 'Invited User',
+                role: 'user',
+                status: 'active'
+              }
+            ],
+            folders: []
+          })
+        }
+        return Promise.resolve(mockProject)
+      })
+
+      const projectId = await store.userAcceptInvitation('invitation-token-123')
+
+      // STEP 4: Verify complete onboarding through invitation
+      expect(projectId).toBe('project-456')
+      expect(store.user.defaultProject).toBe('project-456')
+      expect(store.project.id).toBe('project-456')
+      expect(store.isUserInProject).toBe(true)
+      expect(store.isProjectAdmin).toBe(false) // User role, not admin
+    })
+
+    it('should handle admin user inviting others after project creation', async () => {
+      // STEP 1: Admin creates project (existing flow)
+      const adminUser = {
+        uid: 'admin-user-456',
+        email: 'admin@example.com',
+        displayName: 'Admin User',
+        tier: 'pro',
+        defaultProject: null,
+        projects: []
+      }
+
+      store.userSetData(adminUser)
+
+      const projectData = {
+        name: 'Team Project',
+        folders: [
+          { name: 'Engineering', children: [], isOpen: true },
+          { name: 'Design', children: [], isOpen: true }
+        ],
+        createdBy: adminUser.uid,
+        users: [adminUser.uid]
+      }
+
+      mockFirebase.Project.create.mockResolvedValue({ id: 'team-project-789' })
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'team-project-789',
+        ...projectData,
+        users: [{
+          id: adminUser.uid,
+          email: adminUser.email,
+          displayName: adminUser.displayName,
+          role: 'admin',
+          status: 'active'
+        }]
+      })
+
+      // Mock document loading
+      mockFirebase.Document.getAll.mockResolvedValue([])
+
+      await store.projectSet('team-project-789')
+
+      // Update user data to include project
+      store.userSetData({
+        ...adminUser,
+        defaultProject: 'team-project-789',
+        projects: [{
+          projectId: 'team-project-789',
+          status: 'active',
+          role: 'admin'
+        }]
+      })
+
+      // STEP 2: Admin invites team members
+      mockFirebase.User.getUserByEmail.mockResolvedValue(null) // New user
+      mockFirebase.Project.getInvitation.mockResolvedValue([]) // No existing invitations
+      
+      const mockInvitation = {
+        id: 'team-invite-123',
+        email: 'teammate@example.com',
+        projectId: 'team-project-789',
+        invitedBy: 'admin-user-456',
+        role: 'user',
+        status: 'pending',
+        inviteToken: 'team-invite-token-123'
+      }
+
+      mockFirebase.Project.inviteUserToProject.mockResolvedValue({
+        success: true,
+        ...mockInvitation
+      })
+
+      const inviteResult = await store.projectCreateInvitation({
+        projectId: 'team-project-789',
+        email: 'teammate@example.com',
+        role: 'user'
+      })
+
+      // STEP 3: Verify invitation created
+      expect(inviteResult.success).toBe(true)
+      expect(inviteResult.email).toBe('teammate@example.com')
+      expect(inviteResult.inviteToken).toBe('team-invite-token-123')
+
+      // STEP 4: Admin can manage invitations
+      mockFirebase.Project.getProjectInvitations.mockResolvedValue([mockInvitation])
+
+      // Admin loads invitations
+      const invitations = await mockFirebase.Project.getProjectInvitations('team-project-789')
+      expect(invitations).toHaveLength(1)
+      expect(invitations[0].email).toBe('teammate@example.com')
+
+      // Admin can cancel invitation
+      mockFirebase.Project.updateInvitation.mockResolvedValue()
+
+      await store.projectUpdateInvitation({
+        id: 'team-invite-123',
+        status: 'cancelled'
+      })
+
+      expect(mockFirebase.Project.updateInvitation).toHaveBeenCalledWith(
+        'team-invite-123',
+        { status: 'cancelled' }
+      )
+    })
+
+    it('should handle user with multiple pending invitations', async () => {
+      // User with multiple pending invitations
+      const userWithInvites = {
+        uid: 'multi-invite-user-123',
+        email: 'popular@example.com',
+        displayName: 'Popular User',
+        tier: 'trial',
+        defaultProject: null,
+        projects: []
+      }
+
+      store.userSetData(userWithInvites)
+
+      // Mock multiple pending invitations
+      const mockInvitations = [
+        {
+          id: 'invite-1',
+          email: 'popular@example.com',
+          projectId: 'project-alpha',
+          role: 'user',
+          inviteToken: 'token-alpha',
+          createdDate: { toDate: () => new Date('2024-01-01') }
+        },
+        {
+          id: 'invite-2',
+          email: 'popular@example.com',
+          projectId: 'project-beta',
+          role: 'admin',
+          inviteToken: 'token-beta',
+          createdDate: { toDate: () => new Date('2024-01-02') }
+        }
+      ]
+
+      mockFirebase.User.getPendingInvitations.mockResolvedValue(mockInvitations)
+      
+      // Mock project details for each invitation
+      mockFirebase.Project.getById.mockImplementation((projectId) => {
+        if (projectId === 'project-alpha') {
+          return Promise.resolve({ id: 'project-alpha', name: 'Alpha Project' })
+        } else if (projectId === 'project-beta') {
+          return Promise.resolve({ id: 'project-beta', name: 'Beta Project' })
+        }
+        return Promise.resolve({ id: projectId, name: 'Unknown Project' })
+      })
+
+      // Load pending invitations
+      const invitations = await store.userGetPendingInvitations()
+
+      expect(invitations).toHaveLength(2)
+      expect(invitations[0].projectName).toBe('Alpha Project')
+      expect(invitations[1].projectName).toBe('Beta Project')
+      expect(store.pendingInvitations).toHaveLength(2)
+
+      // User accepts one invitation
+      mockFirebase.User.acceptInvitation.mockResolvedValue('project-beta')
+      mockFirebase.User.getUserAuth.mockResolvedValue({
+        ...userWithInvites,
+        defaultProject: 'project-beta',
+        projects: [{
+          projectId: 'project-beta',
+          status: 'active',
+          role: 'admin'
+        }]
+      })
+
+      const acceptedProjectId = await store.userAcceptInvitation('token-beta')
+
+      expect(acceptedProjectId).toBe('project-beta')
+      expect(store.pendingInvitations.filter(inv => inv.inviteToken === 'token-beta')).toHaveLength(0)
+
+      // User declines remaining invitation
+      mockFirebase.User.declineInvitation.mockResolvedValue()
+
+      await store.userDeclineInvitation('invite-1')
+
+      expect(mockFirebase.User.declineInvitation).toHaveBeenCalledWith('invite-1')
+      expect(store.pendingInvitations.filter(inv => inv.id === 'invite-1')).toHaveLength(0)
+    })
+
+    it('should handle expired invitation scenario', async () => {
+      // User tries to accept expired invitation
+      const userWithExpiredInvite = {
+        uid: 'user-expired-123',
+        email: 'expired@example.com',
+        displayName: 'Expired User',
+        tier: 'trial',
+        defaultProject: null,
+        projects: []
+      }
+
+      store.userSetData(userWithExpiredInvite)
+
+      // Mock expired invitation error
+      mockFirebase.User.acceptInvitation.mockRejectedValue(
+        new Error('Invitation has expired')
+      )
+
+      // Attempt to accept expired invitation
+      await expect(store.userAcceptInvitation('expired-token')).rejects.toThrow(
+        'Invitation has expired'
+      )
+
+      // Verify user state unchanged
+      expect(store.user.defaultProject).toBeNull()
+      expect(store.user.projects).toHaveLength(0)
+    })
+
+    it('should handle email mismatch in invitation acceptance', async () => {
+      // User tries to accept invitation meant for different email
+      const wrongEmailUser = {
+        uid: 'wrong-email-user-123',
+        email: 'wrong@example.com',
+        displayName: 'Wrong Email User',
+        tier: 'trial',
+        defaultProject: null,
+        projects: []
+      }
+
+      store.userSetData(wrongEmailUser)
+
+      // Mock email mismatch error
+      mockFirebase.User.acceptInvitation.mockRejectedValue(
+        new Error('This invitation is for a different email address')
+      )
+
+      // Attempt to accept invitation with wrong email
+      await expect(store.userAcceptInvitation('wrong-email-token')).rejects.toThrow(
+        'This invitation is for a different email address'
+      )
+
+      // Verify user state unchanged
+      expect(store.user.defaultProject).toBeNull()
+      expect(store.user.projects).toHaveLength(0)
+    })
   })
 
   describe('Onboarding Error Handling', () => {
@@ -331,6 +681,80 @@ describe('User Onboarding Flow Integration Tests', () => {
       expect(store.user.uid).toBe('concurrent-user')
       expect(store.project.id).toBe('concurrent-project')
       expect(store.loadingUser).toBe(false)
+    })
+  })
+
+  describe('Admin User Management Journey', () => {
+    it('should handle complete admin user management workflow', async () => {
+      // Setup admin user with project
+      const adminUser = {
+        uid: 'admin-workflow-123',
+        email: 'workflow-admin@example.com',
+        displayName: 'Workflow Admin',
+        tier: 'pro',
+        defaultProject: 'workflow-project-123',
+        projects: [{
+          projectId: 'workflow-project-123',
+          status: 'active',
+          role: 'admin'
+        }]
+      }
+
+      store.userSetData(adminUser)
+
+      // Mock project with existing users
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'workflow-project-123',
+        name: 'Workflow Project',
+        users: [
+          {
+            id: 'admin-workflow-123',
+            email: 'workflow-admin@example.com',
+            displayName: 'Workflow Admin',
+            role: 'admin',
+            status: 'active'
+          },
+          {
+            id: 'regular-user-456',
+            email: 'regular@example.com',
+            displayName: 'Regular User',
+            role: 'user',
+            status: 'active'
+          }
+        ],
+        folders: []
+      })
+
+      await store.projectSet('workflow-project-123')
+
+      // Admin removes a user
+      mockFirebase.Project.removeUserFromProject.mockResolvedValue()
+
+      await store.projectRemoveUserFromProject({
+        userId: 'regular-user-456',
+        projectId: 'workflow-project-123'
+      })
+
+      expect(mockFirebase.Project.removeUserFromProject).toHaveBeenCalledWith({
+        userId: 'regular-user-456',
+        projectId: 'workflow-project-123'
+      })
+
+      // Admin reinstates the user
+      mockFirebase.Project.reinstateUser.mockResolvedValue()
+
+      await store.projectReinstateUser({
+        userId: 'regular-user-456',
+        projectId: 'workflow-project-123'
+      })
+
+      expect(mockFirebase.Project.reinstateUser).toHaveBeenCalledWith({
+        userId: 'regular-user-456',
+        projectId: 'workflow-project-123'
+      })
+
+      // Verify admin permissions work correctly
+      expect(store.isProjectAdmin).toBe(true)
     })
   })
 }) 
