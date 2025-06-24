@@ -325,6 +325,29 @@
         </v-card>
       </v-dialog>
 
+      <!-- Loading Modal -->
+      <v-dialog 
+        v-model="$store.loading.user" 
+        max-width="400"
+        persistent
+        no-click-animation
+      >
+        <v-card class="text-center pa-6">
+          <v-card-text>
+            <v-progress-circular
+              indeterminate
+              size="64"
+              color="primary"
+              class="mb-4"
+            ></v-progress-circular>
+            <div class="text-h6 mb-2">Loading...</div>
+            <div class="text-body-2 text-medium-emphasis">
+              Authenticating and setting up your workspace
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-dialog>
+
     </v-layout>
   </v-app>
 </template>

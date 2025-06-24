@@ -664,7 +664,7 @@ describe('User Onboarding Flow Integration Tests', () => {
       await store.userEnter()
 
       expect(store.isUserLoggedIn).toBe(false)
-      expect(store.loadingUser).toBe(false)
+      expect(store.loading.user).toBe(false)
       expect(store.globalAlerts).toHaveLength(1)
       expect(store.globalAlerts[0].type).toBe('error')
       expect(store.globalAlerts[0].message).toContain('Authentication failed')
@@ -728,13 +728,13 @@ describe('User Onboarding Flow Integration Tests', () => {
       const enterPromise = store.userEnter()
       
       // Should be loading initially
-      expect(store.loadingUser).toBe(true)
+      expect(store.loading.user).toBe(true)
 
       // Wait for completion
       await enterPromise
 
       // Should no longer be loading
-      expect(store.loadingUser).toBe(false)
+      expect(store.loading.user).toBe(false)
       expect(store.isUserLoggedIn).toBe(true)
       
       // userEnter should have set the project, but for testing reliability, ensure it's set
@@ -797,7 +797,7 @@ describe('User Onboarding Flow Integration Tests', () => {
       }
       
       expect(store.project.id).toBe('concurrent-project')
-      expect(store.loadingUser).toBe(false)
+      expect(store.loading.user).toBe(false)
     })
   })
 

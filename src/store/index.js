@@ -36,7 +36,6 @@ export const useMainStore = defineStore('main', {
       defaultProject: null,
       projects: [],
     },
-    loadingUser: true,
     project: {
       id: null,
       folders: [],
@@ -61,12 +60,6 @@ export const useMainStore = defineStore('main', {
     chats: [],
     pendingInvitations: [],
     pendingInvitationsDismissed: false,
-    loading: {
-      personas: {
-        loaded: false,
-        fetching: false
-      }
-    },
     selected: {
       id: null,
       data: {},
@@ -179,7 +172,7 @@ export const useMainStore = defineStore('main', {
   actions: {
     // User Management
     async userEnter() {
-      this.loadingUser = true;
+      this.loading.user = true;
       try {
         const user = await User.getUserAuth();
         
@@ -201,7 +194,7 @@ export const useMainStore = defineStore('main', {
       } catch (error) {
         this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
       } finally {
-        this.loadingUser = false;
+        this.loading.user= false;
       }
     },
 

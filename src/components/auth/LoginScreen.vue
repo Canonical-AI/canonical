@@ -310,7 +310,7 @@ export default {
     
     // Watch for user authentication changes and redirect when logged in
     watch(
-      () => [store.isUserLoggedIn, store.loadingUser],
+      () => [store.isUserLoggedIn, store.loading.user],
       ([isLoggedIn, loadingUser]) => {
         // Only redirect when loading is complete and user is logged in
         if (!loadingUser && isLoggedIn) {
