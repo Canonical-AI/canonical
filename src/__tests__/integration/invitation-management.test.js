@@ -46,9 +46,12 @@ vi.mock('../../router', () => ({
 }))
 
 // Mock crypto for invite token generation
-global.crypto = {
-  randomUUID: vi.fn(() => 'mock-uuid-12345')
-}
+Object.defineProperty(global, 'crypto', {
+  value: {
+    randomUUID: vi.fn(() => 'mock-uuid-12345')
+  },
+  writable: true
+})
 
 describe('Invitation Management Integration Tests', () => {
   let store
