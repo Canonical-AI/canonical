@@ -201,7 +201,7 @@ export const useMainStore = defineStore('main', {
       } catch (error) {
         this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
       } finally {
-        this.loading.user = false;
+        this.loadingUser = false;
       }
     },
 

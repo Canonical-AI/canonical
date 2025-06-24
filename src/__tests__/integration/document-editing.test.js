@@ -70,13 +70,14 @@ describe('Document Editing Integration Tests', () => {
       projects: ['test-project-123']
     })
 
-    store.projectSetTemp({
+    // Set project data directly for testing
+    store.project = {
       id: 'test-project-123',
       name: 'Test Project',
       folders: [],
       users: ['test-user-123'],
       createdBy: 'test-user-123'
-    })
+    }
 
     // Create router
     router = createRouter({

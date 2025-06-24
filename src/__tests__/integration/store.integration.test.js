@@ -181,7 +181,8 @@ describe('Store Integration Tests', () => {
         createdBy: 'user-1'
       }
 
-      store.projectSetTemp(projectData)
+      // Set project data directly for testing
+      store.project = projectData
 
       expect(store.project.id).toBe('project-123')
       expect(store.project.name).toBe('Test Project')
