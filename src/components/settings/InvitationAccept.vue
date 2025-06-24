@@ -17,16 +17,16 @@
         <div class="mb-4">
           <p>You've been invited to join the project:</p>
           <h3 class="my-2">{{ projectName }}</h3>
-          <p>Role: <strong>{{ invitation.role }}</strong></p>
+          <p>Role: <strong>{{ getRoleDisplayText(invitation.role) }}</strong></p>
           <p class="text-caption">Invited by: {{ inviterName }}</p>
         </div>
         
-        <v-alert v-if="!$store.isUserLoggedIn" type="info" class="mb-4">
+        <v-alert v-if="!isUserLoggedIn" :type="ALERT_TYPES.INFO" class="mb-4">
           Please sign in with the email address <strong>{{ invitation.email }}</strong> to accept this invitation.
         </v-alert>
 
         <!-- Login Component for non-authenticated users -->
-        <div v-if="!$store.isUserLoggedIn" class="mt-4">
+        <div v-if="!isUserLoggedIn" class="mt-4">
           <Login 
             :prefilled-email="invitation.email" 
             :default-to-sign-up="true"
@@ -36,19 +36,26 @@
       </v-card-text>
 
       <v-card-text v-else-if="accepted">
-        <v-alert type="success">
-          Successfully joined the project! Redirecting to home page...
+        <v-alert :type="ALERT_TYPES.SUCCESS">
+          {{ SUCCESS_MESSAGES.REDIRECTING }}
         </v-alert>
       </v-card-text>
 
-      <v-card-actions v-if="!loading && !error && !accepted && $store.isUserLoggedIn">
+      <v-card-actions v-if="shouldShowActionButtons">
         <v-spacer></v-spacer>
-        <v-btn @click="declineInvitation" variant="text">Decline</v-btn>
+        <v-btn 
+          @click="declineInvitation" 
+          variant="text"
+          :aria-label="BUTTON_LABELS.DECLINE_INVITATION"
+        >
+          Decline
+        </v-btn>
         <v-btn 
           @click="acceptInvitation" 
           color="primary"
           :disabled="accepting"
           :loading="accepting"
+          :aria-label="BUTTON_LABELS.ACCEPT_INVITATION"
         >
           Accept Invitation
         </v-btn>
@@ -59,6 +66,17 @@
 
 <script>
 import Login from '../auth/Login.vue';
+import { 
+  ALERT_TYPES, 
+  USER_ROLES, 
+  BUTTON_LABELS, 
+  ERROR_MESSAGES, 
+  SUCCESS_MESSAGES,
+  compareEmails,
+  getRoleDisplayName
+} from '../../utils/index.js';
+
+const REDIRECT_DELAY_MS = 2000;
 
 export default {
   components: {
@@ -66,6 +84,14 @@ export default {
   },
   data() {
     return {
+      // Constants for template access
+      ALERT_TYPES,
+      USER_ROLES,
+      BUTTON_LABELS,
+      ERROR_MESSAGES,
+      SUCCESS_MESSAGES,
+      
+      // Component state
       loading: true,
       error: null,
       invitation: null,
@@ -75,29 +101,53 @@ export default {
       accepting: false
     };
   },
-  async mounted() {
-    const token = this.$route.params.token;
-    if (!token) {
-      this.error = 'No invitation token provided';
-      this.loading = false;
-      return;
+  computed: {
+    isUserLoggedIn() {
+      return this.$store.isUserLoggedIn;
+    },
+    
+    shouldShowActionButtons() {
+      return !this.loading && 
+             !this.error && 
+             !this.accepted && 
+             this.isUserLoggedIn;
+    },
+    
+    isCorrectEmail() {
+      if (!this.invitation || !this.$store.user) return false;
+      return compareEmails(this.$store.user.email, this.invitation.email);
     }
+  },
+  async mounted() {
+    await this.initializeInvitation();
+  },
+  methods: {
+    async initializeInvitation() {
+      const token = this.$route.params.token;
+      if (!token) {
+        this.error = ERROR_MESSAGES.INVALID_TOKEN;
+        this.loading = false;
+        return;
+      }
 
-    // Logout any existing user to ensure clean state for invitation acceptance
-    if (this.$store.isUserLoggedIn) {
+      // Logout any existing user to ensure clean state
+      if (this.isUserLoggedIn) {
+        await this.logoutCurrentUser();
+      }
+
+      await this.loadInvitation(token);
+    },
+
+    async logoutCurrentUser() {
       await this.$store.userLogoutAction();
       this.$store.userLogout();
       
-      this.$store.uiAlert({ 
-        type: 'info', 
-        message: 'Logged out to ensure clean invitation acceptance. Please sign in with the invited email address.',
-        autoClear: true 
-      });
-    }
+      this.showAlert(
+        ALERT_TYPES.INFO, 
+        'Logged out to ensure clean invitation acceptance. Please sign in with the invited email address.'
+      );
+    },
 
-    await this.loadInvitation(token);
-  },
-  methods: {
     async loadInvitation(token) {
       try {
         const invitationDetails = await this.$store.userGetInvitationByToken(token);
@@ -107,7 +157,7 @@ export default {
         this.inviterName = invitationDetails.inviterName;
 
       } catch (error) {
-        this.error = error.message || 'Failed to load invitation details';
+        this.error = error.message || ERROR_MESSAGES.FAILED_LOAD;
         console.error('Error loading invitation:', error);
       } finally {
         this.loading = false;
@@ -115,21 +165,16 @@ export default {
     },
 
     async acceptInvitation() {
-      if (!this.$store.isUserLoggedIn) {
-        this.$store.uiAlert({ 
-          type: 'warning', 
-          message: 'Please sign in to accept the invitation',
-          autoClear: true 
-        });
+      if (!this.isUserLoggedIn) {
+        this.showAlert(ALERT_TYPES.WARNING, ERROR_MESSAGES.SIGN_IN_REQUIRED);
         return;
       }
 
-      if (this.$store.user.email !== this.invitation.email) {
-        this.$store.uiAlert({ 
-          type: 'error', 
-          message: `This invitation is for ${this.invitation.email}. Please sign in with that email address.`,
-          autoClear: true 
-        });
+      if (!this.isCorrectEmail) {
+        this.showAlert(
+          ALERT_TYPES.ERROR, 
+          `This invitation is for ${this.invitation.email}. Please sign in with that email address.`
+        );
         return;
       }
 
@@ -138,13 +183,12 @@ export default {
         const projectId = await this.$store.userAcceptInvitation(this.$route.params.token);
         this.accepted = true;
         
-        // Redirect to home page after a brief delay
+        // Redirect to home page after delay
         setTimeout(() => {
           this.$router.push('/');
-        }, 2000);
+        }, REDIRECT_DELAY_MS);
 
       } catch (error) {
-        // Error already handled in store method
         console.error('Error accepting invitation:', error);
       } finally {
         this.accepting = false;
@@ -157,19 +201,30 @@ export default {
     },
 
     async handleAuthSuccess() {
-      // User has successfully signed in, now try to accept the invitation
-      await this.$store.userEnter(); // Refresh user state
+      // Refresh user state after successful authentication
+      await this.$store.userEnter();
       
-      // Check if the user signed in with the correct email
-      if (this.$store.user.email === this.invitation.email) {
+      // Check if the user signed in with the correct email and auto-accept
+      if (this.isCorrectEmail) {
         await this.acceptInvitation();
       } else {
-        this.$store.uiAlert({ 
-          type: 'error', 
-          message: `Please sign in with the invited email address: ${this.invitation.email}`,
-          autoClear: true 
-        });
+        this.showAlert(
+          ALERT_TYPES.ERROR, 
+          `Please sign in with the invited email address: ${this.invitation.email}`
+        );
       }
+    },
+
+    getRoleDisplayText(role) {
+      return getRoleDisplayName(role);
+    },
+
+    showAlert(type, message) {
+      this.$store.uiAlert({ 
+        type, 
+        message, 
+        autoClear: true 
+      });
     }
   }
 };

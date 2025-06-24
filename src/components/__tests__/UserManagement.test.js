@@ -252,14 +252,14 @@ describe('UserManagement Component', () => {
       wrapper.vm.inviteUserDialog.email = 'invalid-email'
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.vm.isValidEmail).toBe(false)
+      expect(wrapper.vm.isValidEmailFormat('invalid-email')).toBe(false)
       expect(wrapper.vm.emailValidationErrors).toContain('Please enter a valid email address')
 
       // Test valid email
       wrapper.vm.inviteUserDialog.email = 'valid@example.com'
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.vm.isValidEmail).toBe(true)
+      expect(wrapper.vm.isValidEmailFormat('valid@example.com')).toBe(true)
     })
 
     it('should prevent duplicate invitations', async () => {
@@ -267,7 +267,7 @@ describe('UserManagement Component', () => {
       wrapper.vm.inviteUserDialog.email = 'admin@example.com'
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.vm.emailExistsInProject).toBe(true)
+      expect(wrapper.vm.emailExistsInProject('admin@example.com')).toBe(true)
       expect(wrapper.vm.emailValidationErrors).toContain('This email is already a member of the project')
     })
 
@@ -316,8 +316,8 @@ describe('UserManagement Component', () => {
       }
       await wrapper.vm.$nextTick()
 
-      // Check if the component's computed currentOrigin is working
-      expect(wrapper.vm.currentOrigin).toBe('http://localhost:3000')
+      // Check if the component's buildInvitationUrl method is working
+      expect(wrapper.vm.buildInvitationUrl('test-token-123')).toContain('/invite/test-token-123')
       
       // Check if the full URL is displayed correctly in the component
       const expectedUrl = `http://localhost:3000/invite/test-token-123`
@@ -405,7 +405,7 @@ describe('UserManagement Component', () => {
       wrapper = createWrapper()
       wrapper.vm.invitationDialog.token = 'copy-token-123'
 
-      await wrapper.vm.copyInvitationLink()
+      await wrapper.vm.copyInvitationLinkToClipboard('copy-token-123')
 
       expect(mockWriteText).toHaveBeenCalledWith(
         expect.stringContaining('/invite/copy-token-123')
@@ -420,8 +420,9 @@ describe('UserManagement Component', () => {
       wrapper = createWrapper()
       await wrapper.vm.$nextTick()
 
-      // Set search query
+      // Set search query - need to set both userSearchQuery and debouncedSearchQuery since debounce is used
       wrapper.vm.userSearchQuery = 'admin'
+      wrapper.vm.debouncedSearchQuery = 'admin'
       await wrapper.vm.$nextTick()
 
       const filteredUsers = wrapper.vm.filteredAndSortedUsers

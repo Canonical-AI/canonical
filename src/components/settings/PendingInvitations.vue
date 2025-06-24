@@ -1,5 +1,5 @@
 <template>
-  <div v-if="$store.pendingInvitations.length > 0">
+  <div v-if="hasPendingInvitations">
     <div v-if="!compact" class="mt-8">
       <hr class="my-5">
     </div>
@@ -11,8 +11,9 @@
         color="primary" 
         variant="tonal" 
         size="small"
+        :aria-label="`${pendingInvitationsCount} pending invitations`"
       >
-        {{ $store.pendingInvitations.length }} pending
+        {{ pendingInvitationsCount }} pending
       </v-chip>
     </div>
 
@@ -24,17 +25,17 @@
         :class="{ 'border': compact }"
       >
         <v-list-item-content>
-          <v-list-item-title>{{ invitation.projectName || 'Project Invitation' }}</v-list-item-title>
+          <v-list-item-title>{{ getProjectDisplayName(invitation) }}</v-list-item-title>
           <v-list-item-subtitle>
             <v-chip 
-              :color="invitation.role === 'admin' ? 'orange' : 'blue'" 
+              :color="getRoleChipColor(invitation.role)" 
               variant="tonal" 
               size="x-small"
               class="mr-2"
             >
-              {{ invitation.role }}
+              {{ getRoleDisplayText(invitation.role) }}
             </v-chip>
-            Invited {{ formatDate(invitation.createdDate) }}
+            Invited {{ formatInvitationDate(invitation.createdDate) }}
           </v-list-item-subtitle>
         </v-list-item-content>
         
@@ -44,8 +45,9 @@
               size="small" 
               color="primary" 
               @click="acceptInvitation(invitation)"
-              :loading="accepting === invitation.id"
+              :loading="isAccepting(invitation.id)"
               class="text-none mr-2"
+              :aria-label="`${BUTTON_LABELS.ACCEPT_INVITATION} for ${getProjectDisplayName(invitation)}`"
             >
               Accept
             </v-btn>
@@ -54,6 +56,7 @@
               variant="outlined" 
               @click="declineInvitation(invitation)"
               class="text-none"
+              :aria-label="`${BUTTON_LABELS.DECLINE_INVITATION} for ${getProjectDisplayName(invitation)}`"
             >
               Decline
             </v-btn>
@@ -69,10 +72,15 @@
       <hr class="my-5">
       <h2>Pending Project Invitations</h2>
     </div>
-    <v-alert type="info" variant="tonal" class="mt-4">
+    <v-alert :type="ALERT_TYPES.INFO" variant="tonal" class="mt-4">
       You have no pending project invitations.
     </v-alert>
-    <v-alert type="info" variant="outlined" class="mt-4" v-if="$store.user?.projects?.length > 0">
+    <v-alert 
+      :type="ALERT_TYPES.INFO" 
+      variant="outlined" 
+      class="mt-4" 
+      v-if="hasExistingProjects"
+    >
       <v-alert-title>Project Management</v-alert-title>
       If you were automatically added to projects during signup and want to leave any of them, 
       you can manage your project memberships in the Project Settings section.
@@ -81,6 +89,16 @@
 </template>
 
 <script>
+import { 
+  ALERT_TYPES, 
+  USER_ROLES, 
+  BUTTON_LABELS, 
+  SUCCESS_MESSAGES,
+  formatTimestamp,
+  getRoleColor,
+  getRoleDisplayName
+} from '../../utils/index.js';
+
 export default {
   props: {
     compact: {
@@ -99,8 +117,28 @@ export default {
   emits: ['invitation-accepted', 'dismiss'],
   data() {
     return {
+      // Constants for template access
+      ALERT_TYPES,
+      USER_ROLES,
+      BUTTON_LABELS,
+      SUCCESS_MESSAGES,
+      
+      // Component state
       accepting: null
     };
+  },
+  computed: {
+    hasPendingInvitations() {
+      return this.$store.pendingInvitations.length > 0;
+    },
+    
+    pendingInvitationsCount() {
+      return this.$store.pendingInvitations.length;
+    },
+    
+    hasExistingProjects() {
+      return this.$store.user?.projects?.length > 0;
+    }
   },
   async mounted() {
     if (this.$store.isUserLoggedIn) {
@@ -121,17 +159,12 @@ export default {
         const projectId = await this.$store.userAcceptInvitation(invitation.inviteToken);
         
         // Show success message
-        this.$store.uiAlert({ 
-          type: 'success', 
-          message: `Successfully joined ${invitation.projectName || 'project'}!`, 
-          autoClear: true 
-        });
+        this.showSuccessAlert(`Successfully joined ${this.getProjectDisplayName(invitation)}!`);
         
         // Emit event for parent to handle navigation
         this.$emit('invitation-accepted', { invitation, projectId });
         
       } catch (error) {
-        // Error already handled in store method
         console.error('Error accepting invitation:', error);
       } finally {
         this.accepting = null;
@@ -143,21 +176,47 @@ export default {
         await this.$store.userDeclineInvitation(invitation.id);
         
         // Show success message
-        this.$store.uiAlert({ 
-          type: 'info', 
-          message: 'Invitation declined', 
-          autoClear: true 
-        });
+        this.showInfoAlert(SUCCESS_MESSAGES.INVITATION_DECLINED);
       } catch (error) {
-        // Error already handled in store method
         console.error('Error declining invitation:', error);
       }
     },
 
-    formatDate(timestamp) {
-      if (!timestamp) return '';
-      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-      return date.toLocaleDateString();
+    // Utility methods
+    isAccepting(invitationId) {
+      return this.accepting === invitationId;
+    },
+
+    getProjectDisplayName(invitation) {
+      return invitation.projectName || 'Project Invitation';
+    },
+
+    getRoleChipColor(role) {
+      return getRoleColor(role);
+    },
+
+    getRoleDisplayText(role) {
+      return getRoleDisplayName(role);
+    },
+
+    formatInvitationDate(timestamp) {
+      return formatTimestamp(timestamp);
+    },
+
+    showSuccessAlert(message) {
+      this.$store.uiAlert({ 
+        type: ALERT_TYPES.SUCCESS, 
+        message, 
+        autoClear: true 
+      });
+    },
+
+    showInfoAlert(message) {
+      this.$store.uiAlert({ 
+        type: ALERT_TYPES.INFO, 
+        message, 
+        autoClear: true 
+      });
     }
   }
 };

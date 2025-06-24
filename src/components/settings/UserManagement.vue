@@ -11,6 +11,7 @@
                 prepend-icon="mdi-account-plus"
                 @click="openInviteDialog"
                 :disabled="!isCurrentUserAdmin"
+                :aria-label="BUTTON_LABELS.INVITE_USER"
             >
                 Invite User
             </v-btn>
@@ -27,6 +28,7 @@
             clearable
             class="mb-4"
             hide-details
+            :aria-label="BUTTON_LABELS.SEARCH_USERS"
         ></v-text-field>
 
         <v-table fixed-header density="compact" v-if="users.length > 0">
@@ -39,33 +41,77 @@
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="user in filteredAndSortedUsers" :key="user.id" :class="{ 'user-removed': user?.status === 'removed' }">
+                <tr v-for="user in filteredAndSortedUsers" :key="user.id" :class="{ 'user-removed': isUserRemoved(user) }">
                     <td>{{ user.displayName }}</td>
                     <td>{{ user.email }}</td>
-                    <td>{{ user?.status === 'removed'? 'removed': user.role }}</td>
+                    <td>{{ getUserRoleDisplay(user) }}</td>
                     <td>
                         <span v-if="user.pending">
-                            <v-btn density="compact" class="text-none"  @click="removeUser(user.id)" color="primary">Approve</v-btn>
-                            <v-btn density="compact" class="text-none" @click="removeUser(user.id)" color="error">Reject</v-btn>
+                            <v-btn 
+                                density="compact" 
+                                class="text-none"  
+                                @click="removeUser(user.id)" 
+                                color="primary"
+                                :aria-label="`${BUTTON_LABELS.APPROVE_USER} ${user.displayName || user.email}`"
+                            >
+                                Approve
+                            </v-btn>
+                            <v-btn 
+                                density="compact" 
+                                class="text-none" 
+                                @click="removeUser(user.id)" 
+                                color="error"
+                                :aria-label="`${BUTTON_LABELS.REJECT_USER} ${user.displayName || user.email}`"
+                            >
+                                Reject
+                            </v-btn>
                         </span>
-                        <span v-else-if="user?.status === 'removed'">
-                            <v-btn density="compact" class="text-none" color="success" variant="text" @click="confirmReinstateUser(user)">Reinstate</v-btn>
+                        <span v-else-if="isUserRemoved(user)">
+                            <v-btn 
+                                density="compact" 
+                                class="text-none" 
+                                color="success" 
+                                variant="text" 
+                                @click="confirmReinstateUser(user)"
+                                :aria-label="`${BUTTON_LABELS.REINSTATE_USER} ${user.displayName || user.email}`"
+                            >
+                                Reinstate
+                            </v-btn>
                         </span>
                         <span v-else-if="user.id !== $store.user.uid" density="compact">
                             <v-menu>
                                 <template v-slot:activator="{ props }">
-                                    <v-btn density="compact" class="text-none" variant="tonal" color="secondary" v-bind="props">{{ user.role }}</v-btn>
+                                    <v-btn 
+                                        density="compact" 
+                                        class="text-none" 
+                                        variant="tonal" 
+                                        color="secondary" 
+                                        v-bind="props"
+                                        :aria-label="`Change role for ${user.displayName || user.email}. Current role: ${user.role}`"
+                                    >
+                                        {{ user.role }}
+                                    </v-btn>
                                 </template>
                                 <v-list>
-                                    <v-list-item @click="changeUserRole(user.id, 'admin')" :disabled="user.role === 'admin'">
+                                    <v-list-item @click="changeUserRole(user.id, USER_ROLES.ADMIN)" :disabled="user.role === USER_ROLES.ADMIN">
                                         <v-list-item-title>Admin</v-list-item-title>
                                     </v-list-item>
-                                    <v-list-item @click="changeUserRole(user.id, 'user')" :disabled="user.role === 'user'">
+                                    <v-list-item @click="changeUserRole(user.id, USER_ROLES.USER)" :disabled="user.role === USER_ROLES.USER">
                                         <v-list-item-title>User</v-list-item-title>
                                     </v-list-item>
                                 </v-list>
                             </v-menu>
-                            <v-btn density="compact" class="text-none" color="warning" variant="text" v-if="!user.pending && user?.status !== 'removed'" @click="confirmRemoveUser(user)">Remove</v-btn>
+                            <v-btn 
+                                density="compact" 
+                                class="text-none" 
+                                color="warning" 
+                                variant="text" 
+                                v-if="!user.pending && !isUserRemoved(user)" 
+                                @click="confirmRemoveUser(user)"
+                                :aria-label="`${BUTTON_LABELS.REMOVE_USER} ${user.displayName || user.email}`"
+                            >
+                                Remove
+                            </v-btn>
                         </span>
                     </td>
                 </tr>
@@ -96,6 +142,7 @@
                     variant="text"
                     size="small"
                     :prepend-icon="showCompleteInvitations ? 'mdi-eye-off' : 'mdi-eye'"
+                    :aria-label="showCompleteInvitations ? BUTTON_LABELS.HIDE_COMPLETE : BUTTON_LABELS.SHOW_COMPLETE"
                 >
                     {{ showCompleteInvitations ? 'Hide' : 'Show' }} Complete ({{ completeInvitationsCount }})
                 </v-btn>
@@ -112,7 +159,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="invite in filteredInvitations" :key="invite.id" :class="{ 'invitation-complete': ['cancelled', 'accepted'].includes(invite?.status) }">
+                    <tr v-for="invite in filteredInvitations" :key="invite.id" :class="{ 'invitation-complete': isInvitationComplete(invite) }">
                         <td>{{ invite.email }}</td>
                         <td>{{ invite.role }}</td>
                         <td>
@@ -125,10 +172,10 @@
                             </v-chip>
                         </td>
                         <td>{{ formatDate(invite.createdDate) }}</td>
-                        <td>{{ invite.expiresAt.toDate().toLocaleDateString() }}</td>
+                        <td>{{ formatDate(invite.expiresAt) }}</td>
                         <td>
-                            <span v-if="['cancelled', 'accepted'].includes(invite?.status)" class="text-disabled">
-                                {{ invite?.status === 'cancelled' ? 'Cancelled' : 'Accepted' }}
+                            <span v-if="isInvitationComplete(invite)" class="text-disabled">
+                                {{ getInvitationCompletionText(invite) }}
                             </span>
                             <span v-else>
                                 <v-btn 
@@ -138,6 +185,7 @@
                                     variant="text" 
                                     @click="showExistingInvitationLink(invite)"
                                     prepend-icon="mdi-link"
+                                    :aria-label="`Show invitation link for ${invite.email}`"
                                 >
                                     Link
                                 </v-btn>
@@ -147,6 +195,7 @@
                                     color="error" 
                                     variant="text" 
                                     @click="cancelInvitation(invite.id)"
+                                    :aria-label="`Cancel invitation for ${invite.email}`"
                                 >
                                     Cancel
                                 </v-btn>
@@ -201,11 +250,11 @@
                     </v-alert>
                     
                     <v-text-field
-                        :value="fullInvitationUrl"
+                        :value="buildInvitationUrl(invitationDialog.token)"
                         label="Invitation Link"
                         readonly
                         append-icon="mdi-content-copy"
-                        @click:append="copyInvitationLink"
+                        @click:append="copyInvitationLinkToClipboard(invitationDialog.token)"
                         variant="outlined"
                     ></v-text-field>
                 </v-card-text>
@@ -214,7 +263,7 @@
                     <v-btn @click="invitationDialog.show = false">Close</v-btn>
                     <v-spacer></v-spacer>
                     <v-btn 
-                        @click="copyInvitationLink" 
+                        @click="copyInvitationLinkToClipboard(invitationDialog.token)" 
                         color="primary"
                         variant="tonal"
                         :prepend-icon="invitationDialog.copied ? 'mdi-check' : 'mdi-content-copy'"
@@ -222,7 +271,7 @@
                         {{ invitationDialog.copied ? 'Copied!' : 'Copy Link' }}
                     </v-btn>
                     <v-btn 
-                        @click="shareViaEmail(invitationDialog)" 
+                        @click="openEmailClient(invitationDialog)" 
                         color="primary"
                         prepend-icon="mdi-email"
                     >
@@ -271,16 +320,13 @@
                                         prepend-inner-icon="mdi-email"
                                         @keyup.enter="canCreateInvitation ? sendInvitationFromModal() : null"
                                         required
-                                        :success="inviteUserDialog.email && isValidEmail && !emailExistsInProject"
-                                        :success-messages="inviteUserDialog.email && isValidEmail && !emailExistsInProject ? ['Email is valid and available'] : []"
+                                        :success="isEmailValidAndAvailable"
+                                        :success-messages="isEmailValidAndAvailable ? ['Email is valid and available'] : []"
                                     ></v-text-field>
 
                                     <v-select
                                         v-model="inviteUserDialog.role"
-                                        :items="[
-                                            { title: 'User', value: 'user' },
-                                            { title: 'Admin', value: 'admin' }
-                                        ]"
+                                        :items="roleSelectItems"
                                         label="Role"
                                         variant="outlined"
                                         prepend-inner-icon="mdi-account-cog"
@@ -312,7 +358,7 @@
                                     <!-- Existing User Added -->
                                     <div v-if="inviteUserDialog.existingUser">
                                         <v-alert type="success" class="mb-4">
-                                            <strong>User Added!</strong> {{ inviteUserDialog.existingUser.displayName || inviteUserDialog.existingUser.email }} has been added to your project.
+                                            <strong>User Added!</strong> {{ getUserDisplayName(inviteUserDialog.existingUser) }} has been added to your project.
                                         </v-alert>
 
                                         <div class="mb-4">
@@ -335,12 +381,12 @@
                                     <!-- New Invitation Created -->
                                     <div v-else>
                                         <v-text-field
-                                            :value="inviteUserDialog.createdInvitation ? `${currentOrigin}/invite/${inviteUserDialog.createdInvitation.inviteToken}` : ''"
+                                            :value="buildInvitationUrl(inviteUserDialog.createdInvitation?.inviteToken)"
                                             label="Invitation Link"
                                             readonly
                                             variant="outlined"
                                             append-inner-icon="mdi-content-copy"
-                                            @click:append-inner="copyInvitationLinkFromModal"
+                                            @click:append-inner="copyInvitationLinkToClipboard(inviteUserDialog.createdInvitation?.inviteToken, 'modal')"
                                         ></v-text-field>
 
                                         <div class="mb-4">
@@ -363,7 +409,7 @@
                                                     Close
                                                 </v-btn>
                                                 <v-btn 
-                                                    @click="copyInvitationLinkFromModal"
+                                                    @click="copyInvitationLinkToClipboard(inviteUserDialog.createdInvitation?.inviteToken, 'modal')"
                                                     color="primary"
                                                     variant="tonal"
                                                     :prepend-icon="inviteUserDialog.copied ? 'mdi-check' : 'mdi-content-copy'"
@@ -372,7 +418,7 @@
                                                     {{ inviteUserDialog.copied ? 'Copied!' : 'Copy Link' }}
                                                 </v-btn>
                                                 <v-btn 
-                                                    @click="shareViaEmailFromModal"
+                                                    @click="openEmailClient(inviteUserDialog.createdInvitation)"
                                                     color="primary"
                                                     prepend-icon="mdi-email"
                                                 >
@@ -393,6 +439,61 @@
 
 <script>
 import { Project } from '../../services/firebaseDataService';
+import { debounce } from 'lodash-es';
+import { 
+    ALERT_TYPES,
+    USER_ROLES, 
+    INVITATION_STATUS,
+    formatTimestamp,
+    normalizeEmail,
+    isValidEmail
+} from '../../utils/index.js';
+
+// Constants specific to UserManagement
+const USER_STATUS = {
+    ACTIVE: 'active',
+    REMOVED: 'removed',
+    PENDING: 'pending'
+};
+
+const BUTTON_LABELS = {
+    INVITE_USER: 'Invite a new user to the project',
+    SEARCH_USERS: 'Search for users by name or email',
+    APPROVE_USER: 'Approve user',
+    REJECT_USER: 'Reject user',
+    REINSTATE_USER: 'Reinstate user',
+    REMOVE_USER: 'Remove user',
+    HIDE_COMPLETE: 'Hide completed invitations',
+    SHOW_COMPLETE: 'Show completed invitations'
+};
+
+const REFRESH_INTERVAL_MS = 10000;
+const COPY_FEEDBACK_TIMEOUT_MS = 3000;
+
+// Utility functions specific to UserManagement
+const buildInvitationUrl = (token, origin) => {
+    if (!token) return '';
+    const baseOrigin = origin || (typeof window !== 'undefined' ? window.location.origin : '');
+    return `${baseOrigin}/invite/${token}`;
+};
+
+const createEmailSubject = () => {
+    return encodeURIComponent(`You're invited to join our project`);
+};
+
+const createEmailBody = (invitation, invitationUrl) => {
+    return encodeURIComponent(`Hi!
+
+You've been invited to join our project with ${invitation.role} access.
+
+Please sign up using the email address: ${invitation.email}
+
+Click this link to join: ${invitationUrl}
+
+Important: You must sign up with the exact email address (${invitation.email}) for the invitation to work.
+
+Thanks!`);
+};
 
 export default {
     name: 'UserManagement',
@@ -407,11 +508,20 @@ export default {
         }
     },
     emits: ['users-updated'],
-    data() {
+            data() {
         return {
+            // Constants for template access
+            USER_STATUS,
+            INVITATION_STATUS,
+            USER_ROLES,
+            BUTTON_LABELS,
+            ALERT_TYPES,
+            
+            // Component state
             pendingInvitations: [],
             inviteError: '',
             userSearchQuery: '',
+            debouncedSearchQuery: '',
             confirmDialog: {
                 show: false,
                 title: '',
@@ -429,7 +539,7 @@ export default {
                 show: false,
                 step: 1,
                 email: '',
-                role: 'user',
+                role: USER_ROLES.USER,
                 loading: false,
                 createdInvitation: null,
                 existingUser: null,
@@ -442,81 +552,59 @@ export default {
     computed: {
         isCurrentUserAdmin() {
             const currentUser = this.users.find(u => u.id === this.$store.user.uid);
-            const isAdmin = currentUser?.role === 'admin';
-            
-            // Also check if user is the project creator
+            const isAdmin = currentUser?.role === USER_ROLES.ADMIN;
             const isCreator = this.$store.project?.createdBy === this.$store.user.uid;
-            
             return isAdmin || isCreator;
         },
-        fullInvitationUrl() {
-            return this.invitationDialog.token ? `${this.currentOrigin}/invite/${this.invitationDialog.token}` : '';
-        },
+
         filteredAndSortedUsers() {
             if (!this.users || this.users.length === 0) return [];
             
-            // First filter by search query
+            // Filter by search query (debounced)
             let filtered = this.users;
-            if (this.userSearchQuery.trim()) {
-                const query = this.userSearchQuery.toLowerCase().trim();
+            if (this.debouncedSearchQuery.trim()) {
+                const query = this.debouncedSearchQuery.toLowerCase();
                 filtered = this.users.filter(user => 
-                    (user.displayName && user.displayName.toLowerCase().includes(query)) ||
-                    (user.email && user.email.toLowerCase().includes(query))
+                    this.getUserDisplayName(user).toLowerCase().includes(query) ||
+                    normalizeEmail(user.email).includes(query)
                 );
             }
             
-            // Then sort: active users alphabetically first, then removed users alphabetically
+            // Sort: active users first, then removed users, alphabetically within each group
             return filtered.sort((a, b) => {
-                // First sort by status (active users first, removed users last)
-                const aStatus = a?.status === 'removed' ? 1 : 0;
-                const bStatus = b?.status === 'removed' ? 1 : 0;
+                const aStatus = this.isUserRemoved(a) ? 1 : 0;
+                const bStatus = this.isUserRemoved(b) ? 1 : 0;
                 
                 if (aStatus !== bStatus) {
                     return aStatus - bStatus;
                 }
                 
-                // Within the same status group, sort alphabetically by display name
-                const aName = (a.displayName || a.email || '').toLowerCase();
-                const bName = (b.displayName || b.email || '').toLowerCase();
+                const aName = this.getUserDisplayName(a).toLowerCase();
+                const bName = this.getUserDisplayName(b).toLowerCase();
                 
                 return aName.localeCompare(bName);
             });
         },
+
         // Email validation computed properties
-        isValidEmail() {
-            if (!this.inviteUserDialog.email) return true; // Don't show error for empty field
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            return emailRegex.test(this.inviteUserDialog.email);
+        isEmailValidAndAvailable() {
+            return this.inviteUserDialog.email && 
+                   this.isValidEmailFormat(this.inviteUserDialog.email) && 
+                   !this.emailExistsInProject(this.inviteUserDialog.email);
         },
-        emailExistsInProject() {
-            if (!this.inviteUserDialog.email) return false;
-            const email = this.inviteUserDialog.email.toLowerCase().trim();
-            
-            // Check existing users
-            const existsInUsers = this.users && this.users.some(user => 
-                user.email && user.email.toLowerCase() === email
-            );
-            
-            // Check pending invitations
-            const existsInInvitations = this.pendingInvitations && this.pendingInvitations.some(invite => 
-                invite.email && invite.email.toLowerCase() === email
-            );
-            
-            return existsInUsers || existsInInvitations;
-        },
+
         emailValidationErrors() {
             const errors = [];
+            const email = this.inviteUserDialog.email;
             
-            if (this.inviteUserDialog.email && !this.isValidEmail) {
+            if (email && !this.isValidEmailFormat(email)) {
                 errors.push('Please enter a valid email address');
             }
             
-            if (this.inviteUserDialog.email && this.emailExistsInProject) {
-                const email = this.inviteUserDialog.email.toLowerCase().trim();
-                
-                // Check if it's an existing user
-                const existsInUsers = this.users && this.users.some(user => 
-                    user.email && user.email.toLowerCase() === email
+            if (email && this.emailExistsInProject(email)) {
+                const normalizedEmail = normalizeEmail(email);
+                const existsInUsers = this.users?.some(user => 
+                    normalizeEmail(user.email) === normalizedEmail
                 );
                 
                 if (existsInUsers) {
@@ -532,33 +620,50 @@ export default {
             
             return errors;
         },
+
         canCreateInvitation() {
             return this.inviteUserDialog.email && 
-                   this.isValidEmail && 
-                   !this.emailExistsInProject && 
+                   this.isValidEmailFormat(this.inviteUserDialog.email) && 
+                   !this.emailExistsInProject(this.inviteUserDialog.email) && 
                    this.isCurrentUserAdmin;
         },
-        currentOrigin() {
-            return typeof window !== 'undefined' ? window.location.origin : '';
+
+        roleSelectItems() {
+            return [
+                { title: 'User', value: USER_ROLES.USER },
+                { title: 'Admin', value: USER_ROLES.ADMIN }
+            ];
         },
+
         filteredInvitations() {
             if (!this.pendingInvitations || this.pendingInvitations.length === 0) return [];
             
             if (this.showCompleteInvitations) {
-                // Show all invitations
                 return this.pendingInvitations;
             } else {
-                // Only show pending invitations (hide cancelled and accepted ones)
-                return this.pendingInvitations.filter(invite => !['cancelled', 'accepted'].includes(invite?.status));
+                return this.pendingInvitations.filter(invite => 
+                    !this.isInvitationComplete(invite)
+                );
             }
         },
+
         completeInvitationsCount() {
             if (!this.pendingInvitations || this.pendingInvitations.length === 0) return 0;
-            return this.pendingInvitations.filter(invite => ['cancelled', 'accepted'].includes(invite?.status)).length;
+            return this.pendingInvitations.filter(invite => 
+                this.isInvitationComplete(invite)
+            ).length;
         }
     },
     watch: {
-        // Watch for changes in project users (to refresh invitations when someone accepts)
+        // Debounced search query
+        userSearchQuery: {
+            handler: debounce(function(newQuery) {
+                this.debouncedSearchQuery = newQuery;
+            }, 300),
+            immediate: true
+        },
+
+        // Watch for changes in project users
         'users.length': {
             handler() {
                 if (this.isCurrentUserAdmin && this.projectId) {
@@ -574,74 +679,121 @@ export default {
         }
     },
     beforeUnmount() {
-        // Clean up the refresh interval
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
         }
     },
     methods: {
-        showInvitationDialog(invitation) {
-            this.invitationDialog = {
-                show: true,
-                email: invitation.email,
-                role: invitation.role,
-                token: invitation.inviteToken,
-                copied: false
-            };
+        // Utility methods
+        isUserRemoved(user) {
+            return user?.status === USER_STATUS.REMOVED;
         },
 
-        showExistingInvitationLink(invite) {
-            this.invitationDialog = {
-                show: true,
-                email: invite.email,
-                role: invite.role,
-                token: invite.inviteToken,
-                copied: false
-            };
+        isInvitationComplete(invite) {
+            return [INVITATION_STATUS.CANCELLED, INVITATION_STATUS.ACCEPTED].includes(invite?.status);
         },
 
-        copyInvitationLink() {
-            navigator.clipboard.writeText(`${this.currentOrigin}/invite/${this.invitationDialog.token}`).then(() => {
-                this.invitationDialog.copied = true;
+        getUserDisplayName(user) {
+            return user?.displayName || user?.email || 'Unknown User';
+        },
+
+        getUserRoleDisplay(user) {
+            return this.isUserRemoved(user) ? 'removed' : user.role;
+        },
+
+        getInvitationCompletionText(invite) {
+            return invite?.status === INVITATION_STATUS.CANCELLED ? 'Cancelled' : 'Accepted';
+        },
+
+        isValidEmailFormat(email) {
+            return isValidEmail(email);
+        },
+
+        emailExistsInProject(email) {
+            if (!email) return false;
+            const normalizedEmail = normalizeEmail(email);
+            
+            const existsInUsers = this.users?.some(user => 
+                normalizeEmail(user.email) === normalizedEmail
+            );
+            
+            const existsInInvitations = this.pendingInvitations?.some(invite => 
+                normalizeEmail(invite.email) === normalizedEmail
+            );
+            
+            return existsInUsers || existsInInvitations;
+        },
+
+        buildInvitationUrl(token) {
+            return buildInvitationUrl(token);
+        },
+
+        formatDate(timestamp) {
+            return formatTimestamp(timestamp);
+        },
+
+        // Invitation link and email sharing methods
+        async copyInvitationLinkToClipboard(token, context = 'dialog') {
+            if (!token) return;
+            
+            const url = this.buildInvitationUrl(token);
+            
+            try {
+                await navigator.clipboard.writeText(url);
+                
+                // Update copied state based on context
+                if (context === 'modal') {
+                    this.inviteUserDialog.copied = true;
+                    setTimeout(() => {
+                        if (this.inviteUserDialog) {
+                            this.inviteUserDialog.copied = false;
+                        }
+                    }, COPY_FEEDBACK_TIMEOUT_MS);
+                } else {
+                    this.invitationDialog.copied = true;
+                    setTimeout(() => {
+                        if (this.invitationDialog) {
+                            this.invitationDialog.copied = false;
+                        }
+                    }, COPY_FEEDBACK_TIMEOUT_MS);
+                }
+                
                 this.$store.uiAlert({ 
                     type: 'success', 
                     message: 'Link copied to clipboard!', 
                     autoClear: true 
                 });
                 
-                // Reset copied status after 3 seconds
-                setTimeout(() => {
-                    if (this.invitationDialog) {
-                        this.invitationDialog.copied = false;
-                    }
-                }, 3000);
-            }).catch(() => {
+                // Close modal after copying if in modal context
+                if (context === 'modal') {
+                    this.closeInviteDialog();
+                }
+            } catch (error) {
                 this.$store.uiAlert({ 
                     type: 'error', 
                     message: 'Failed to copy link', 
                     autoClear: true 
                 });
-            });
+            }
         },
 
-        shareViaEmail(invitation) {
-            const subject = encodeURIComponent(`You're invited to join our project`);
-            const body = encodeURIComponent(`Hi!
-
-You've been invited to join our project with ${invitation.role} access.
-
-Please sign up using the email address: ${invitation.email}
-
-Click this link to join: ${this.currentOrigin}/invite/${invitation.token}
-
-Important: You must sign up with the exact email address (${invitation.email}) for the invitation to work.
-
-Thanks!`);
+        openEmailClient(invitation) {
+            if (!invitation) return;
             
+            const invitationUrl = this.buildInvitationUrl(invitation.inviteToken);
+            const subject = createEmailSubject();
+            const body = createEmailBody(invitation, invitationUrl);
             const mailtoUrl = `mailto:${invitation.email}?subject=${subject}&body=${body}`;
+            
             window.open(mailtoUrl);
+            
+            // Close dialog after opening email client
+            if (this.inviteUserDialog.show) {
+                this.closeInviteDialog();
+            }
         },
 
+        // User management methods
         async changeUserRole(userId, newRole) {
             try {
                 await Project.updateUserRole(userId, this.projectId, newRole);
@@ -659,7 +811,7 @@ Thanks!`);
             this.confirmDialog = {
                 show: true,
                 title: 'Remove User',
-                message: `Are you sure you want to remove ${user.displayName || user.email} from this project?`,
+                message: `Are you sure you want to remove ${this.getUserDisplayName(user)} from this project?`,
                 action: () => this.removeUser(user.id)
             };
         },
@@ -668,15 +820,24 @@ Thanks!`);
             this.confirmDialog = {
                 show: true,
                 title: 'Reinstate User',
-                message: `Are you sure you want to reinstate ${user.displayName || user.email} to this project?`,
+                message: `Are you sure you want to reinstate ${this.getUserDisplayName(user)} to this project?`,
                 action: () => this.reinstateUser(user.id)
             };
         },
 
         async removeUser(userId) {
-            await this.$store.projectRemoveUserFromProject({userId, projectId: this.projectId});
-            this.confirmDialog.show = false;
-            this.$emit('users-updated');
+            try {
+                await this.$store.projectRemoveUserFromProject({userId, projectId: this.projectId});
+                this.confirmDialog.show = false;
+                this.$emit('users-updated');
+            } catch (error) {
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: `Error removing user: ${error.message}`, 
+                    autoClear: true 
+                });
+                this.confirmDialog.show = false;
+            }
         },
 
         async reinstateUser(userId) {
@@ -694,18 +855,16 @@ Thanks!`);
             }
         },
 
+        // Invitation management methods
         async loadPendingInvitations() {
             try {
-                // Only try to load invitations if user is admin
                 if (this.isCurrentUserAdmin) {
                     this.pendingInvitations = await Project.getProjectInvitations(this.projectId);
                 } else {
-                    // If not admin, just set empty array
                     this.pendingInvitations = [];
                 }
             } catch (error) {
                 console.error('Error loading invitations:', error);
-                // Don't show error alert for permission issues, just log it
                 if (!error.message.includes('Only project admins')) {
                     this.$store.uiAlert({ 
                         type: 'error', 
@@ -721,7 +880,7 @@ Thanks!`);
             try {
                 await this.$store.projectUpdateInvitation({
                     id: inviteId,
-                    status: 'cancelled'
+                    status: INVITATION_STATUS.CANCELLED
                 });
                 
                 // Update local state immediately
@@ -729,11 +888,11 @@ Thanks!`);
                 if (inviteIndex !== -1) {
                     this.pendingInvitations[inviteIndex] = {
                         ...this.pendingInvitations[inviteIndex],
-                        status: 'cancelled'
+                        status: INVITATION_STATUS.CANCELLED
                     };
                 }
                 
-                // Also refresh from server to ensure consistency
+                // Refresh from server to ensure consistency
                 await this.loadPendingInvitations();
             } catch (error) {
                 this.$store.uiAlert({ 
@@ -746,11 +905,11 @@ Thanks!`);
 
         getInvitationStatusColor(status) {
             switch (status) {
-                case 'cancelled':
+                case INVITATION_STATUS.CANCELLED:
                     return 'error';
-                case 'accepted':
+                case INVITATION_STATUS.ACCEPTED:
                     return 'success';
-                case 'pending':
+                case INVITATION_STATUS.PENDING:
                 default:
                     return 'warning';
             }
@@ -758,46 +917,40 @@ Thanks!`);
 
         getInvitationStatusText(status) {
             switch (status) {
-                case 'cancelled':
+                case INVITATION_STATUS.CANCELLED:
                     return 'Cancelled';
-                case 'accepted':
+                case INVITATION_STATUS.ACCEPTED:
                     return 'Accepted';
-                case 'pending':
+                case INVITATION_STATUS.PENDING:
                 default:
                     return 'Pending';
             }
         },
 
-        setupPeriodicRefresh() {
-            // Clear existing interval if any
-            if (this.refreshInterval) {
-                clearInterval(this.refreshInterval);
-            }
-            
-            // Refresh user list and invitations every 10 seconds to catch accepted invitations
-            this.refreshInterval = setInterval(async () => {
-                if (this.projectId && this.isCurrentUserAdmin) {
-                    await this.loadPendingInvitations();
-                }
-            }, 10000);
+        showExistingInvitationLink(invite) {
+            this.invitationDialog = {
+                show: true,
+                email: invite.email,
+                role: invite.role,
+                token: invite.inviteToken,
+                copied: false
+            };
         },
 
-        formatDate(timestamp) {
-            if (!timestamp) return '';
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-            return date.toLocaleDateString();
-        },
-
-        // New invite user modal methods
+        // Invite user dialog methods
         openInviteDialog() {
-            // Reset dialog state before opening
+            this.resetInviteDialog();
+            this.inviteUserDialog.show = true;
+        },
+
+        resetInviteDialog() {
             this.inviteUserDialog.step = 1;
             this.inviteUserDialog.email = '';
-            this.inviteUserDialog.role = 'user';
+            this.inviteUserDialog.role = USER_ROLES.USER;
             this.inviteUserDialog.createdInvitation = null;
+            this.inviteUserDialog.existingUser = null;
             this.inviteUserDialog.copied = false;
             this.inviteError = '';
-            this.inviteUserDialog.show = true;
         },
 
         async sendInvitationFromModal() {
@@ -815,7 +968,7 @@ Thanks!`);
                 
                 if (result.success) {
                     this.inviteUserDialog.createdInvitation = result;
-                    this.inviteUserDialog.step = 2; // Auto-advance to step 2
+                    this.inviteUserDialog.step = 2;
                     await this.loadPendingInvitations();
                     this.$emit('users-updated');
                 }
@@ -828,66 +981,22 @@ Thanks!`);
 
         closeInviteDialog() {
             this.inviteUserDialog.show = false;
-            // Reset dialog state after animation completes
             setTimeout(() => {
-                this.inviteUserDialog.step = 1;
-                this.inviteUserDialog.email = '';
-                this.inviteUserDialog.role = 'user';
-                this.inviteUserDialog.createdInvitation = null;
-                this.inviteUserDialog.copied = false;
-                this.inviteError = '';
+                this.resetInviteDialog();
             }, 300);
         },
 
-        copyInvitationLinkFromModal() {
-            if (!this.inviteUserDialog.createdInvitation) return;
+        // Periodic refresh
+        setupPeriodicRefresh() {
+            if (this.refreshInterval) {
+                clearInterval(this.refreshInterval);
+            }
             
-            const link = `${this.currentOrigin}/invite/${this.inviteUserDialog.createdInvitation.inviteToken}`;
-            navigator.clipboard.writeText(link).then(() => {
-                this.inviteUserDialog.copied = true;
-                this.$store.uiAlert({ 
-                    type: 'success', 
-                    message: 'Link copied to clipboard!', 
-                    autoClear: true 
-                });
-                
-                // Reset copied status after 3 seconds
-                setTimeout(() => {
-                    if (this.inviteUserDialog) {
-                        this.inviteUserDialog.copied = false;
-                    }
-                }, 3000);
-            }).catch(() => {
-                this.$store.uiAlert({ 
-                    type: 'error', 
-                    message: 'Failed to copy link', 
-                    autoClear: true 
-                });
-            });
-
-            this.closeInviteDialog();
-        },
-
-        shareViaEmailFromModal() {
-            if (!this.inviteUserDialog.createdInvitation) return;
-            
-            const invitation = this.inviteUserDialog.createdInvitation;
-            const subject = encodeURIComponent(`You're invited to join our project`);
-            const body = encodeURIComponent(`Hi!
-
-You've been invited to join our project with ${invitation.role} access.
-
-Please sign up using the email address: ${invitation.email}
-
-Click this link to join: ${this.currentOrigin}/invite/${invitation.inviteToken}
-
-Important: You must sign up with the exact email address (${invitation.email}) for the invitation to work.
-
-Thanks!`);
-            
-            const mailtoUrl = `mailto:${invitation.email}?subject=${subject}&body=${body}`;
-            window.open(mailtoUrl);
-            this.closeInviteDialog();
+            this.refreshInterval = setInterval(async () => {
+                if (this.projectId && this.isCurrentUserAdmin) {
+                    await this.loadPendingInvitations();
+                }
+            }, REFRESH_INTERVAL_MS);
         }
     }
 }
