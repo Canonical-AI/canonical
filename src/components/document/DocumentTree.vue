@@ -1,43 +1,53 @@
 <template>
   <div class="document-tree-container">
     <!-- Only show content if project exists -->
-    <div v-if="$store.project && $store.project.name">
+
       <!-- Fixed header section -->
       <div class="tree-header">
-        <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
-        
-        <v-divider></v-divider>
-        <v-list-item>
-          <v-btn 
-            :disabled="!$store.isUserLoggedIn"
-            class="text-none" 
-            block 
-            @click="$router.push({ path: '/document/create-document' })" 
-            color="primary" 
-            density="compact">
-              Create Doc
-          </v-btn>
-        </v-list-item>
-        <v-divider></v-divider>
-        
-        <div class="pa-2">
-          <v-text-field
-            v-model="filter"
-            label="Filter Documents"
-            append-inner-icon="mdi-magnify"
-            single-line
-            density="compact"
-            hide-details
-          />
 
-          <v-btn :disabled="!$store.isUserLoggedIn" 
-              class="text-none" @click="$store.foldersAdd('New Folder')" 
-              variant="text" 
-              density="compact" 
-              size="small">Add Folder 
-              <v-icon icon="mdi-plus"></v-icon>
-          </v-btn>
+  
+        <div v-if="$store.project && $store.project.name">
+          <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
+        
+          <v-divider></v-divider>
+          <v-list-item>
+            <v-btn 
+              :disabled="!$store.isUserLoggedIn"
+              class="text-none" 
+              block 
+              @click="$router.push({ path: '/document/create-document' })" 
+              color="primary" 
+              density="compact">
+                Create Doc
+            </v-btn>
+          </v-list-item>
+          <v-divider></v-divider>
+          
+          <div class="pa-2">
+            <v-text-field
+              v-model="filter"
+              label="Filter Documents"
+              append-inner-icon="mdi-magnify"
+              single-line
+              density="compact"
+              hide-details
+            />
+
+            <v-btn :disabled="!$store.isUserLoggedIn" 
+                class="text-none" @click="$store.foldersAdd('New Folder')" 
+                variant="text" 
+                density="compact" 
+                size="small">Add Folder 
+                <v-icon icon="mdi-plus"></v-icon>
+            </v-btn>
+          </div>
         </div>
+        <div v-else class="no-project-placeholder pa-4 text-center">
+          <v-icon size="48" class="mb-2 text-medium-emphasis">mdi-folder-outline</v-icon>
+          <p class="text-body-2 text-medium-emphasis">No project selected</p>
+          <p class="text-caption text-medium-emphasis">Create or join a project to get started</p>
+        </div>
+
       </div>
 
       <!-- Scrollable content section -->
@@ -166,14 +176,7 @@
         </div>
       </div>
     </div>
-    
-    <!-- Show placeholder when no project is set -->
-    <div v-else class="no-project-placeholder pa-4 text-center">
-      <v-icon size="48" class="mb-2 text-medium-emphasis">mdi-folder-outline</v-icon>
-      <p class="text-body-2 text-medium-emphasis">No project selected</p>
-      <p class="text-caption text-medium-emphasis">Create or join a project to get started</p>
-    </div>
-  </div>
+  
 </template>
 
 <script>
