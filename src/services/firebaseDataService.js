@@ -32,6 +32,7 @@ import { getFirestore, collection, query, where, orderBy, setDoc, getDocs, getDo
 import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
 import router from "../router";
 import { useMainStore } from "../store/index.js";
+import { compareEmails } from "../utils/index.js";
 import _ from 'lodash';
 
 // Helper function to get store instance
@@ -116,7 +117,7 @@ class ValidationHelper {
       throw new Error(ERROR_MESSAGES.INVITATION_EXPIRED);
     }
     
-    if (userEmail !== invitation.email) {
+    if (!compareEmails(userEmail, invitation.email)) {
       throw new Error(ERROR_MESSAGES.INVITATION_EMAIL_MISMATCH);
     }
     
@@ -329,6 +330,14 @@ export function addInDefaults(value) {
 
 // users
 export class User{
+  // Static flag to prevent multiple simultaneous createUser calls
+  static isCreatingUser = false;
+  static createUserPromise = null;
+  
+  // Static flag to prevent multiple simultaneous getUserAuth calls
+  static isGettingUserAuth = false;
+  static getUserAuthPromise = null;
+
   constructor(value) {
     
     this.displayName = value.displayName || "";
@@ -350,31 +359,66 @@ export class User{
   }
   
   static async getUserAuth() {
+    // Check if we're already getting user auth
+    if (this.isGettingUserAuth) {
+      console.log('getUserAuth already in progress, waiting for existing promise');
+      // Wait for the existing getUserAuth operation to complete
+      await this.getUserAuthPromise;
+      return;
+    }
+    
+    // Set flag and create promise
+    this.isGettingUserAuth = true;
+    this.getUserAuthPromise = this._getUserAuthInternal();
+    
+    try {
+      return await this.getUserAuthPromise;
+    } finally {
+      // Reset flag and promise
+      this.isGettingUserAuth = false;
+      this.getUserAuthPromise = null;
+    }
+  }
+  
+  static async _getUserAuthInternal() {
     const auth = getAuth(firebaseApp);
 
     return new Promise((resolve, reject) => {
-      onAuthStateChanged(auth, async (user) => {
+      // Use a timeout to prevent hanging
+      const timeout = setTimeout(() => {
+        reject(new Error('Auth state change timeout'));
+      }, 10000); // 10 second timeout
+      
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        clearTimeout(timeout);
+        unsubscribe(); // Unsubscribe immediately to prevent multiple listeners
+        
         if (!user) {
           console.log('user not logged in');
           return resolve(null);
         }
 
-        const userRef = doc(db, "users", user.uid);
-        const userDetails = await this.getUserData(userRef.id);
+        try {
+          const userRef = doc(db, "users", user.uid);
+          const userDetails = await this.getUserData(userRef.id);
 
-        if (!userDetails || !userDetails.email) {
-          await this.createUser(user);
-          // After createUser completes, get the updated user data
-          const newUserDetails = await this.getUserData(user.uid);
-          return resolve(newUserDetails);
+          if (!userDetails || !userDetails.email) {
+            await this.createUser(user);
+            // After createUser completes, get the updated user data
+            const newUserDetails = await this.getUserData(user.uid);
+            return resolve(newUserDetails);
+          }
+
+          if (!userDetails.defaultProject) {
+            router.push('/new-user');
+            return resolve(userDetails);
+          }
+
+          resolve(userDetails);
+        } catch (error) {
+          console.error('Error in getUserAuth:', error);
+          reject(error);
         }
-
-        if (!userDetails.defaultProject) {
-          router.push('/new-user');
-          return resolve(userDetails);
-        }
-
-        resolve(userDetails);
       });
     });
   }
@@ -391,6 +435,39 @@ export class User{
   }
   
   static async createUser(payload){
+    console.log('createUser', payload);
+    
+    // Check if we're already creating a user
+    if (this.isCreatingUser) {
+      console.log('createUser already in progress, waiting for existing promise');
+      // Wait for the existing createUser operation to complete
+      await this.createUserPromise;
+      return;
+    }
+    
+    // Check if user already exists to prevent duplicate creation
+    const existingUserRef = doc(db, "users", payload.uid);
+    const existingUserDoc = await getDoc(existingUserRef);
+    if (existingUserDoc.exists()) {
+      console.log('User already exists, skipping creation');
+      return;
+    }
+    
+    // Set flag and create promise
+    this.isCreatingUser = true;
+    this.createUserPromise = this._createUserInternal(payload);
+    
+    try {
+      await this.createUserPromise;
+    } finally {
+      // Reset flag and promise
+      this.isCreatingUser = false;
+      this.createUserPromise = null;
+    }
+  }
+  
+  static async _createUserInternal(payload){
+    console.log('_createUserInternal', payload);
     const newUser = {
       displayName: payload.email,
       email: payload.email,
@@ -670,7 +747,11 @@ export class User{
       }
 
       // Add user to project
-      await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role, invitation);
+      const invitationWithFlag = { ...invitation, needsValidation: false };
+      const addUserResult = await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role, invitationWithFlag);
+      if (!addUserResult.success) {
+        throw new Error(addUserResult.message || 'Failed to add user to project');
+      }
 
       // Update invitation status
       await updateDoc(doc(db, "invitations", inviteDoc.id), {
@@ -721,7 +802,7 @@ export class User{
     }
 
     // Check if user email matches invitation
-    if (userEmail !== invitation.email) {
+    if (!compareEmails(userEmail, invitation.email)) {
       throw new Error('This invitation is for a different email address');
     }
 
@@ -989,6 +1070,7 @@ export class Project {
 
 
   static async addUserToProject(userId, projectId, role='user', invite= null) {
+    console.log('addUserToProject', userId, projectId, role, invite);
     try {
       PermissionHelper.requireAuth();
       
@@ -1025,8 +1107,9 @@ export class Project {
         }
       }
 
-      // Validate invite if provided
-      if (invite) {
+      // Validate invite if provided (skip validation if called from acceptInvitation)
+      // Note: acceptInvitation already validates the invitation before calling this method
+      if (invite && invite.needsValidation !== false) {
         ValidationHelper.validateInvitation(invite, getStore().user.email);
       }
       
@@ -1053,6 +1136,7 @@ export class Project {
     // Special method for adding users during account creation - bypasses auth check
     
     // Check if user is already in the project (any status)
+    console.log('addUserToProjectDuringCreation', userId, projectId, role, invite);
     const userProjectsRef = collection(db, "userProjects");
     const existingQuery = query(userProjectsRef, 
       where('userId', '==', userId),

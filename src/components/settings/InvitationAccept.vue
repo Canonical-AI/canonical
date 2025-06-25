@@ -181,6 +181,7 @@ export default {
       this.accepting = true;
       try {
         const projectId = await this.$store.userAcceptInvitation(this.$route.params.token);
+        
         this.accepted = true;
         
         // Redirect to home page after delay

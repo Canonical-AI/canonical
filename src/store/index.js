@@ -3,6 +3,10 @@ import router from '../router'
 import {User, Document, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 import { eventStore } from './eventStore'
 
+// Static flag to prevent multiple simultaneous userEnter calls
+let isUserEnterInProgress = false;
+let userEnterPromise = null;
+
 function filterHelper(list, filter) {
   return [...list].filter(function(item) {
     var justTheData = [];
@@ -183,13 +187,31 @@ export const useMainStore = defineStore('main', {
   actions: {
     // User Management
     async userEnter() {
+      if (isUserEnterInProgress) {
+        console.log('userEnter already in progress, waiting for existing promise');
+        return userEnterPromise;
+      }
+
+      isUserEnterInProgress = true;
+      userEnterPromise = this._userEnterInternal();
+      
+      try {
+        return await userEnterPromise;
+      } finally {
+        // Reset flag and promise
+        isUserEnterInProgress = false;
+        userEnterPromise = null;
+      }
+    },
+
+    async _userEnterInternal() {
       this.loading.user = true;
       eventStore.emitEvent('loading-modal', { show: true, message: 'Authenticating and setting up your workspace' });
+      
       try {
         const user = await User.getUserAuth();
         
         if (user) {
-
           // WAIT for user data to be set before continuing
           this.userSetData(user);
 
@@ -201,16 +223,20 @@ export const useMainStore = defineStore('main', {
           if (user.defaultProject) {
             await this.projectSet(user.defaultProject);
           }
+
+          return true;
         } else {
           console.log('No user authenticated');
+          return false;
         }
       } catch (error) {
+        console.error('Error in userEnter:', error);
         this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
+        return false;
       } finally {
-        this.loading.user= false;
+        this.loading.user = false;
         eventStore.emitEvent('loading-modal', { show: false, message: '' });
       }
-      
     },
 
     userSetData(payload) {
@@ -303,24 +329,19 @@ export const useMainStore = defineStore('main', {
 
     async userAcceptInvitation(inviteToken) {
       if (!this.isUserLoggedIn) return;
+      if (!inviteToken) return;
       
       try {
         // adds user to project 
         const result = await User.acceptInvitation(inviteToken);
-        
+
         if (result.success) {
           const projectId = result.data.projectId;
           
           // Remove from local pending invitations list
-          this.pendingInvitations = this.pendingInvitations.filter(inv => inv.inviteToken !== inviteToken);
-          
-          // Set this project as the user's default project if they don't have one
-          if (!this.user.defaultProject) {
-            await this.userSetDefaultProject(projectId);
-          }
-          
-          // Set the project and load its data
-          await this.projectSet(projectId, true);
+          console.log('this.pendingInvitations', this.pendingInvitations);
+          this.pendingInvitations = (this.pendingInvitations || []).filter(inv => inv.inviteToken !== inviteToken);
+        
           
           return projectId;
         } else {
@@ -349,7 +370,7 @@ export const useMainStore = defineStore('main', {
         
         if (result.success) {
           // Remove from local pending invitations list
-          this.pendingInvitations = this.pendingInvitations.filter(inv => inv.id !== inviteId);
+          this.pendingInvitations = (this.pendingInvitations || []).filter(inv => inv.id !== inviteId);
         } else {
           this.uiAlert({ 
             type: 'error', 
