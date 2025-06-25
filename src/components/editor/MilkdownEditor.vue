@@ -698,7 +698,7 @@ export default {
 
     },
     emits:['update:modelValue', 'comment-clicked'],
-    expose: ['createComment', 'getEditorView', 'forceUpdateContent'],
+    expose: ['createComment', 'getEditorView'],
     computed: {
         isUserLoggedIn() {
             return this.$store.isUserLoggedIn;
@@ -772,6 +772,8 @@ export default {
                 }
             }
         }
+
+        
     },
     created() {
         if (this.modelValue) {
@@ -812,6 +814,10 @@ export default {
             this.scrollToComment(payload.commentId);
         });
 
+        this.refreshEditorWatcher = useEventWatcher(this.$eventStore, 'refresh-editor', (payload) => {
+            this.forceUpdateContent(payload);
+        });
+
     },
     mounted() {
         this.$nextTick(() => {
@@ -843,6 +849,9 @@ export default {
         }
         if (this.scrollToCommentWatcher) {
             this.scrollToCommentWatcher.stop();
+        }
+        if (this.refreshEditorWatcher) {
+            this.refreshEditorWatcher.stop();
         }
     }
 };
