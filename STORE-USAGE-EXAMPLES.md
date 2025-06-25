@@ -8,7 +8,7 @@ In any Vue component, you can now access the store without imports:
 ```vue
 <template>
   <div>
-    <p v-if="store.loadingUser">Loading...</p>
+    <p v-if="store.loading.user">Loading...</p>
     <p v-else>Welcome {{ store.user.displayName }}!</p>
     <button @click="addNewComment">Add Comment</button>
   </div>

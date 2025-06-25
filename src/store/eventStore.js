@@ -4,6 +4,7 @@ export const eventStore = reactive({
   events: [],
 
   emitEvent(name, payload){
+
     eventStore.events.push({
         name, 
         payload, 

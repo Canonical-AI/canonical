@@ -70,13 +70,14 @@ describe('Document Editing Integration Tests', () => {
       projects: ['test-project-123']
     })
 
-    store.projectSetTemp({
+    // Set project data directly for testing
+    store.project = {
       id: 'test-project-123',
       name: 'Test Project',
       folders: [],
       users: ['test-user-123'],
       createdBy: 'test-user-123'
-    })
+    }
 
     // Create router
     router = createRouter({
@@ -100,8 +101,12 @@ describe('Document Editing Integration Tests', () => {
 
       // Mock successful document creation
       mockDocument.create.mockResolvedValue({
-        id: 'new-doc-123',
-        data: newDocumentData
+        success: true,
+        data: {
+          id: 'new-doc-123',
+          data: newDocumentData
+        },
+        message: 'Document created successfully'
       })
 
       // Create document
@@ -125,8 +130,12 @@ describe('Document Editing Integration Tests', () => {
       }
 
       mockDocument.create.mockResolvedValue({
-        id: 'bg-doc-123',
-        data: documentData
+        success: true,
+        data: {
+          id: 'bg-doc-123',
+          data: documentData
+        },
+        message: 'Document created successfully'
       })
 
       // Create document without selecting
@@ -213,7 +222,11 @@ describe('Document Editing Integration Tests', () => {
         { id: 'doc-to-delete', data: { name: 'Document to Delete' } }
       ]
 
-      mockDocument.deleteDocByID.mockResolvedValue()
+      mockDocument.deleteDocByID.mockResolvedValue({
+        success: true,
+        data: { id: 'doc-to-delete' },
+        message: 'Document deleted successfully'
+      })
 
       // Delete document
       await store.documentsDelete({ id: 'doc-to-delete' })
@@ -228,7 +241,11 @@ describe('Document Editing Integration Tests', () => {
         { id: 'doc-to-archive', data: { name: 'Document to Archive' } }
       ]
 
-      mockDocument.archiveDoc.mockResolvedValue()
+      mockDocument.archiveDoc.mockResolvedValue({
+        success: true,
+        data: { id: 'doc-to-archive', archived: true },
+        message: 'Document archived successfully'
+      })
 
       // Archive document
       await store.documentsArchive({ id: 'doc-to-archive' })
@@ -316,7 +333,11 @@ describe('Document Editing Integration Tests', () => {
       const docId = 'favorite-doc-123'
       
       // Mock the Favorites.updateFavorites method
-      mockFavorites.updateFavorites.mockResolvedValue()
+      mockFavorites.updateFavorites.mockResolvedValue({
+        success: true,
+        data: { favorites: [] },
+        message: 'Favorites updated successfully'
+      })
       
       // Initially not favorited
       expect(store.isFavorite(docId)).toBe(false)

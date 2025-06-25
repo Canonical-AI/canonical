@@ -135,7 +135,7 @@ import {marked} from 'marked'
           if (this.$route.params.id) {    
 
               this.isLoading = true
-              const storedChatHist = await ChatHistory.getDocById(this.$route.params.id)
+              const storedChatHist = await this.$store.getChatById(this.$route.params.id)
               this.chatHist = storedChatHist
               this.chatInstance = new Chat(); 
               await this.chatInstance.initChat({history:storedChatHist})

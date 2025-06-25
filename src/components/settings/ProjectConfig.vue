@@ -55,10 +55,11 @@
 
             <span class="d-flex flex-wrap my-4">
                 <v-chip 
-                    class="mx-1"
+                    class="mx-1 my-1"
                     color="secondary" 
-                    variant="elevated"
+                    variant="tonal"
                     prev-icon="mdi-folder" 
+                    density="compact"
                     v-for="folder in selectedFolders" 
                     :key="folder" 
                     :value="folder"
@@ -77,76 +78,56 @@
                 <v-btn class="mx-1" density="compact" @click="reset()">reset</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="isNewProject" type="submit" color="primary">Initalize</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="primary">Update</v-btn>
-                <v-btn :disabled="projectData.id === $store.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="warning">Archive</v-btn>
-                <v-btn :disabled="projectData.id === $store.user.defaultProject" class="mx-1" density="compact" v-if="!isNewProject" type="submit" color="error">Delete</v-btn>
-            </div>
+                <v-menu>
+                    <template v-slot:activator="{ props }">
+                        <v-btn v-bind="props" class="mx-1" density="compact" >
+                            <v-icon density="compact">mdi-dots-vertical</v-icon>
+                        </v-btn>
+                    </template>
+                    <v-list>
+                        <v-list-item>
+                            <v-list-item-title color="warning">Archive</v-list-item-title>
+                            <v-list-item-title color="error">Delete</v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-menu>
+
+
+           </div>
 
             <div>
-                <hr class="my-5">
-                <h2 class="my-2">Manage Users</h2>
-
-                <v-table fixed-header density="compact" v-if="users.length > 0">
-                <thead>
-                    <tr>
-                        <th class="text-left">Display Name</th>
-                        <th class="text-left">Email</th>
-                        <th class="text-left">Role</th>
-                        <th class="text-left">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="user in users" :key="user.id">
-                        <td>{{ user.displayName }}</td>
-                        <td>{{ user.email }}</td>
-                        <td>{{ user.role }}</td>
-                        <td>
-                            <span v-if="user.pending">
-                                <v-btn density="compact" class="text-none"  @click="removeUser(user.id)" color="primary">Approve</v-btn>
-                                <v-btn density="compact" class="text-none" @click="removeUser(user.id)" color="error">Reject</v-btn>
-                            </span>
-                            <span v-else-if="user.id !== $store.user.uid" density="compact">
-                                <v-menu>
-                                    <template v-slot:activator="{ props }">
-                                        <v-btn density="compact" class="text-none" variant="tonal" color="secondary" v-bind="props">Select Role</v-btn>
-                                    </template>
-                                    <v-list>
-                                        <v-list-item>
-                                            <v-list-item-title>Admin</v-list-item-title>
-                                        </v-list-item>
-                                        <v-list-item>
-                                            <v-list-item-title>User</v-list-item-title>
-                                        </v-list-item>
-                                    </v-list>
-                                </v-menu>
-                                <v-btn density="compact" class="text-none" color="warning" variant="text" v-if="!user.pending" @click="removeUser(user.id)">Remove</v-btn>
-                            </span>
-                    </td>
-                    </tr>
-                </tbody>
-            </v-table>
-
-            <v-text-field disabled v-model="newUserEmail" label="Invite new users" required variant="solo">
-                    <template v-slot:append>
-                        <v-btn @click="sendEmails" icon="mdi-email"></v-btn> 
-                    </template>
-            </v-text-field>
-
+                <UserManagement 
+                    v-if="!newUserSetup && $store.isProjectAdmin"
+                    :project-id="$store.project?.id || ''"
+                    :users="users"
+                    @users-updated="handleUsersUpdated"
+                />
             </div>
 
 
         </v-form>
+
+
+
+
+
     </v-container>
 
 </template>
 
 <script>
-import { Project } from '../../services/firebaseDataService';
+import { Project} from '../../services/firebaseDataService';
+import UserManagement from './UserManagement.vue';
 
 export default {
+    components: {
+        UserManagement
+    },
     emits: ['update:project'],
     data() {
         return {
-            isNewProject: false, // Toggle state
+            isLoading: false,
+            isNewProject: false,
             projectData: {
                 name: '',
                 description: '',
@@ -158,9 +139,10 @@ export default {
             userEmails: '', 
             selectedFolders: [],
             folders: ['Product', 'Features', 'Personas', 'Notes', 'Decisions', 'User Interviews'], 
-            newUserEmail: '',
-            users: [],
+            users: []
         };
+    },
+    computed: {
     },
     props: {
         id: {
@@ -186,11 +168,37 @@ export default {
             },
             deep: true
         },
+        '$route.params.id': {
+            handler(newId, oldId) {
+                // Handle route parameter changes (manual URL changes)
+                if (newId && newId !== oldId && newId !== 'new') {
+                    this.selectProject(newId);
+                }
+            },
+            immediate: true
+        },
+
     },
     async mounted() {
+        // Wait for user auth to complete (similar to DocumentCreate.vue)
+        let tries = 0
+        while (this.$store.loading.user) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            tries++
+            if (tries > 20) {
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: 'Error loading project', 
+                    autoClear: true 
+                });
+                return
+            }
+        }
+
+        await this.$store.projectRefresh(true)
 
         if (this.$route.params.id) {
-            this.selectProject(this.$route.params.id)
+            await this.selectProject(this.$route.params.id)
             this.isNewProject = false
             return
         }
@@ -200,6 +208,11 @@ export default {
         if (!this.isNewProject) {
             this.projectData = { ...this.$store.project }
             this.selectedFolders = this.projectData.folders.map(folder => folder.name);
+            
+            // Update the URL to reflect the current project ID
+            if (this.$store.project?.id) {
+                this.$router.replace({ path: `/settings/project/${this.$store.project.id}` })
+            }
         }
 
         // new user setup
@@ -217,24 +230,42 @@ export default {
             return
         }
 
-        this.users = await Project.getUsersForProject(this.$store.project.id, true)
-        this.$router.push({ path: `/settings/project/${this.$store.project.id}` })
+        if (!this.isNewProject && this.$store.project?.id) {
+            this.users = this.$store.project.users
+        }
 
     },
     methods: {
 
-        sendEmails(){
-            console.log('sendEmails')
-        },
-
         async selectProject(value){
-            console.log('selectProject', value)
-            this.$store.projectSet(value)
-            this.projectData = { ...this.$store.project }
-            this.selectedFolders = this.projectData.folders.map(folder => folder.name);
-            this.default = { ...this.projectData }
-            this.users = await Project.getUsersForProject(this.$store.project.id, true)
-            this.$router.push({ path: `/settings/project/${this.$store.project.id}` })
+            if (this.isLoading) return
+            this.isLoading = true
+            
+            try {
+                const result = await this.$store.projectSet(value, true)
+                if (!result) return;
+                
+                // Now that project is loaded, set up the component data
+                this.projectData = { ...this.$store.project }
+                this.selectedFolders = this.projectData.folders.map(folder => folder.name);
+                this.default = { ...this.projectData }
+                
+                // Load users for this project
+                this.users = this.$store.project.users
+                
+                // Update the route to reflect the selected project
+                if (this.$route.params.id !== this.$store.project.id) {
+                    this.$router.push({ path: `/settings/project/${this.$store.project.id}` })
+                }
+            } catch (error) {
+                console.error('Error in selectProject:', error);
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: `Error loading project: ${error.message}`, 
+                    autoClear: true 
+                });
+            }
+            this.isLoading = false
         },
 
         setupNewProject(){
@@ -263,7 +294,7 @@ export default {
                 console.log('Creating new project:', this.projectData);
 
                 const projectRef = await Project.create(newProjectData)
-                this.$store.projectSet(projectRef.id )
+                this.$store.projectSet(projectRef.id , true)
                 this.$router.push({ path: `/document/create-document`})
  
             } else {
@@ -277,6 +308,13 @@ export default {
             this.projectData = { ...this.default }
             this.selectedFolders = this.projectData.folders.map(folder => folder.name)
             //todo users
+        },
+
+        handleUsersUpdated() {
+            // Refresh project data when users are updated from the UserManagement component
+            this.$store.projectRefresh(true).then(() => {
+                this.users = this.$store.project.users;
+            });
         }
     }
 }
@@ -292,6 +330,7 @@ export default {
     color: rgba(var(--v-theme-on-background),1) !important;
     font-weight: 400;
 }
+
 
 
 </style>

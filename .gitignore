@@ -33,3 +33,7 @@ firebase-debug*
 firestore-debug.log
 functions-debug*
 *debug
+firestore-debug.log
+firestore-debug.log
+
+/coverage

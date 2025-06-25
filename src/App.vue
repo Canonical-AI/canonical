@@ -195,6 +195,58 @@
         </v-snackbar> 
       </div>
 
+      <!-- Pending Invitations Dialog (only for existing users with manual invitations) -->
+      <v-dialog 
+        v-model="showPendingInvitationsDialog" 
+        max-width="600" 
+        persistent
+        v-if="$store.pendingInvitations.length > 0 && !$store.pendingInvitationsDismissed && $store.isUserLoggedIn && !isNewUserSession"
+      >
+        <v-card>
+          <v-card-title class="d-flex justify-space-between align-center">
+            <div>
+              <v-icon left>mdi-email</v-icon>
+              Pending Project Invitations
+            </div>
+            <v-btn 
+              icon="mdi-close" 
+              variant="text" 
+              size="small"
+              @click="dismissPendingInvitations"
+            ></v-btn>
+          </v-card-title>
+          
+          <v-card-text>
+            <v-alert type="info" class="mb-4">
+              You have {{ $store.pendingInvitations.length }} pending project invitation{{ $store.pendingInvitations.length !== 1 ? 's' : '' }}.
+            </v-alert>
+            
+            <PendingInvitations 
+              :compact="true" 
+              :show-when-empty="false"
+              :show-count="false"
+              @invitation-accepted="handleInvitationAccepted"
+            />
+          </v-card-text>
+          
+          <v-card-actions class="justify-space-between">
+            <v-btn 
+              variant="text" 
+              @click="dismissPendingInvitations"
+            >
+              Dismiss for now
+            </v-btn>
+            <v-btn 
+              color="primary"
+              variant="text"
+              @click="goToUserSettings"
+            >
+              View in Settings
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <v-dialog v-model="isRegisterDialogOpen" max-width="500">
         <v-card>
           <v-card-title>Login</v-card-title>
@@ -243,6 +295,29 @@
         </v-card>
       </v-dialog>
 
+      <!-- Loading Modal -->
+      <v-dialog 
+        v-model="loadingModal.show" 
+        max-width="400"
+        persistent
+        no-click-animation
+      >
+        <v-card class="text-center pa-6">
+          <v-card-text>
+            <v-progress-circular
+              indeterminate
+              size="64"
+              color="primary"
+              class="mb-4"
+            ></v-progress-circular>
+            <div class="text-h6 mb-2">Loading...</div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ loadingModal.message }}
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-dialog>
+
     </v-layout>
   </v-app>
 </template>
@@ -252,11 +327,13 @@ import {User} from "./services/firebaseDataService";
 import { useTheme } from 'vuetify'
 import ChatNav from './components/chat/ChatNav.vue'
 import DocumentTree from "./components/document/DocumentTree.vue";
-import Login from "./components/Login.vue";
+import Login from "./components/auth/Login.vue";
 import SettingsNav from "./components/settings/SettingsNav.vue";
 import GetStarted from "./components/settings/GetStarted.vue";
+import PendingInvitations from "./components/settings/PendingInvitations.vue";
 import { logEvent } from "firebase/analytics";
 import { analytics } from "./firebase";
+import { useEventWatcher } from './composables/useEventWatcher';
 
 export default {
   components: {
@@ -264,7 +341,8 @@ export default {
     ChatNav,
     SettingsNav,
     Login,
-    GetStarted
+    GetStarted,
+    PendingInvitations
   }, 
   name: 'App',
   data: () => ({
@@ -278,7 +356,15 @@ export default {
     isNewUser: false,
     helpDialog: false,
     welcomeDialog: false,
-    isNavOpen: true
+    isNavOpen: true,
+    showPendingInvitationsDialog: true,
+    isNewUserSession: false,
+    loadingModal: {
+      show: false,
+      message: '',
+      currentId: null
+    }
+
   }),
   setup(){
     const theme = useTheme()
@@ -295,8 +381,47 @@ export default {
       handler(newValue) {
         if (newValue === true) {
           this.loginMenuOpen = false;
+          // Check if this is a new user session (user created in last 5 minutes)
+          const userCreatedDate = this.$store.user?.createdDate;
+          if (userCreatedDate) {
+            const createdAt = userCreatedDate.toDate ? userCreatedDate.toDate() : new Date(userCreatedDate);
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            this.isNewUserSession = createdAt > fiveMinutesAgo;
+          }
         } else {
           this.loginMenuOpen = true;
+          this.isNewUserSession = false;
+        }
+      },
+      immediate: true
+    },
+    '$store.pendingInvitations.length': {
+      handler(newCount, oldCount) {
+        // Show dialog again if new invitations come in
+        if (newCount > oldCount && newCount > 0) {
+          this.showPendingInvitationsDialog = true;
+          this.$store.userShowPendingInvitations();
+        }
+      }
+    },
+    '$store.user.defaultProject': {
+      handler(newDefaultProject) {
+        // If user gets a default project and the GetStarted modal is open, close it
+        if (newDefaultProject && this.isNewUser) {
+          this.isNewUser = false;
+          this.$store.uiAlert({ 
+            type: 'success', 
+            message: 'Project setup complete! Welcome to your project.', 
+            autoClear: true 
+          });
+          
+          // Redirect to home page to show the project
+          if (this.$route.path === '/new-user') {
+            this.$router.push('/');
+          }
+        } else if (newDefaultProject === null && this.$store.loading.user === false && this.$store.isUserLoggedIn === true) {
+          this.isNewUser = true;
+          this.$router.push('/new-user');
         }
       },
       immediate: true
@@ -336,6 +461,8 @@ export default {
       },
       immediate: true,
     },
+
+
   },
   computed:{
 
@@ -364,7 +491,7 @@ export default {
   },
   methods: {
     logout(){
-      User.logout()
+      this.$store.userLogoutAction()
     },
     switchTheme(themeName) {
       const darkMode = this.$vuetify.theme.themes[themeName].dark;
@@ -402,7 +529,25 @@ export default {
     },
     dismissAlert(alert) {
       alert.show = false;
+    },
+    dismissPendingInvitations() {
+      this.showPendingInvitationsDialog = false;
+      this.$store.userDismissPendingInvitations();
+    },
+    handleInvitationAccepted({ invitation, projectId }) {
+      // Close dialog if no more invitations
+      if (this.$store.pendingInvitations.length === 0) {
+        this.showPendingInvitationsDialog = false;
+      }
+      
+      // Redirect to home page for consistency
+      this.$router.push('/');
+    },
+    goToUserSettings() {
+      this.dismissPendingInvitations();
+      this.$router.push('/settings/user');
     }
+    
   },
   created() {
     // Retrieve the theme choice from localStorage
@@ -415,6 +560,26 @@ export default {
       // Log app_open event
       logEvent(analytics, 'app_open');
     }
+
+    this.loadingModalWatcher = useEventWatcher(this.$eventStore, 'loading-modal', (payload) => {
+      if (payload.show === true) {
+        // Show modal and store the UUID
+        this.loadingModal = {
+          show: true,
+          message: payload.message || '',
+          currentId: payload.id || null
+        };
+      } else if (payload.show === false) {
+        // Only close if UUID matches existing or if existing is null (backward compatibility)
+        if (payload.id === this.loadingModal.currentId || this.loadingModal.currentId === null) {
+          this.loadingModal = {
+            show: false,
+            message: '',
+            currentId: null
+          };
+        }
+      }
+    });
   }
 }
 </script>

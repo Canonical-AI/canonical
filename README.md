@@ -144,20 +144,186 @@ The application will be available at `http://localhost:5173`
 
 ## Firebase Emulators (Recommended for Development)
 
-For a complete local development experience, use Firebase emulators:
+For a complete local development experience, use Firebase emulators. This is especially useful for testing invitation flows and user onboarding without affecting production data.
+
+### Initial Emulator Setup
+
+1. **Initialize emulators** (if not already done):
+   ```bash
+   firebase init emulators
+   ```
+   Select Auth, Firestore, and UI when prompted.
+
+2. **Configure emulators** - your `firebase.json` should include:
+   ```json
+   {
+     "emulators": {
+       "auth": {
+         "port": 9099
+       },
+       "firestore": {
+         "port": 8080
+       },
+       "ui": {
+         "enabled": true,
+         "port": 4000
+       }
+     }
+   }
+   ```
+
+### Running Emulators
 
 ```bash
 # Start all emulators
 firebase emulators:start
 
-# Or start specific emulators
-firebase emulators:start --only firestore,functions,hosting
+# Start with data import/export (preserves data between restarts)
+firebase emulators:start --import=./emulator-data --export-on-exit
+
+# Start fresh (no saved data)
+firebase emulators:start --import=./emulator-data
 ```
 
 When using emulators:
-- Firestore UI: `http://localhost:4000`
-- Your app: `http://localhost:5173`
-- Functions: `http://localhost:5001`
+- **Firestore UI**: `http://localhost:4000` - View/edit database
+- **Your app**: `http://localhost:5173` - Your application
+- **Functions**: `http://localhost:5001` - Cloud Functions
+
+### Test User Accounts
+
+After running `npm run seed:invitations`, you'll have access to these test accounts:
+
+#### **New Users (Different Flows)**
+
+1. **Auto-Accept Invitations Flow**
+   - **Email**: `newuser@example.com`
+   - **Password**: Any password
+   - **Behavior**: Will automatically accept 2 pending invitations on signup
+   - **Expected Result**: "Welcome! You've been automatically added to 2 projects: Test Project Alpha, Test Project Beta"
+
+2. **Normal New User Flow (No Invitations)**
+   - **Email**: `noninvited@example.com`
+   - **Password**: Any password
+   - **Behavior**: Standard new user flow with no pending invitations
+   - **Expected Result**: Redirected to `/new-user` setup flow
+
+3. **Invitation URL Flow**
+   - **Email**: `urluser@example.com`
+   - **Password**: Any password
+   - **Test URL**: `http://localhost:5173/invite/url-invite-token-abc123`
+   - **Behavior**: Sign up through invitation link, then accept invitation
+   - **Expected Result**: User joins Test Project Alpha after signup
+
+#### **Existing Users**
+- **Email**: `admin@example.com` 
+  - Role: Project admin for both test projects
+  - Has existing default project
+
+- **Email**: `existing@example.com`
+  - Role: Existing user with 1 pending invitation (manual acceptance)
+  - Will see invitation modal on login
+
+#### **Available Test Projects**
+- **Test Project Alpha** - Admin: existing-user-1
+- **Test Project Beta** - Admin: existing-user-1
+
+### NPM Scripts
+   ```json
+   {
+     "scripts": {
+       "dev": "vite",
+       "dev:test": "VITE_USE_EMULATOR=true vite", 
+       "emulators": "firebase emulators:start --import=./emulator-data --export-on-exit",
+       "emulators:fresh": "firebase emulators:start",
+       "seed:invitations": "node scripts/seed-emulator-data.js",
+       "seed:clear": "node scripts/seed-emulator-data.js clear"
+     }
+   }
+   ```
+
+### Development Modes
+
+This project supports two development modes:
+
+#### **Production Development** (Real Firebase)
+Use this for normal development work with your real Firebase project:
+```bash
+npm run dev
+# → Uses production Firebase services
+# → App runs at http://localhost:5173
+```
+
+#### **Local Testing** (Emulators)
+Use this for testing invitation flows and other features without affecting production:
+```bash
+# Terminal 1: Start emulators
+npm run emulators:fresh
+
+# Terminal 2: Seed test data (wait ~10 seconds for emulators to start)
+npm run seed:invitations
+
+# Terminal 3: Start app in emulator mode
+npm run dev:test
+# → Uses local emulators
+# → App runs at http://localhost:5173
+```
+
+### Testing Workflow
+
+1. **Start emulator testing environment**:
+   ```bash
+   # Terminal 1
+   npm run emulators:fresh
+   
+   # Terminal 2 (wait for "All emulators ready" message)
+   npm run seed:invitations
+   
+   # Terminal 3
+   npm run dev:test
+   ```
+
+2. **Test different new user flows**:
+   
+   **Auto-Accept Invitations:**
+   - Go to `http://localhost:5173`
+   - Sign up with: `newuser@example.com`
+   - Should see: "Welcome! You've been automatically added to 2 projects" message
+   
+   **Normal New User (No Invitations):**
+   - Sign up with: `noninvited@example.com`
+   - Should be redirected to `/new-user` setup flow
+   
+   **Invitation URL Flow:**
+   - Go to: `http://localhost:5173/invite/url-invite-token-abc123`
+   - Sign up with: `urluser@example.com`
+   - Should auto-accept invitation and join project
+
+3. **Test existing user flow**:
+   - Sign in with: `admin@example.com` (admin with projects)
+   - Sign in with: `existing@example.com` (pending invitation modal)
+
+4. **Reset and test again**:
+   ```bash
+   # Kill emulators (Ctrl+C in Terminal 1)
+   # Restart with fresh data
+   npm run emulators:fresh
+   npm run seed:invitations
+   ```
+
+5. **Debug with Firestore UI**:
+   - Visit `http://localhost:4000`
+   - View users, invitations, projects collections
+   - Modify test data in real-time
+
+### Testing Different Scenarios
+
+- **Single invitation**: Remove one invitation from seed script
+- **No invitations**: Comment out invitation creation in seed script  
+- **Expired invitations**: Set `expiresAt` to past date
+- **Existing user invitations**: Create invitations for `admin@example.com`
+
+This setup gives you complete control over testing the invitation flow without affecting production data or requiring new user accounts each time.
 
 ## Production Deployment
 

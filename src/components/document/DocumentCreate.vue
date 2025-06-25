@@ -412,7 +412,7 @@ export default {
       this.document.data.content = newContent;
       this.editorContent = newContent;
       this.isEditorModified = true;
-      this.$refs.milkdownEditor.forceUpdateContent(newContent);
+      this.$eventStore.emitEvent('refresh-editor', newContent);
     });
 
     // Set up event watcher for accept-suggestion events
@@ -427,7 +427,6 @@ export default {
         editorContent: this.editorContent,
         documentData: this.document.data.content,
         isEditorModified: this.isEditorModified,
-        refreshEditor: this.$refs.milkdownEditor.forceUpdateContent,
       });
     });
 
@@ -453,7 +452,7 @@ export default {
       this.showEditor = false;
       this.isLoading = true;
 
-      while (this.$store.loadingUser) {
+      while (this.$store.loading.user) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
@@ -533,7 +532,6 @@ export default {
       });
       this.document.id = createdDoc.id;
       this.document.data.id = createdDoc.id;
-      this.$store.setSelectedDocument(this.document);
       
       await this.$router.replace({ path: `/document/${this.document.id}` });
       this.isCreatingDocument = false;
@@ -664,7 +662,7 @@ export default {
         // Force the editor to update with the new content
         this.editorContent = templateContent;
         if (this.$refs.milkdownEditor) {
-          this.$refs.milkdownEditor.forceUpdateContent(templateContent);
+          this.$eventStore.emitEvent('refresh-editor', templateContent);
         }
         
         this.showTemplateInput = false;

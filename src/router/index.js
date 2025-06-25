@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory} from 'vue-router'
 import Home from '../components/Home.vue'
-import Login from '../components/Login.vue'
-import LoginScreen from '../components/LoginScreen.vue'
+import Login from '../components/auth/Login.vue'
+import LoginScreen from '../components/auth/LoginScreen.vue'
 import Chat from '../components/chat/Chat.vue'
 import Help from '../components/info/Help.vue'
 import About from '../components/info/About.vue'
@@ -9,6 +9,7 @@ import About from '../components/info/About.vue'
 import DocumentCreate from '../components/document/DocumentCreate.vue';
 import ProjectConfig from '../components/settings/ProjectConfig.vue';
 import UsersSettings from '../components/settings/UsersSettings.vue';
+import InvitationAccept from '../components/settings/InvitationAccept.vue';
 import {User} from "../services/firebaseDataService";
 import { useMainStore } from '../store/index.js';
 import TaskOverview from '../components/tasks/TaskOverview.vue';
@@ -101,6 +102,12 @@ const routes = [
     name: 'UsersSettings',
     component: UsersSettings,
     beforeEnter: checkAuth
+  },
+  {
+    path: '/invite/:token',
+    name: 'InvitationAccept',
+    component: InvitationAccept,
+    props: (route) => ({ token: route.params.token})
   },
   {
     path: '/logout',

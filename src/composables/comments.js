@@ -74,7 +74,7 @@ export const useComments = (eventStore) => {
     // Update through the computed property setter
     context.editorContent = newContent; // This will trigger the setter
     context.isEditorModified = true;
-    context.refreshEditor(newContent);
+    eventStore.emitEvent('refresh-editor', newContent);
     
     // Update the comment data
     await store.commentsUpdateData({id: id, data: {resolved: false}});

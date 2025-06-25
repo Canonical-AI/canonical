@@ -14,7 +14,7 @@
                         item-title="name"
                         item-value="id"
                         object
-                        label="Defaul Project"
+                        label="Default Project"
                         variant="solo"
                         hide-details
                         @update:modelValue="setDefaultProject"
@@ -31,7 +31,7 @@
                             <v-list-item-title>{{ user.email }}</v-list-item-title>
                         </v-list-item>
                         <v-list-item>
-                            <v-list-item-subtitle> Subcription Tier</v-list-item-subtitle>
+                            <v-list-item-subtitle> Subscription Tier</v-list-item-subtitle>
                             <v-list-item-title>{{ user.tier }}</v-list-item-title>
                         </v-list-item>
                         <v-list-item>    
@@ -46,6 +46,9 @@
                     <v-btn disabled class="m-2 text-none" color="error">Delete User Data</v-btn>
                     <!-- todo: add confirmation dialog -->
 
+                    <!-- Pending Invitations Section -->
+                    <PendingInvitations @invitation-accepted="handleInvitationAccepted" />
+
                     </v-container>
             </v-col>
     </v-row>
@@ -57,15 +60,24 @@
 
 <script>
 import {User} from '../../services/firebaseDataService'
+import PendingInvitations from './PendingInvitations.vue'
 
 export default {
+    components: {
+        PendingInvitations
+    },
     data() {
         return {
             user: {}
         }
     },
-    beforeMount() {
+    async beforeMount() {
         this.user = this.$store.user
+        
+        // Load pending invitations when component mounts
+        if (this.$store.isUserLoggedIn) {
+            await this.$store.userGetPendingInvitations();
+        }
     },
     methods: {
         updateUser() {
@@ -73,6 +85,10 @@ export default {
         },
         setDefaultProject(projectId) {
             this.$store.userSetDefaultProject(this.user.defaultProject)
+        },
+        handleInvitationAccepted({ invitation, projectId }) {
+            // Navigate to the project settings page
+            this.$router.push(`/settings/project/${projectId}`);
         }
     }
 }

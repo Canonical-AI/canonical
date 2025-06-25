@@ -45,7 +45,7 @@ jobs:
         if: github.event_name == 'pull_request' && always()
         with:
           script: |
-            const comment = '✅ **All tests passed!** This PR is ready for merge.\n\n🧪 **Test Summary:** All 55 tests completed successfully in the CI pipeline.';
+            const comment = '✅ **All tests passed!** This PR is ready for merge.\n\n🧪 **Test Summary:** All tests completed successfully in the CI pipeline.';
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,

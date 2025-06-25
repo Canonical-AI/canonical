@@ -1,169 +1,182 @@
 <template>
   <div class="document-tree-container">
-    <!-- Fixed header section -->
-    <div class="tree-header">
-      <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
-      
-      <v-divider></v-divider>
-      <v-list-item>
-        <v-btn 
-          :disabled="!$store.isUserLoggedIn"
-          class="text-none" 
-          block 
-          @click="$router.push({ path: '/document/create-document' })" 
-          color="primary" 
-          density="compact">
-              Create Doc
-          </v-btn>
-      </v-list-item>
-      <v-divider></v-divider>
-      
-      <div class="pa-2">
-          <v-text-field
-            v-model="filter"
-            label="Filter Documents"
-            append-inner-icon="mdi-magnify"
-            single-line
-            density="compact"
-            hide-details
-          />
+    <!-- Only show content if project exists -->
 
-          <v-btn :disabled="!$store.isUserLoggedIn" 
-              class="text-none" @click="$store.foldersAdd('New Folder')" 
-              variant="text" 
-              density="compact" 
-              size="small">Add Folder 
-              <v-icon icon="mdi-plus"></v-icon>
-          </v-btn>
-      </div>
-    </div>
+      <!-- Fixed header section -->
+      <div class="tree-header">
 
-    <!-- Scrollable content section -->
-    <div class="tree-content">
+  
+        <div v-if="$store.project && $store.project.name">
+          <v-list-item :title="$store.project.name" subtitle="project" ></v-list-item>
+        
+          <v-divider></v-divider>
+          <v-list-item>
+            <v-btn 
+              :disabled="!$store.isUserLoggedIn"
+              class="text-none" 
+              block 
+              @click="$router.push({ path: '/document/create-document' })" 
+              color="primary" 
+              density="compact">
+                Create Doc
+            </v-btn>
+          </v-list-item>
+          <v-divider></v-divider>
+          
+          <div class="pa-2">
+            <v-text-field
+              v-model="filter"
+              label="Filter Documents"
+              append-inner-icon="mdi-magnify"
+              single-line
+              density="compact"
+              hide-details
+            />
 
-        <div ref="Folders">
-            <v-list density="compact">
-
-                <v-list-item
-                v-for="el in folders" 
-                class="px-1 text-body-2"
-                :key="el.id"
-                :style="{ minHeight: '0' , paddingTop: '2px', paddingBottom: '2px' }"
-                @dragover="handleDragOver(el)"
-                @dragleave="handleDragLeave(el)"
-                >
-
-                    <div class="d-flex align-center">
-
-                        <v-icon small @click="toggle(el)" class="text-medium-emphasis">{{ el.children.length ? (el.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right') : '' }}</v-icon>
-                        <v-icon small class="text-medium-emphasis pr-1">{{ el.isOpen ? 'mdi-folder-open' :  'mdi-folder'  }}</v-icon>
-
-                        <span v-if="el.renaming">
-                            <input 
-                                :ref="'renameInput_' + el.id" 
-                                :value="el.data?.name" 
-                                @keyup.enter="submitRenameFolder(el, $event.target.value)" 
-                                @keyup.esc="cancelRenameFolder(el)" 
-                                @blur="cancelRenameFolder(el)" 
-                                />
-                        </span>
-                        <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
-                          <template v-slot:activator="{ props }">
-                            <span 
-                              v-bind="props"
-                              class="folder-name" 
-                              @click="!el.data.folder && handleItemClick(el)"
-                            >
-                              {{ el.data?.name }}
-                            </span>
-                          </template>
-                        </v-tooltip>
-
-                        <v-spacer/>
-
-                        <v-menu v-if="el.data.folder" offset-y>
-                            <template v-slot:activator="{ props }">
-                                <v-btn variant="plain" v-bind="props" density="compact">
-                                    <v-icon >mdi-dots-horizontal</v-icon>
-                                </v-btn>
-                            </template>
-                            <v-list density="compact" class="border border-surface-light">
-                                <v-list-item @click="renameFolder(el)">Rename</v-list-item>
-                                <v-list-item @click="deleteFolder(el.id)">Delete</v-list-item>
-                            </v-list>
-                        </v-menu>
-                    </div>
-
-                    <VueDraggable 
-                        class="text-ellipsis overflow-hidden whitespace-nowrap" 
-                        tag="ul" 
-                        v-model="el.children" 
-                        group="g1" 
-                        animation="150"
-                        ghostClass="ghost"
-                        @update="onUpdate"
-                        @add="(e) => onAdd(e,el)"
-                        @remove="(e) => remove(e,el)">
-                        <li 
-                            :class="{'selected-item': isSelected(child)}"
-                            v-if="el.isOpen || hasSelectedChild(el)"
-                            v-for="child in  el.children" 
-                            class=""
-                            :key="child.id || `temp-${child.data?.name || 'unnamed'}`"
-                            :style="{ paddingLeft: '24px' }"
-                            @click="handleItemClick(child)"
-                            >
-
-                            <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                            <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(child)" color="warning"></v-icon>
-                            <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
-                              <template v-slot:activator="{ props }">
-                                <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
-                              </template>
-                            </v-tooltip>
-
-                        </li>
-                </VueDraggable>
-
-
-                </v-list-item>
-            </v-list>
+            <v-btn :disabled="!$store.isUserLoggedIn" 
+                class="text-none" @click="addFolder()" 
+                variant="text" 
+                density="compact" 
+                size="small">Add Folder 
+                <v-icon icon="mdi-plus"></v-icon>
+            </v-btn>
+          </div>
+        </div>
+        <div v-else class="no-project-placeholder pa-4 text-center">
+          <v-icon size="48" class="mb-2 text-medium-emphasis">mdi-folder-outline</v-icon>
+          <p class="text-body-2 text-medium-emphasis">No project selected</p>
+          <p class="text-caption text-medium-emphasis">Create or join a project to get started</p>
         </div>
 
-        <div ref="Documents">
-            <VueDraggable 
-                class="text-ellipsis overflow-hidden whitespace-nowrap" 
-                tag="ul" 
-                v-model="documents" 
-                group="g1" 
-                animation="150"
-                ghostClass="ghost"
-                @update="onUpdate"
-                @add="(e) => onAdd(e)"
-                @remove="(e) => remove(e)"
-                @event="console.log($event)">
+      </div>
 
+      <!-- Scrollable content section -->
+      <div class="tree-content">
+
+        <div ref="Folders">
+          <v-list density="compact">
+
+            <v-list-item
+            v-for="el in folders" 
+            class="px-1 text-body-2"
+            :key="el.id"
+            :style="{ minHeight: '0' , paddingTop: '2px', paddingBottom: '2px' }"
+            @dragover="handleDragOver(el)"
+            @dragleave="handleDragLeave(el)"
+            >
+
+              <div class="d-flex align-center">
+
+                <v-icon small @click="toggle(el)" class="text-medium-emphasis">{{ el.children.length ? (el.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right') : '' }}</v-icon>
+                <v-icon small class="text-medium-emphasis pr-1">{{ el.isOpen ? 'mdi-folder-open' :  'mdi-folder'  }}</v-icon>
+
+                <span v-if="el.renaming">
+                  <input 
+                      :ref="'renameInput_' + el.id" 
+                      :value="el.id === newFolderBeingAdded ? '' : el.data?.name" 
+                      :placeholder="el.id === newFolderBeingAdded ? 'Enter folder name' : ''"
+                      @keyup.enter="submitRenameFolder(el, $event.target.value)" 
+                      @keyup.esc="cancelRenameFolder(el)" 
+                      @blur="handleBlurRenameFolder(el, $event.target.value)" 
+                      />
+                </span>
+                <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
+                  <template v-slot:activator="{ props }">
+                    <span 
+                      v-bind="props"
+                      class="folder-name" 
+                      @click="!el.data.folder && handleItemClick(el)"
+                    >
+                      {{ el.data?.name }}
+                    </span>
+                  </template>
+                </v-tooltip>
+
+                <v-spacer/>
+
+                <v-menu v-if="el.data.folder" offset-y>
+                  <template v-slot:activator="{ props }">
+                    <v-btn variant="plain" v-bind="props" density="compact">
+                      <v-icon >mdi-dots-horizontal</v-icon>
+                    </v-btn>
+                  </template>
+                  <v-list density="compact" class="border border-surface-light">
+                    <v-list-item @click="renameFolder(el)">Rename</v-list-item>
+                    <v-list-item @click="deleteFolder(el.id)">Delete</v-list-item>
+                  </v-list>
+                </v-menu>
+              </div>
+
+              <VueDraggable 
+                  class="text-ellipsis overflow-hidden whitespace-nowrap" 
+                  tag="ul" 
+                  v-model="el.children" 
+                  group="g1" 
+                  animation="150"
+                  ghostClass="ghost"
+                  @update="onUpdate"
+                  @add="(e) => onAdd(e,el)"
+                  >
                 <li 
-                    :class="{'selected-item': isSelected(el)}"
-                    v-for="el in documents" 
-                    class="pr-1 pl-6 list-item text-body-2"
-                    :key="el.id || `temp-${el.data?.name || 'unnamed'}`"
-                    @click="handleItemClick(el)"
+                    :class="{'selected-item': isSelected(child)}"
+                    v-if="el.isOpen || hasSelectedChild(el)"
+                    v-for="child in  el.children" 
+                    class=""
+                    :key="child.id || `temp-${child.data?.name || 'unnamed'}`"
+                    :style="{ paddingLeft: '24px' }"
+                    @click="handleItemClick(child)"
                     >
 
                     <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
-                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(el)" color="warning"></v-icon>
-                    
-                    <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
+                    <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(child)" color="warning"></v-icon>
+                    <v-tooltip location="right" :text="child.data?.name" :open-delay="500">
                       <template v-slot:activator="{ props }">
-                        <span v-bind="props" class="document-name">{{ el.data?.name }}</span>
+                        <span v-bind="props" class="document-name">{{ child.data?.name }}</span>
                       </template>
                     </v-tooltip>
+
                 </li>
-            </VueDraggable>
+              </VueDraggable>
+
+
+            </v-list-item>
+          </v-list>
+        </div>
+
+        <div ref="Documents">
+          <VueDraggable 
+              class="text-ellipsis overflow-hidden whitespace-nowrap" 
+              tag="ul" 
+              v-model="documents" 
+              group="g1" 
+              animation="150"
+              ghostClass="ghost"
+              @update="onUpdate"
+              @add="(e) => onAdd(e)"
+              @event="console.log($event)">
+
+            <li 
+                :class="{'selected-item': isSelected(el)}"
+                v-for="el in documents" 
+                class="pr-1 pl-6 list-item text-body-2"
+                :key="el.id || `temp-${el.data?.name || 'unnamed'}`"
+                @click="handleItemClick(el)"
+                >
+
+                <v-icon small class="text-medium-emphasis pr-1">{{ 'mdi-text-box' }}</v-icon>
+                <v-icon class="overlay-icon text-medium-emphasis pr-1" icon="mdi-pencil" v-if="isDraft(el)" color="warning"></v-icon>
+                
+                <v-tooltip location="right" :text="el.data?.name" :open-delay="500">
+                  <template v-slot:activator="{ props }">
+                    <span v-bind="props" class="document-name">{{ el.data?.name }}</span>
+                  </template>
+                </v-tooltip>
+            </li>
+          </VueDraggable>
         </div>
       </div>
     </div>
+  
 </template>
 
 <script>
@@ -176,7 +189,8 @@ export default {
     data: () => ({
         filter:'',
         folders: [],
-        documents: []
+        documents: [],
+        newFolderBeingAdded: null // Track when we're adding a new folder
     }),
     watch: {
         filteredItems: {
@@ -190,7 +204,19 @@ export default {
     },
     computed:{
         items() {
-            return this.$store.projectFolderTree; 
+            const folderTree = this.$store.projectFolderTree;
+            
+            // If we're adding a new folder, put it at the top
+            if (this.newFolderBeingAdded) {
+                const newFolderIndex = folderTree.findIndex(item => item.id === this.newFolderBeingAdded);
+                if (newFolderIndex > -1) {
+                    const newFolder = folderTree[newFolderIndex];
+                    const otherItems = folderTree.filter((_, index) => index !== newFolderIndex);
+                    return [newFolder, ...otherItems];
+                }
+            }
+            
+            return folderTree;
         },
         filteredItems() {
         // Filter out items without proper IDs first to prevent dragging issues
@@ -267,7 +293,7 @@ export default {
             // Set a new timeout to open the folder
             el._dragTimeout = setTimeout(() => {
                 el.isOpen = true;
-            }, 50);
+            }, 200);
         },
 
         handleDragLeave(el) {
@@ -283,28 +309,57 @@ export default {
             }, 800); // Slightly longer delay for closing to prevent flickering
         },
 
-        onAdd(event,folder) {
-            if(!folder) return;
+        async onAdd(event, folder) {
             // Don't allow moving documents without proper IDs
-            if(!event.data || !event.data.id) return;
+            if (!event.data || !event.data.id) {
+                console.warn('Cannot move document: missing document ID');
+                return;
+            }
 
-            this.$store.foldersUpdate({ 
-                docId: event.data.id, 
-                target: folder.id, 
-                action: 'add' 
-            });
+            try {
+                // folder?.data?.name will be undefined if dropped outside a folder (root level)
+                const targetFolderName = folder?.data?.name;
+                console.log('Moving document:', event.data.id, 'to folder:', targetFolderName || 'root level');
+                
+                await this.$store.foldersMove(event.data.id, targetFolderName);
+            } catch (error) {
+                console.error('Failed to move document:', error);
+                // The store already handles UI alerts, so we just log the error here
+            }
         },
 
-        remove(event,folder) {
-            if(!folder) return;
-            // Don't allow moving documents without proper IDs
-            if(!event.data || !event.data.id) return;
 
-            this.$store.foldersUpdate({ 
-                docId: event.data.id, 
-                target: folder.id, 
-                action: 'remove' 
-            });
+        async addFolder(){
+            try {
+                // Use "New Folder" as the name - positioning handled by items() computed
+                const tempName = 'New Folder';
+                const result = await this.$store.foldersAdd(tempName);
+                if (!result) {
+                    return;
+                }
+                
+                // Set the flag to track this new folder
+                this.newFolderBeingAdded = tempName;
+                
+                // Wait for the next tick to ensure the folder is rendered
+                await this.$nextTick();
+                
+                // Find the newly created folder and set it to renaming mode
+                const newFolder = this.folders.find(f => f.id === tempName);
+                if (newFolder) {
+                    newFolder.renaming = true;
+                    
+                    // Wait another tick and focus the input
+                    await this.$nextTick();
+                    const inputRef = this.$refs['renameInput_' + tempName];
+                    if (inputRef && inputRef[0]) {
+                        inputRef[0].focus();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to add folder:', error);
+                this.newFolderBeingAdded = null;
+            }
         },
 
         deleteFolder(id){
@@ -319,13 +374,33 @@ export default {
                 }
             });
         },
-        submitRenameFolder(el,value){
-            this.$store.foldersRename({toFolderName: value, fromFolderName: el.data.name})
-            el.data.name = value
+        submitRenameFolder(el, value){
+            const finalName = value.trim() || 'New Folder';
+            this.$store.foldersRename({toFolderName: finalName, fromFolderName: el.data.name});
+            el.data.name = finalName;
             el.renaming = false;
+            
+            // Clear the new folder tracking if this was the folder being added
+            if (el.id === this.newFolderBeingAdded) {
+                this.newFolderBeingAdded = null;
+            }
+        },
+        handleBlurRenameFolder(el, value) {
+            // Handle blur event (clicking off the input)
+            if (el.id === this.newFolderBeingAdded) {
+                // If it's a new folder and user clicked off, use "New Folder" as default
+                const finalName = value.trim() || 'New Folder';
+                this.submitRenameFolder(el, finalName);
+            } else {
+                // For existing folders, just cancel the rename
+                this.cancelRenameFolder(el);
+            }
         },
         cancelRenameFolder(el){
-            el.renaming = false;
+            // Only allow canceling for existing folders, not new ones
+            if (el.id !== this.newFolderBeingAdded) {
+                el.renaming = false;
+            }
         },
     }
 

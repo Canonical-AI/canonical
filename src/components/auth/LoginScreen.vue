@@ -254,9 +254,9 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { useMainStore } from '../store/index.js';
+
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -265,7 +265,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword
 } from 'firebase/auth';
-import { firebaseApp } from '../firebase';
+import { firebaseApp } from '../../firebase.js';
+import { useMainStore } from '../../store/index.js';
 import { 
   Scene, 
   OrthographicCamera, 
@@ -306,6 +307,18 @@ export default {
     if (route.query.signup === 'true') {
       selectedOption.value = 'signup';
     }
+    
+    // Watch for user authentication changes and redirect when logged in
+    watch(
+      () => [store.isUserLoggedIn, store.loading.user],
+      ([isLoggedIn, loadingUser]) => {
+        // Only redirect when loading is complete and user is logged in
+        if (!loadingUser && isLoggedIn) {
+          router.push('/');
+        }
+      },
+      { immediate: true }
+    );
     
     // Login form data
     const loginEmail = ref('');
@@ -469,8 +482,9 @@ export default {
       
       try {
         await createUserWithEmailAndPassword(auth, signupEmail.value, signupPassword.value);
-        await store.userEnter();
-        router.push('/new-user');
+        // For signup, User.createUser() handles all setup including project setting
+        // So we don't call userEnter() to avoid timing issues
+        // Note: User.createUser() will navigate appropriately ('/new-user' or '/' with auto-accept)
       } catch (err) {
         error.value = err.message;
       }
