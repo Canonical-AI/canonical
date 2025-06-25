@@ -645,6 +645,30 @@ export class User{
       // Validate invitation
       ValidationHelper.validateInvitation(invitation, getStore().user.email);
 
+      // Check if user is already in the project
+      const existingRole = await this.getUserRoleInProject(getStore().user.uid, invitation.projectId);
+      if (existingRole) {
+        // User is already in the project, just update invitation status and return success
+        await updateDoc(doc(db, "invitations", inviteDoc.id), {
+          status: 'accepted',
+          acceptedAt: serverTimestamp()
+        });
+
+        // Set as default project if user doesn't have one
+        if (!getStore().user.defaultProject) {
+          await this.setDefaultProject(invitation.projectId);
+        }
+
+        // Refresh user data to include new project without resetting project state
+        const refreshedUserData = await this.getUserData(getStore().user.uid);
+        getStore().userSetData(refreshedUserData);
+
+        return DataServiceResult.success(
+          { projectId: invitation.projectId },
+          'Successfully joined project!'
+        );
+      }
+
       // Add user to project
       await Project.addUserToProject(getStore().user.uid, invitation.projectId, invitation.role, invitation);
 
@@ -968,12 +992,36 @@ export class Project {
     try {
       PermissionHelper.requireAuth();
       
-      // Check if user is already in the project (only for non-creator additions)
-      const isCreatorAddingSelf = userId === getStore().user.uid;
-      if (!isCreatorAddingSelf) {
-        const existingRole = await User.getUserRoleInProject(userId, projectId);
-        if (existingRole) {
+      // Check if user is already in the project (any status)
+      const userProjectsRef = collection(db, "userProjects");
+      const existingQuery = query(userProjectsRef, 
+        where('userId', '==', userId),
+        where('projectId', '==', projectId)
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      
+      if (!existingSnapshot.empty) {
+        const existingDoc = existingSnapshot.docs[0];
+        const existingData = existingDoc.data();
+        
+        // If user is already active, throw error
+        if (existingData.status === 'active') {
           throw new Error(ERROR_MESSAGES.USER_ALREADY_IN_PROJECT);
+        }
+        
+        // If user was removed, reactivate them
+        if (existingData.status === 'removed') {
+          await updateDoc(existingDoc.ref, {
+            status: 'active',
+            role: role,
+            reinstatedAt: serverTimestamp(),
+            reinstatedBy: getStore().user.uid
+          });
+          
+          return DataServiceResult.success(
+            { userId, projectId, role, status: 'active' },
+            'User reactivated in project'
+          );
         }
       }
 
@@ -982,24 +1030,19 @@ export class Project {
         ValidationHelper.validateInvitation(invite, getStore().user.email);
       }
       
-      const userProjectRef = collection(db, "userProjects");
-      await addDoc(userProjectRef, { 
+      await addDoc(userProjectsRef, { 
         userId, 
         projectId, 
         role,
         status: 'active',
         joinedDate: serverTimestamp(),
-        invitedBy: isCreatorAddingSelf ? null : invite ? invite.invitedBy : getStore().user.uid,
-        isCreator: isCreatorAddingSelf
+        invitedBy: invite ? invite.invitedBy : getStore().user.uid,
+        isCreator: false
       });
-      
-      const message = isCreatorAddingSelf ? 
-        `Project created and you are now an ${role}` : 
-        'User added to project';
       
       return DataServiceResult.success(
         { userId, projectId, role, status: 'active' },
-        message
+        'User added to project'
       );
     } catch (error) {
       return DataServiceResult.error(error, 'Failed to add user to project');
@@ -1009,10 +1052,32 @@ export class Project {
   static async addUserToProjectDuringCreation(userId, projectId, role='user', invite= null) {
     // Special method for adding users during account creation - bypasses auth check
     
-    // Check if user is already in the project
-    const existingRole = await User.getUserRoleInProject(userId, projectId);
-    if (existingRole) {
-      throw new Error('User is already a member of this project');
+    // Check if user is already in the project (any status)
+    const userProjectsRef = collection(db, "userProjects");
+    const existingQuery = query(userProjectsRef, 
+      where('userId', '==', userId),
+      where('projectId', '==', projectId)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+    
+    if (!existingSnapshot.empty) {
+      const existingDoc = existingSnapshot.docs[0];
+      const existingData = existingDoc.data();
+      
+      // If user is already active, return success (no duplicate)
+      if (existingData.status === 'active') {
+        return true;
+      }
+      
+      // If user was removed, reactivate them
+      if (existingData.status === 'removed') {
+        await updateDoc(existingDoc.ref, {
+          status: 'active',
+          role: role,
+          reinstatedAt: serverTimestamp()
+        });
+        return true;
+      }
     }
 
     // Validate invite if provided
@@ -1023,8 +1088,7 @@ export class Project {
       }
     }
     
-    const userProjectRef = collection(db, "userProjects");
-    await addDoc(userProjectRef, { 
+    await addDoc(userProjectsRef, { 
       userId, 
       projectId, 
       role,

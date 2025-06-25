@@ -297,7 +297,7 @@
 
       <!-- Loading Modal -->
       <v-dialog 
-        v-model="$store.loading.user" 
+        v-model="loadingModal.show" 
         max-width="400"
         persistent
         no-click-animation
@@ -312,7 +312,7 @@
             ></v-progress-circular>
             <div class="text-h6 mb-2">Loading...</div>
             <div class="text-body-2 text-medium-emphasis">
-              Authenticating and setting up your workspace
+              {{ loadingModal.message }}
             </div>
           </v-card-text>
         </v-card>
@@ -333,6 +333,7 @@ import GetStarted from "./components/settings/GetStarted.vue";
 import PendingInvitations from "./components/settings/PendingInvitations.vue";
 import { logEvent } from "firebase/analytics";
 import { analytics } from "./firebase";
+import { useEventWatcher } from './composables/useEventWatcher';
 
 export default {
   components: {
@@ -357,7 +358,13 @@ export default {
     welcomeDialog: false,
     isNavOpen: true,
     showPendingInvitationsDialog: true,
-    isNewUserSession: false
+    isNewUserSession: false,
+    loadingModal: {
+      show: false,
+      message: '',
+      currentId: null
+    }
+
   }),
   setup(){
     const theme = useTheme()
@@ -454,6 +461,8 @@ export default {
       },
       immediate: true,
     },
+
+
   },
   computed:{
 
@@ -538,6 +547,7 @@ export default {
       this.dismissPendingInvitations();
       this.$router.push('/settings/user');
     }
+    
   },
   created() {
     // Retrieve the theme choice from localStorage
@@ -550,6 +560,26 @@ export default {
       // Log app_open event
       logEvent(analytics, 'app_open');
     }
+
+    this.loadingModalWatcher = useEventWatcher(this.$eventStore, 'loading-modal', (payload) => {
+      if (payload.show === true) {
+        // Show modal and store the UUID
+        this.loadingModal = {
+          show: true,
+          message: payload.message || '',
+          currentId: payload.id || null
+        };
+      } else if (payload.show === false) {
+        // Only close if UUID matches existing or if existing is null (backward compatibility)
+        if (payload.id === this.loadingModal.currentId || this.loadingModal.currentId === null) {
+          this.loadingModal = {
+            show: false,
+            message: '',
+            currentId: null
+          };
+        }
+      }
+    });
   }
 }
 </script>

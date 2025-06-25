@@ -184,6 +184,7 @@ export const useMainStore = defineStore('main', {
     // User Management
     async userEnter() {
       this.loading.user = true;
+      eventStore.emitEvent('loading-modal', { show: true, message: 'Authenticating and setting up your workspace' });
       try {
         const user = await User.getUserAuth();
         
@@ -196,6 +197,7 @@ export const useMainStore = defineStore('main', {
           await this.userGetPendingInvitations();
 
           // WAIT for project to be set before continuing
+          eventStore.emitEvent('loading-modal', { show: false, message: '' });
           if (user.defaultProject) {
             await this.projectSet(user.defaultProject);
           }
@@ -207,6 +209,7 @@ export const useMainStore = defineStore('main', {
       } finally {
         this.loading.user= false;
       }
+      
     },
 
     userSetData(payload) {

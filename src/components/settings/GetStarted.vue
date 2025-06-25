@@ -158,35 +158,79 @@ export default {
             console.log("redirect to new doc")
         },
         async launch(){
+            // Generate a unique UUID for this launch flow
+            const launchId = crypto.randomUUID();
+            
             try {
+                this.$eventStore.emitEvent('loading-modal', { show: true, message: 'Setting up your project', id: launchId });
                 await this.$store.projectCreate(this.setupProject)
                 await this.$store.userSetDefaultProject(this.$store.project.id)
+                
+                // Ensure project setup is complete and user has access
+                await this.$store.projectRefresh(true)
+                
+                // Explicitly refresh user data to ensure project membership is established
+                await this.$store.userEnter()
+                
+                // Small delay to ensure all project data is properly established
+                await new Promise(resolve => setTimeout(resolve, 2000))
+                
             } catch (error) {
-                console.error(error)
+                console.error('Error setting up project:', error)
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: 'Failed to set up project. Please try again.',
+                    autoClear: true 
+                })
+                this.$eventStore.emitEvent('loading-modal', { show: false, message: '', id: launchId });
                 return
             }
 
             try {
+                this.$eventStore.emitEvent('loading-modal', { show: true, message: 'Creating your first document!', id: launchId });
                 let prompt = ''
+                let documentName = "My first product doc"
+                let documentContent = "Welcome to *Canonical!* we've created this document to help you get started. type \"gen\" to start creating!"
+                
                 if (this.productDescription.length > 0){
                     prompt = `Create a first product document, it should include basic product info like, product value proposition, target customers, key features. use the provided product description to create the document: ${this.productDescription}`
+                    // Use the product description to create a more meaningful document name
+                    documentName = this.productDescription.split(' ').slice(0, 4).join(' ') + ' - Product Doc'
                 } else {
                     prompt = `Create a first product document, it should include basic product info like, product value proposition, target customers, key features`
                 }
                 
-                let result = await Generate.generateDocumentTemplate({prompt: `create a document template based on the title: ${this.documentName}`})
+                // Try to generate AI template, but fallback to simple content if it fails
+                try {
+                    let result = await Generate.generateDocumentTemplate({prompt: `create a document template based on the title: ${documentName}`})
+                    documentContent = `Welcome to *Canonical!* we've created this document to help you get started. type "gen" to start creating! \n ${result.response.text()}`
+                } catch (aiError) {
+                    console.warn('AI template generation failed, using fallback content:', aiError)
+                    // Use fallback content - the documentContent is already set to the basic welcome message
+                }
 
                 const doc = {
-                    name: "My first product doc",
-                    content: `Welcome to *Canonical!* we've created this document to help you get started. type "gen" to start creating! \n ${result.response.text()}`,
+                    name: documentName,
+                    content: documentContent,
                     draft: true,
                 }
-              //  const createdDoc = await Document.create(doc);
+              
                 const createdDoc = await this.$store.documentsCreate({ data: doc, select : false})
                 this.$store.toggleFavorite( createdDoc.id);
+                
+                // Small delay before navigation to ensure document is fully created
+                await new Promise(resolve => setTimeout(resolve, 500))
+                
                 this.$router.push('/document/' + createdDoc.id)
+                this.$eventStore.emitEvent('loading-modal', { show: false, message: '', id: launchId });
             } catch (error) {
-                console.error(error)
+                console.error('Error creating document:', error)
+                this.$store.uiAlert({ 
+                    type: 'error', 
+                    message: 'Failed to create initial document. You can create one manually.',
+                    autoClear: true 
+                })
+                this.$eventStore.emitEvent('loading-modal', { show: false, message: '', id: launchId });
                 this.$router.push({ path: `/document/create-document`})
             }
             this.$emit('close')
