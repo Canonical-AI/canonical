@@ -594,6 +594,7 @@ export const useMainStore = defineStore('main', {
     // Document Management
     async documentsCreate({ data, select = true }) {
       const result = await Document.create(data);
+      // TODO: need a way to add the document to the correct folder if user wants to
       
       if (result.success) {
         const createdDoc = result.data;
@@ -971,29 +972,47 @@ export const useMainStore = defineStore('main', {
     },
 
     // Folder Management
-    async foldersUpdate({docId, target, action}) {
+    async foldersUpdate(payload) {
+      // Store original state for rollback
+      const originalFolders = JSON.parse(JSON.stringify(this.project.folders));
+
+      try {
+        const result = await Project.updateField(this.project.id, 'folders', payload);
+        this.project.folders = payload;
+      } catch (error) {
+        this.project.folders = originalFolders;
+        throw error;
+      }
+    },
+
+    async foldersMove(docId, targetFolderName = null) {
       // Store original state for rollback
       const originalFolders = JSON.parse(JSON.stringify(this.project.folders));
       
-      const sourceFolder = this.project.folders.find(folder => 
-        folder.children.includes(docId)
-      );
-      
-      if (action === 'remove' && sourceFolder) {
+      // Step 1: Remove document from its current folder (if any)
+      const sourceFolder = this.project.folders.find(folder => folder.children.includes(docId));
+      if (sourceFolder) {
         sourceFolder.children = sourceFolder.children.filter(id => id !== docId);
-      } else if (action === 'add') {
-        // Remove from source folder first if it exists
-        if (sourceFolder) {
-          sourceFolder.children = sourceFolder.children.filter(id => id !== docId);
-        }
-        
-        // Add to target folder
-        const targetFolder = this.project.folders.find(folder => folder.name === target);
+      }
+
+      // Step 2: Add document to target folder (if specified)
+      if (targetFolderName) {
+        const targetFolder = this.project.folders.find(folder => folder.name === targetFolderName);
         if (targetFolder) {
           targetFolder.children.push(docId);
+        } else {
+          // Restore original state if target folder doesn't exist
+          this.project.folders = originalFolders;
+          this.uiAlert({ 
+            type: 'error', 
+            message: `Target folder "${targetFolderName}" not found`,
+            autoClear: true 
+          });
+          throw new Error(`Target folder "${targetFolderName}" not found`);
         }
       }
-      
+      // If targetFolderName is null/undefined, document moves to root level (no folder)
+
       try {
         const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
         
@@ -1002,11 +1021,22 @@ export const useMainStore = defineStore('main', {
           this.project.folders = originalFolders;
           this.uiAlert({ 
             type: 'error', 
-            message: result.message || 'Failed to update folders',
+            message: result.message || 'Failed to move document',
             autoClear: true 
           });
-          throw new Error(result.message || 'Failed to update folders');
+          throw new Error('Failed to move document');
         }
+
+        // Success feedback
+        const moveDescription = targetFolderName 
+          ? `moved to "${targetFolderName}" folder` 
+          : 'moved to root level';
+        this.uiAlert({ 
+          type: 'success', 
+          message: `Document ${moveDescription}`,
+          autoClear: true 
+        });
+
       } catch (error) {
         // Restore original state on any error
         this.project.folders = originalFolders;
@@ -1014,9 +1044,17 @@ export const useMainStore = defineStore('main', {
       }
     },
 
+
+
     async foldersAdd(folderName) {
       // Store original state for rollback
       const originalFolders = [...this.project.folders];
+
+      // check if the folder name already exists
+      if (this.project.folders.find(folder => folder.name === folderName)) {
+        this.uiAlert({type: 'error', message: 'New Folder already exists rename it before adding more folders', autoClear: true});
+        return false;
+      }
       
       this.project.folders.push({
         name: folderName,
@@ -1057,15 +1095,11 @@ export const useMainStore = defineStore('main', {
       
       try {
         const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
-        
-        if (!result.success) {
-          // Restore original state on failure
+        if (result.success) {
+          this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+        } else {
           this.project.folders = originalFolders;
-          this.uiAlert({ 
-            type: 'error', 
-            message: result.message || 'Failed to remove folder',
-            autoClear: true 
-          });
+          this.uiAlert({type: 'error', message: 'Failed to remove folder', autoClear: true});
           throw new Error('Failed to remove folder');
         }
       } catch (error) {
@@ -1079,9 +1113,22 @@ export const useMainStore = defineStore('main', {
     },
 
     async foldersRename({toFolderName, fromFolderName}) {
+      const originalFolders = [...this.project.folders];
+
       const folder = this.project.folders.find(folder => folder.name === fromFolderName);
       if (folder) {
         folder.name = toFolderName;
+      }
+
+      try {
+        const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
+        if (result.success) {
+          this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+        }
+
+      } catch (error) {
+        this.project.folders = originalFolders;
+        throw error;
       }
     },
 

@@ -227,11 +227,7 @@ describe('Folder Management Integration Tests', () => {
       })
 
       // Move doc-1 from 'Getting Started' to 'Product'
-      await store.foldersUpdate({
-        docId: 'doc-1',
-        target: 'Product',
-        action: 'add'
-      })
+      await store.foldersMove('doc-1', 'Product')
 
       const gettingStartedFolder = store.project.folders.find(f => f.name === 'Getting Started')
       const productFolder = store.project.folders.find(f => f.name === 'Product')
@@ -246,19 +242,15 @@ describe('Folder Management Integration Tests', () => {
       )
     })
 
-    it('should remove documents from folders', async () => {
+    it('should remove documents from folders (move to root level)', async () => {
       mockProject.updateField.mockResolvedValue({
         success: true,
         data: { id: 'test-project-123', folders: [] },
         message: 'Project updated successfully'
       })
 
-      // Remove doc-1 from its current folder
-      await store.foldersUpdate({
-        docId: 'doc-1',
-        target: null,
-        action: 'remove'
-      })
+      // Remove doc-1 from its current folder (move to root level)
+      await store.foldersMove('doc-1', null)
 
       const gettingStartedFolder = store.project.folders.find(f => f.name === 'Getting Started')
       expect(gettingStartedFolder.children).not.toContain('doc-1')
@@ -299,19 +291,24 @@ describe('Folder Management Integration Tests', () => {
       expect(store.project.folders).toEqual(initialFolders)
     })
 
-    it('should handle folder update failure gracefully', async () => {
+    it('should handle folder move failure gracefully', async () => {
       mockProject.updateField.mockResolvedValue({
         success: false,
-        message: 'Failed to update folders'
+        message: 'Failed to move document'
       })
 
       const initialFolders = JSON.parse(JSON.stringify(store.project.folders))
 
-      await expect(store.foldersUpdate({
-        docId: 'doc-1',
-        target: 'Product',
-        action: 'add'
-      })).rejects.toThrow('Failed to update folders')
+      await expect(store.foldersMove('doc-1', 'Product')).rejects.toThrow('Failed to move document')
+
+      // Folder structure should be restored on failure
+      expect(store.project.folders).toEqual(initialFolders)
+    })
+
+    it('should handle moving to non-existent folder gracefully', async () => {
+      const initialFolders = JSON.parse(JSON.stringify(store.project.folders))
+
+      await expect(store.foldersMove('doc-1', 'Non-existent Folder')).rejects.toThrow('Target folder "Non-existent Folder" not found')
 
       // Folder structure should be restored on failure
       expect(store.project.folders).toEqual(initialFolders)
@@ -399,4 +396,4 @@ describe('Folder Management Integration Tests', () => {
       expect(() => store.projectFolderTree).not.toThrow()
     })
   })
-}) 
+})

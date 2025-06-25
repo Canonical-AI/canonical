@@ -34,7 +34,7 @@
             />
 
             <v-btn :disabled="!$store.isUserLoggedIn" 
-                class="text-none" @click="$store.foldersAdd('New Folder')" 
+                class="text-none" @click="addFolder()" 
                 variant="text" 
                 density="compact" 
                 size="small">Add Folder 
@@ -73,10 +73,11 @@
                 <span v-if="el.renaming">
                   <input 
                       :ref="'renameInput_' + el.id" 
-                      :value="el.data?.name" 
+                      :value="el.id === newFolderBeingAdded ? '' : el.data?.name" 
+                      :placeholder="el.id === newFolderBeingAdded ? 'Enter folder name' : ''"
                       @keyup.enter="submitRenameFolder(el, $event.target.value)" 
                       @keyup.esc="cancelRenameFolder(el)" 
-                      @blur="cancelRenameFolder(el)" 
+                      @blur="handleBlurRenameFolder(el, $event.target.value)" 
                       />
                 </span>
                 <v-tooltip v-else location="right" :text="el.data?.name" :open-delay="500">
@@ -115,7 +116,7 @@
                   ghostClass="ghost"
                   @update="onUpdate"
                   @add="(e) => onAdd(e,el)"
-                  @remove="(e) => remove(e,el)">
+                  >
                 <li 
                     :class="{'selected-item': isSelected(child)}"
                     v-if="el.isOpen || hasSelectedChild(el)"
@@ -152,7 +153,6 @@
               ghostClass="ghost"
               @update="onUpdate"
               @add="(e) => onAdd(e)"
-              @remove="(e) => remove(e)"
               @event="console.log($event)">
 
             <li 
@@ -189,7 +189,8 @@ export default {
     data: () => ({
         filter:'',
         folders: [],
-        documents: []
+        documents: [],
+        newFolderBeingAdded: null // Track when we're adding a new folder
     }),
     watch: {
         filteredItems: {
@@ -203,7 +204,19 @@ export default {
     },
     computed:{
         items() {
-            return this.$store.projectFolderTree; 
+            const folderTree = this.$store.projectFolderTree;
+            
+            // If we're adding a new folder, put it at the top
+            if (this.newFolderBeingAdded) {
+                const newFolderIndex = folderTree.findIndex(item => item.id === this.newFolderBeingAdded);
+                if (newFolderIndex > -1) {
+                    const newFolder = folderTree[newFolderIndex];
+                    const otherItems = folderTree.filter((_, index) => index !== newFolderIndex);
+                    return [newFolder, ...otherItems];
+                }
+            }
+            
+            return folderTree;
         },
         filteredItems() {
         // Filter out items without proper IDs first to prevent dragging issues
@@ -280,7 +293,7 @@ export default {
             // Set a new timeout to open the folder
             el._dragTimeout = setTimeout(() => {
                 el.isOpen = true;
-            }, 50);
+            }, 200);
         },
 
         handleDragLeave(el) {
@@ -296,28 +309,57 @@ export default {
             }, 800); // Slightly longer delay for closing to prevent flickering
         },
 
-        onAdd(event,folder) {
-            if(!folder) return;
+        async onAdd(event, folder) {
             // Don't allow moving documents without proper IDs
-            if(!event.data || !event.data.id) return;
+            if (!event.data || !event.data.id) {
+                console.warn('Cannot move document: missing document ID');
+                return;
+            }
 
-            this.$store.foldersUpdate({ 
-                docId: event.data.id, 
-                target: folder.id, 
-                action: 'add' 
-            });
+            try {
+                // folder?.data?.name will be undefined if dropped outside a folder (root level)
+                const targetFolderName = folder?.data?.name;
+                console.log('Moving document:', event.data.id, 'to folder:', targetFolderName || 'root level');
+                
+                await this.$store.foldersMove(event.data.id, targetFolderName);
+            } catch (error) {
+                console.error('Failed to move document:', error);
+                // The store already handles UI alerts, so we just log the error here
+            }
         },
 
-        remove(event,folder) {
-            if(!folder) return;
-            // Don't allow moving documents without proper IDs
-            if(!event.data || !event.data.id) return;
 
-            this.$store.foldersUpdate({ 
-                docId: event.data.id, 
-                target: folder.id, 
-                action: 'remove' 
-            });
+        async addFolder(){
+            try {
+                // Use "New Folder" as the name - positioning handled by items() computed
+                const tempName = 'New Folder';
+                const result = await this.$store.foldersAdd(tempName);
+                if (!result) {
+                    return;
+                }
+                
+                // Set the flag to track this new folder
+                this.newFolderBeingAdded = tempName;
+                
+                // Wait for the next tick to ensure the folder is rendered
+                await this.$nextTick();
+                
+                // Find the newly created folder and set it to renaming mode
+                const newFolder = this.folders.find(f => f.id === tempName);
+                if (newFolder) {
+                    newFolder.renaming = true;
+                    
+                    // Wait another tick and focus the input
+                    await this.$nextTick();
+                    const inputRef = this.$refs['renameInput_' + tempName];
+                    if (inputRef && inputRef[0]) {
+                        inputRef[0].focus();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to add folder:', error);
+                this.newFolderBeingAdded = null;
+            }
         },
 
         deleteFolder(id){
@@ -332,13 +374,33 @@ export default {
                 }
             });
         },
-        submitRenameFolder(el,value){
-            this.$store.foldersRename({toFolderName: value, fromFolderName: el.data.name})
-            el.data.name = value
+        submitRenameFolder(el, value){
+            const finalName = value.trim() || 'New Folder';
+            this.$store.foldersRename({toFolderName: finalName, fromFolderName: el.data.name});
+            el.data.name = finalName;
             el.renaming = false;
+            
+            // Clear the new folder tracking if this was the folder being added
+            if (el.id === this.newFolderBeingAdded) {
+                this.newFolderBeingAdded = null;
+            }
+        },
+        handleBlurRenameFolder(el, value) {
+            // Handle blur event (clicking off the input)
+            if (el.id === this.newFolderBeingAdded) {
+                // If it's a new folder and user clicked off, use "New Folder" as default
+                const finalName = value.trim() || 'New Folder';
+                this.submitRenameFolder(el, finalName);
+            } else {
+                // For existing folders, just cancel the rename
+                this.cancelRenameFolder(el);
+            }
         },
         cancelRenameFolder(el){
-            el.renaming = false;
+            // Only allow canceling for existing folders, not new ones
+            if (el.id !== this.newFolderBeingAdded) {
+                el.renaming = false;
+            }
         },
     }
 
