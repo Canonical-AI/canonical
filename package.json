@@ -19,7 +19,7 @@
 		"emulators": "firebase emulators:start --import=./emulator-data --export-on-exit",
 		"emulators:fresh": "firebase emulators:start",
 		"emulators:ui": "firebase emulators:start --only firestore,auth,ui",
-		"seed:invitations": "node scripts/seed-emulator-data.js",
+		"seed:invitations": "NODE_OPTIONS='--dns-result-order=ipv4first' node scripts/seed-emulator-data.js",
 		"seed:clear": "node scripts/seed-emulator-data.js clear"
 	},
 	"dependencies": {

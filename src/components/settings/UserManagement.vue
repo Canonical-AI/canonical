@@ -637,6 +637,7 @@ export default {
 
         filteredInvitations() {
             if (!this.pendingInvitations || this.pendingInvitations.length === 0) return [];
+
             
             if (this.showCompleteInvitations) {
                 return this.pendingInvitations;
@@ -859,7 +860,13 @@ export default {
         async loadPendingInvitations() {
             try {
                 if (this.isCurrentUserAdmin) {
-                    this.pendingInvitations = await Project.getProjectInvitations(this.projectId);
+                    const result = await Project.getProjectInvitations(this.projectId);
+                    if (result.success) {
+                        this.pendingInvitations = result.data || [];
+                    } else {
+                        console.error('Failed to load invitations:', result.message);
+                        this.pendingInvitations = [];
+                    }
                 } else {
                     this.pendingInvitations = [];
                 }
