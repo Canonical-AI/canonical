@@ -334,6 +334,7 @@ export default {
                 // Use "New Folder" as the name - positioning handled by items() computed
                 const tempName = 'New Folder';
                 const result = await this.$store.foldersAdd(tempName);
+                console.log('addFolder', result)
                 if (!result) {
                     return;
                 }

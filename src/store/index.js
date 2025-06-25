@@ -1096,6 +1096,7 @@ export const useMainStore = defineStore('main', {
         
         if (result.success) {
           this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+          return true;
         } else {
           // Restore original state on failure
           this.project.folders = originalFolders;
@@ -1113,6 +1114,7 @@ export const useMainStore = defineStore('main', {
           throw error;
         }
         throw new Error('Failed to add folder');
+
       }
     },
 
