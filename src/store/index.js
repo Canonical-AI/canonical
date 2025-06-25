@@ -208,6 +208,7 @@ export const useMainStore = defineStore('main', {
         this.uiAlert({ type: 'error', message: 'Authentication failed', autoClear: true });
       } finally {
         this.loading.user= false;
+        eventStore.emitEvent('loading-modal', { show: false, message: '' });
       }
       
     },
@@ -556,7 +557,11 @@ export const useMainStore = defineStore('main', {
     
     async projectCreateInvitation({projectId, email, role}) { 
       const result = await Project.inviteUserToProject({projectId, email, role});
-      return  result
+      if (result.success) {
+        return result.data;
+      } else {
+        throw new Error(result.message || 'Failed to create invitation');
+      }
     },
 
     async projectUpdateInvitation(payload) {

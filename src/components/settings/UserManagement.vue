@@ -973,12 +973,10 @@ export default {
                     role: this.inviteUserDialog.role
                 });
                 
-                if (result.success) {
-                    this.inviteUserDialog.createdInvitation = result;
-                    this.inviteUserDialog.step = 2;
-                    await this.loadPendingInvitations();
-                    this.$emit('users-updated');
-                }
+                this.inviteUserDialog.createdInvitation = result;
+                this.inviteUserDialog.step = 2;
+                await this.loadPendingInvitations();
+                this.$emit('users-updated');
             } catch (error) {
                 this.inviteError = error.message;
             } finally {

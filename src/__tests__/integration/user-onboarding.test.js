@@ -489,7 +489,8 @@ describe('User Onboarding Flow Integration Tests', () => {
 
       mockFirebase.Project.inviteUserToProject.mockResolvedValue({
         success: true,
-        ...mockInvitation
+        data: mockInvitation,
+        message: 'Invitation created successfully'
       })
 
       const inviteResult = await store.projectCreateInvitation({
@@ -499,7 +500,6 @@ describe('User Onboarding Flow Integration Tests', () => {
       })
 
       // STEP 3: Verify invitation created
-      expect(inviteResult.success).toBe(true)
       expect(inviteResult.email).toBe('teammate@example.com')
       expect(inviteResult.inviteToken).toBe('team-invite-token-123')
 

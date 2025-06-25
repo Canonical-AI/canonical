@@ -147,7 +147,8 @@ describe('Invitation Management Integration Tests', () => {
       
       mockFirebase.Project.inviteUserToProject.mockResolvedValue({
         success: true,
-        ...mockInvitation
+        data: mockInvitation,
+        message: 'Invitation created successfully'
       })
 
       // Create invitation through store
@@ -164,7 +165,6 @@ describe('Invitation Management Integration Tests', () => {
         role: 'user'
       })
 
-      expect(result.success).toBe(true)
       expect(result.email).toBe('newuser@example.com')
       expect(result.inviteToken).toBe('mock-uuid-12345')
     })
@@ -179,10 +179,15 @@ describe('Invitation Management Integration Tests', () => {
       mockFirebase.User.getUserByEmail.mockResolvedValue(existingUser)
       
       // Mock successful user addition
-      mockFirebase.Project.addUserToProject.mockResolvedValue(true)
+      mockFirebase.Project.addUserToProject.mockResolvedValue({
+        success: true,
+        data: { userId: existingUser.id, projectId: 'project-123', role: 'user', status: 'active' },
+        message: 'User added to project'
+      })
       mockFirebase.Project.inviteUserToProject.mockResolvedValue({
         success: true,
-        user: existingUser
+        data: { user: existingUser },
+        message: 'User added to project'
       })
 
       const result = await store.projectCreateInvitation({
@@ -191,7 +196,6 @@ describe('Invitation Management Integration Tests', () => {
         role: 'user'
       })
 
-      expect(result.success).toBe(true)
       expect(result.user).toEqual(existingUser)
     })
 
@@ -208,7 +212,8 @@ describe('Invitation Management Integration Tests', () => {
       mockFirebase.Project.getInvitation.mockResolvedValue([existingInvitation])
       mockFirebase.Project.inviteUserToProject.mockResolvedValue({
         success: true,
-        ...existingInvitation
+        data: existingInvitation,
+        message: 'User already invited'
       })
 
       const result = await store.projectCreateInvitation({
@@ -217,7 +222,6 @@ describe('Invitation Management Integration Tests', () => {
         role: 'user'
       })
 
-      expect(result.success).toBe(true)
       expect(result.id).toBe('existing-invite-789')
     })
 
@@ -236,16 +240,18 @@ describe('Invitation Management Integration Tests', () => {
         }]
       })
 
-      // Mock non-admin response
-      mockFirebase.Project.inviteUserToProject.mockResolvedValue(null)
+      // Mock non-admin response - should return error result
+      mockFirebase.Project.inviteUserToProject.mockResolvedValue({
+        success: false,
+        error: new Error('Only project admins can create invitations'),
+        message: 'Only project admins can create invitations'
+      })
 
-      const result = await store.projectCreateInvitation({
+      await expect(store.projectCreateInvitation({
         projectId: 'project-123',
         email: 'newuser@example.com',
         role: 'user'
-      })
-
-      expect(result).toBeNull()
+      })).rejects.toThrow('Only project admins can create invitations')
     })
   })
 
@@ -611,7 +617,8 @@ describe('Invitation Management Integration Tests', () => {
       
       mockFirebase.Project.inviteUserToProject.mockResolvedValue({
         success: true,
-        ...mockInvitation
+        data: mockInvitation,
+        message: 'Invitation created successfully'
       })
 
       const createResult = await store.projectCreateInvitation({
@@ -620,7 +627,7 @@ describe('Invitation Management Integration Tests', () => {
         role: 'user'
       })
 
-      expect(createResult.success).toBe(true)
+      expect(createResult.id).toBe('workflow-invite-123')
 
       // Step 2: Load invitations
       mockFirebase.Project.getProjectInvitations.mockResolvedValue([mockInvitation])
