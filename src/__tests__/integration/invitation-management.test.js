@@ -342,7 +342,11 @@ describe('Invitation Management Integration Tests', () => {
       })
 
       // Step 2: Mock successful invitation acceptance
-      mockFirebase.User.acceptInvitation.mockResolvedValue('project-123')
+      mockFirebase.User.acceptInvitation.mockResolvedValue({
+        success: true,
+        data: { projectId: 'project-123' },
+        message: 'Successfully joined project!'
+      })
       
       // Mock user entering after acceptance
       mockFirebase.User.getUserAuth.mockResolvedValue({
@@ -359,11 +363,11 @@ describe('Invitation Management Integration Tests', () => {
       })
 
       // Step 3: Accept invitation
-      const projectId = await store.userAcceptInvitation('valid-token-123')
+      const result = await store.userAcceptInvitation('valid-token-123')
 
       // Verify acceptance
       expect(mockFirebase.User.acceptInvitation).toHaveBeenCalledWith('valid-token-123')
-      expect(projectId).toBe('project-123')
+      expect(result).toBe('project-123')
 
       // Verify invitation removed from pending list
       expect(store.pendingInvitations.filter(inv => inv.inviteToken === 'valid-token-123')).toHaveLength(0)
@@ -380,7 +384,11 @@ describe('Invitation Management Integration Tests', () => {
         projects: []
       })
 
-      mockFirebase.User.declineInvitation.mockResolvedValue()
+      mockFirebase.User.declineInvitation.mockResolvedValue({
+        success: true,
+        data: { inviteId: 'invite-123', status: 'declined' },
+        message: 'Invitation declined'
+      })
 
       await store.userDeclineInvitation('invite-123')
 
@@ -683,7 +691,12 @@ describe('Invitation Management Integration Tests', () => {
         // Simulate what the real acceptInvitation does - update user data
         store.userSetData(updatedUserData);
         
-        return 'project-123';
+        // Return DataServiceResult format
+        return {
+          success: true,
+          data: { projectId: 'project-123' },
+          message: 'Successfully joined project!'
+        };
       })
 
       const projectId = await store.userAcceptInvitation('complete-flow-token')

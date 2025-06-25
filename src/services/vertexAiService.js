@@ -480,14 +480,21 @@ export class Chat {
         });
 
         if (history) {
-            this.chat = this.generativeModel.startChat({
-                history: history.history.data.messages.slice(1)
-                    .filter(message => !message.isSystemMessage) // Filter out system messages
-                    .map(message => ({
-                        role: message.sent ? 'user' : 'model',
-                        parts: [{ text: message.text }]
-                    }))
-            }); // Start the chat
+            // Ensure we have messages array and it's not empty
+            const messages = history.data?.messages || [];
+            
+            if (messages.length > 0) {
+                this.chat = this.generativeModel.startChat({
+                    history: messages.slice(1) // Skip the first greeting message
+                        .filter(message => !message.isSystemMessage) // Filter out system messages
+                        .map(message => ({
+                            role: message.sent ? 'user' : 'model',
+                            parts: [{ text: message.text }]
+                        }))
+                }); // Start the chat
+            } else {
+                this.chat = this.generativeModel.startChat()
+            }
         } else {
             this.chat = this.generativeModel.startChat()
         }

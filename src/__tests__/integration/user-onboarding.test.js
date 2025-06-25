@@ -169,8 +169,12 @@ describe('User Onboarding Flow Integration Tests', () => {
 
       // Mock document creation
       mockFirebase.Document.create.mockResolvedValue({
-        id: 'doc-123',
-        data: firstDocData
+        success: true,
+        data: {
+          id: 'doc-123',
+          data: firstDocData
+        },
+        message: 'Document created successfully'
       })
 
       const createdDoc = await store.documentsCreate({ data: firstDocData })
@@ -353,7 +357,12 @@ describe('User Onboarding Flow Integration Tests', () => {
         // Simulate what the real acceptInvitation does - update user data
         store.userSetData(updatedUserData);
         
-        return 'project-456';
+        // Return DataServiceResult format
+        return {
+          success: true,
+          data: { projectId: 'project-456' },
+          message: 'Successfully joined project!'
+        };
       })
 
       // Mock project loading after acceptance
@@ -570,7 +579,11 @@ describe('User Onboarding Flow Integration Tests', () => {
       expect(store.pendingInvitations).toHaveLength(2)
 
       // User accepts one invitation
-      mockFirebase.User.acceptInvitation.mockResolvedValue('project-beta')
+      mockFirebase.User.acceptInvitation.mockResolvedValue({
+        success: true,
+        data: { projectId: 'project-beta' },
+        message: 'Successfully joined project!'
+      })
       mockFirebase.User.getUserAuth.mockResolvedValue({
         ...userWithInvites,
         defaultProject: 'project-beta',
@@ -597,7 +610,11 @@ describe('User Onboarding Flow Integration Tests', () => {
       expect(store.pendingInvitations.filter(inv => inv.inviteToken === 'token-beta')).toHaveLength(0)
 
       // User declines remaining invitation
-      mockFirebase.User.declineInvitation.mockResolvedValue()
+      mockFirebase.User.declineInvitation.mockResolvedValue({
+        success: true,
+        data: { inviteId: 'invite-1', status: 'declined' },
+        message: 'Invitation declined'
+      })
 
       await store.userDeclineInvitation('invite-1')
 

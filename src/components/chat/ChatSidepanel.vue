@@ -47,7 +47,7 @@
         <div v-if="!isLoading" class="messages-container">
           <v-fade-transition group tag="div">
             <div 
-              v-for="(message, index) in chatHist.data.messages.slice()" 
+              v-for="(message, index) in (chatHist.data.messages || []).slice()" 
               :key="message.index"
               class="message-wrapper mb-3"
             >
@@ -125,6 +125,8 @@
 import { Chat } from "../../services/vertexAiService";
 import { ChatHistory } from "../../services/firebaseDataService";
 import { marked } from 'marked';
+import { useEventWatcher } from "../../composables/useEventWatcher";
+import { eventStore } from "../../store/eventStore";
 
 export default {
   name: 'ChatSidepanel',
@@ -184,17 +186,18 @@ export default {
       await this.$store.getChats();
     }
     await this.initializeChat();
+    
+    // Watch for document save events instead of content changes
+    useEventWatcher(eventStore, 'documentSaved', (payload) => {
+      // Only update if this is the document we're chatting about
+      if (payload.documentId === this.documentId && this.chatInstance) {
+        this.updateDocumentContext(payload.documentData.content);
+      }
+    });
   },
   watch: {
-    documentContent: {
-      async handler(newContent, oldContent) {
-        // Only update context if content actually changed and we have a chat instance
-        if (newContent !== oldContent && this.chatInstance && newContent) {
-          await this.updateDocumentContext(newContent);
-        }
-      },
-      immediate: false
-    }
+    // Removed documentContent watcher - now using event-based approach
+    // to only update when document is actually saved successfully
   },
   methods: {
     getRandomGreeting() {
@@ -231,16 +234,26 @@ export default {
       
       try {
         // Get the full chat history
-        const storedChatHist = await ChatHistory.getDocById(chat.id);
-        this.chatHist = storedChatHist;
+        const result = await ChatHistory.getDocById(chat.id);
         
-        // Initialize chat instance with history
-        this.chatInstance = new Chat();
-        await this.chatInstance.initChat({ history: storedChatHist });
-        
-        // If we have document content, update the context for this loaded chat
-        if (this.documentContent) {
-          await this.updateDocumentContext(this.documentContent);
+        if (result.success) {
+          this.chatHist = result.data;
+          
+          // Ensure messages array exists
+          if (!this.chatHist.data.messages) {
+            this.chatHist.data.messages = [];
+          }
+          
+          // Initialize chat instance with history
+          this.chatInstance = new Chat();
+          await this.chatInstance.initChat({ history: this.chatHist });
+          
+          // If we have document content, update the context for this loaded chat
+          if (this.documentContent) {
+            await this.updateDocumentContext(this.documentContent);
+          }
+        } else {
+          throw new Error(result.message || 'Failed to load chat');
         }
         
       } catch (error) {

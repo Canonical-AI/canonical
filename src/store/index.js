@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import router from '../router'
 import {User, Document, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
+import { eventStore } from './eventStore'
 
 function filterHelper(list, filter) {
   return [...list].filter(function(item) {
@@ -92,8 +93,7 @@ export const useMainStore = defineStore('main', {
     
     projectFolderTree: (state) => {
       // Ensure documents is an array before trying to map
-
-     if (!Array.isArray(state.documents) || !state.project?.folders) {
+      if (!Array.isArray(state.documents) || !state.project?.folders) {
         return [];
       }
       
@@ -104,26 +104,36 @@ export const useMainStore = defineStore('main', {
         return state.documents.sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
       }
       
-      const updatedFolders = state.project?.folders?.map(folder => {
-        const updatedChildren = folder.children.map(childId => documentMap
-          .get(childId))
-          .filter(Boolean)
-          .sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
-        return {
-          id: folder.name,
-          isOpen: folder.isOpen ?? true,
-          children: updatedChildren,
-          data: {
+      const updatedFolders = state.project?.folders
+        ?.filter(folder => folder && folder.name) // Filter out null/invalid folders
+        ?.map(folder => {
+          const children = folder.children || []; // Default to empty array if children is missing
+          const updatedChildren = children.map(childId => documentMap
+            .get(childId))
+            .filter(Boolean)
+            .sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
+          return {
+            id: folder.name,
             name: folder.name,
+            isOpen: folder.isOpen ?? true,
             folder: true,
-          }
-        };
-      });
+            children: updatedChildren,
+            data: {
+              name: folder.name,
+              folder: true,
+            }
+          };
+        });
 
-      updatedFolders.sort((a, b) => a.id.localeCompare(b.id));
-      const documentsInFolders = new Set(state.project.folders.flatMap(folder => folder.children || []));
+      if (updatedFolders) {
+        updatedFolders.sort((a, b) => a.id.localeCompare(b.id));
+      }
+      
+      // Safe access to folders for documentsInFolders calculation
+      const validFolders = state.project.folders.filter(folder => folder && Array.isArray(folder.children));
+      const documentsInFolders = new Set(validFolders.flatMap(folder => folder.children || []));
       const ungroupedDocuments = state.documents.filter(doc => !documentsInFolders.has(doc.id)).sort((a, b) => a.data?.name?.localeCompare(b.data?.name) || 0);
-      return [...updatedFolders, ...ungroupedDocuments];
+      return [...(updatedFolders || []), ...ungroupedDocuments];
     },
     
     documentComments: (state) => {
@@ -292,23 +302,31 @@ export const useMainStore = defineStore('main', {
       
       try {
         // adds user to project 
-        const projectId = await User.acceptInvitation(inviteToken);
+        const result = await User.acceptInvitation(inviteToken);
         
-        // Remove from local pending invitations list
-        this.pendingInvitations = this.pendingInvitations.filter(inv => inv.inviteToken !== inviteToken);
-        
-        // Set this project as the user's default project if they don't have one
-        if (!this.user.defaultProject) {
-          await this.userSetDefaultProject(projectId);
+        if (result.success) {
+          const projectId = result.data.projectId;
+          
+          // Remove from local pending invitations list
+          this.pendingInvitations = this.pendingInvitations.filter(inv => inv.inviteToken !== inviteToken);
+          
+          // Set this project as the user's default project if they don't have one
+          if (!this.user.defaultProject) {
+            await this.userSetDefaultProject(projectId);
+          }
+          
+          // Set the project and load its data
+          await this.projectSet(projectId, true);
+          
+          return projectId;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message,
+            autoClear: true 
+          });
+          throw new Error(result.message);
         }
-        
-        // Set the project and load its data
-        await this.projectSet(projectId, true);
-        
-        // NOTE: Removed userEnter() call here as it was resetting the project with stale data
-        // The user.acceptInvitation already refreshes user data internally
-        
-        return projectId;
       } catch (error) {
         this.uiAlert({ 
           type: 'error', 
@@ -323,10 +341,19 @@ export const useMainStore = defineStore('main', {
       if (!this.isUserLoggedIn) return;
       
       try {
-        await User.declineInvitation(inviteId);
+        const result = await User.declineInvitation(inviteId);
         
-        // Remove from local pending invitations list
-        this.pendingInvitations = this.pendingInvitations.filter(inv => inv.id !== inviteId);
+        if (result.success) {
+          // Remove from local pending invitations list
+          this.pendingInvitations = this.pendingInvitations.filter(inv => inv.id !== inviteId);
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message,
+            autoClear: true 
+          });
+          throw new Error(result.message);
+        }
       } catch (error) {
         this.uiAlert({ 
           type: 'error', 
@@ -346,7 +373,19 @@ export const useMainStore = defineStore('main', {
     },
 
     async userLogoutAction() {
-      await User.logout();
+      try {
+        const result = await User.logout();
+        if (result.success) {
+          this.uiAlert({ type: 'info', message: result.message, autoClear: true });
+        } else {
+          this.uiAlert({ type: 'error', message: result.message, autoClear: true });
+        }
+        return result.success;
+      } catch (error) {
+        this.uiAlert({ type: 'error', message: 'Unexpected error during logout', autoClear: true });
+        console.error('Logout error:', error);
+        return false;
+      }
     },
 
     async userGetInvitationByToken(token) {
@@ -370,15 +409,45 @@ export const useMainStore = defineStore('main', {
 
 
     async userSetDefaultProject(payload) {
-      await User.setDefaultProject(payload);
-      this.user.defaultProject = payload;
+      try {
+        const result = await User.setDefaultProject(payload);
+        if (result.success) {
+          this.user.defaultProject = payload;
+          this.uiAlert({ type: 'success', message: result.message, autoClear: true });
+          return true;
+        } else {
+          this.uiAlert({ type: 'error', message: result.message, autoClear: true });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ type: 'error', message: 'Failed to set default project', autoClear: true });
+        console.error('Set default project error:', error);
+        return false;
+      }
     },
 
     // Project Management
     async projectCreate(payload) {
-      const projectRef = await Project.create(payload);
-      this.project = projectRef;
-      return projectRef;
+      this.loading.project = true;
+      
+      try {
+        const result = await Project.create(payload);
+        if (result.success) {
+          this.project = result.data;
+          this.projects.push(result.data);
+          this.uiAlert({ type: 'success', message: result.message, autoClear: true });
+          return result.data;
+        } else {
+          this.uiAlert({ type: 'error', message: result.message, autoClear: true });
+          return null;
+        }
+      } catch (error) {
+        this.uiAlert({ type: 'error', message: 'Failed to create project', autoClear: true });
+        console.error('Project creation error:', error);
+        return null;
+      } finally {
+        this.loading.project = false;
+      }
     },
     
     async projectSet(projectId, details = false) {
@@ -405,7 +474,7 @@ export const useMainStore = defineStore('main', {
    
       try {
         this.project.id = projectId;
-        this.project = await Project.getById(projectId, true);
+        this.project = await Project.getById(projectId, true, true);
 
         
         if (this.isUserLoggedIn) {
@@ -426,7 +495,7 @@ export const useMainStore = defineStore('main', {
 
     async projectRefresh(details = false) {
       if (!this.project.id) return;
-      this.project = await Project.getById(this.project.id, details);
+      this.project = await Project.getById(this.project.id, details, true);
     },
 
 
@@ -448,7 +517,7 @@ export const useMainStore = defineStore('main', {
         // Load projects (with safety check for user.projects)
         if (this.user.projects && this.user.projects.length > 0) {
           this.projects = await Promise.all(
-            this.user.projects.map(project => Project.getById(project.projectId))
+            this.user.projects.map(project => Project.getById(project.projectId, false, true))
           );
         }
         
@@ -524,12 +593,23 @@ export const useMainStore = defineStore('main', {
 
     // Document Management
     async documentsCreate({ data, select = true }) {
-      const createdDoc = await Document.create(data);
-      if (select) {
-        this.selected = { ...this.selected, ...createdDoc };
+      const result = await Document.create(data);
+      
+      if (result.success) {
+        const createdDoc = result.data;
+        if (select) {
+          this.selected = { ...this.selected, ...createdDoc };
+        }
+        this.documents.push({ id: createdDoc.id, data: createdDoc.data });
+        return { id: createdDoc.id, data: createdDoc.data };
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to create document',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to create document');
       }
-      this.documents.push({ id: createdDoc.id, data: createdDoc.data });
-      return { id: createdDoc.id, data: createdDoc.data };
     },
 
     async documentsGetAll() {
@@ -619,36 +699,44 @@ export const useMainStore = defineStore('main', {
         const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
         
         if (!arraysAreEqual || (this.selected.data.draft === true && this.selected.data.releasedVersion && this.selected.data.releasedVersion.length > 0)) {
-          await Document.updateDocField(id, 'releasedVersion', releasedVersions);
-          await Document.updateDocField(id, 'draft', false);
+          const result1 = await Document.updateDocField(id, 'releasedVersion', releasedVersions);
+          const result2 = await Document.updateDocField(id, 'draft', false);
           
-          // Update the local state immediately
-          this.selected.data = {
-            ...this.selected.data,
-            releasedVersion: releasedVersions,
-            draft: false
-          };
-          
-          // Update the document in the documents array to reflect changes
-          const docIndex = this.documents.findIndex(doc => doc.id === id);
-          if (docIndex !== -1) {
-            this.documents[docIndex].data = {
-              ...this.documents[docIndex].data,
+          if (result1.success && result2.success) {
+            // Update the local state immediately
+            this.selected.data = {
+              ...this.selected.data,
               releasedVersion: releasedVersions,
               draft: false
             };
+            
+            // Update the document in the documents array to reflect changes
+            const docIndex = this.documents.findIndex(doc => doc.id === id);
+            if (docIndex !== -1) {
+              this.documents[docIndex].data = {
+                ...this.documents[docIndex].data,
+                releasedVersion: releasedVersions,
+                draft: false
+              };
+            }
+          } else {
+            console.error('Failed to update document version status:', result1.error || result2.error);
           }
         } else if (this.selected.data.draft === false && (!this.selected.data.releasedVersion || this.selected.data.releasedVersion.length === 0)) {
           // This is something to protect backwards compatibility, before version releases were implemented
           console.log('setting draft to true');
-          await Document.updateDocField(id, 'releasedVersion', []);
-          await Document.updateDocField(id, 'draft', true);
+          const result1 = await Document.updateDocField(id, 'releasedVersion', []);
+          const result2 = await Document.updateDocField(id, 'draft', true);
           
-          this.selected.data = {
-            ...this.selected.data,
-            releasedVersion: [],
-            draft: true
-          };
+          if (result1.success && result2.success) {
+            this.selected.data = {
+              ...this.selected.data,
+              releasedVersion: [],
+              draft: true
+            };
+          } else {
+            console.error('Failed to update document draft status:', result1.error || result2.error);
+          }
         }
       } catch (error) {
         console.error('Error checking document versions status:', error);
@@ -656,13 +744,33 @@ export const useMainStore = defineStore('main', {
     },
 
     async documentsDelete({ id }) {
-      await Document.deleteDocByID(id);
-      this.documents = this.documents.filter(doc => doc.id !== id);
+      const result = await Document.deleteDocByID(id);
+      
+      if (result.success) {
+        this.documents = this.documents.filter(doc => doc.id !== id);
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to delete document',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to delete document');
+      }
     },
 
     async documentsArchive({ id }) {
-      await Document.archiveDoc(id);
-      this.documents = this.documents.filter(doc => doc.id !== id);
+      const result = await Document.archiveDoc(id);
+      
+      if (result.success) {
+        this.documents = this.documents.filter(doc => doc.id !== id);
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to archive document',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to archive document');
+      }
     },
 
     async documentsSave() {
@@ -672,16 +780,31 @@ export const useMainStore = defineStore('main', {
         throw new Error('Cannot save document: selected document is invalid');
       }
 
-      const updatedDoc = await Document.updateDoc(this.selected.id, this.selected.data);
+      const result = await Document.updateDoc(this.selected.id, this.selected.data);
       
-      const docIndex = this.documents.findIndex(doc => doc.id === this.selected.id);
-      if (docIndex !== -1) {
-        this.documents[docIndex] = { id: this.selected.id, data: this.selected.data };
+      if (result.success) {
+        const docIndex = this.documents.findIndex(doc => doc.id === this.selected.id);
+        if (docIndex !== -1) {
+          this.documents[docIndex] = { id: this.selected.id, data: this.selected.data };
+        }
+        
+        this.selected = { ...this.selected, data: this.selected.data };
+        
+        // Emit document saved event for components that need to know about successful saves
+        eventStore.emitEvent('documentSaved', {
+          documentId: this.selected.id,
+          documentData: this.selected.data
+        });
+        
+        return { id: this.selected.id, data: this.selected.data };
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to save document',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to save document');
       }
-      
-      this.selected = { ...this.selected, data: this.selected.data };
-      
-      return { id: this.selected.id, data: this.selected.data };
     },
 
     documentsUpdate(document) {
@@ -697,10 +820,21 @@ export const useMainStore = defineStore('main', {
         this.selected.comments = [];
       }
       
-      const newComment = await Document.createComment(this.selected.id, comment);
-      newComment.createDate = { seconds: Math.floor(Date.now() / 1000) };
-      this.selected.comments.push(newComment);
-      return newComment;
+      const result = await Document.createComment(this.selected.id, comment);
+      
+      if (result.success) {
+        const newComment = result.data;
+        newComment.createDate = { seconds: Math.floor(Date.now() / 1000) };
+        this.selected.comments.push(newComment);
+        return newComment;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to create comment',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to create comment');
+      }
     },
 
     async commentsAddReply({ parentId, comment }) {
@@ -715,34 +849,77 @@ export const useMainStore = defineStore('main', {
         ...comment,
         parentId: parentId
       };
-      const newReply = await Document.createComment(this.selected.id, replyData);
-      newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
-      this.selected.comments.push(newReply);
-      return newReply;
+      const result = await Document.createComment(this.selected.id, replyData);
+      
+      if (result.success) {
+        const newReply = result.data;
+        newReply.createDate = { seconds: Math.floor(Date.now() / 1000) };
+        this.selected.comments.push(newReply);
+        return newReply;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to create reply',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to create reply');
+      }
     },
 
     async commentsUpdate({ id, updatedComment }) {
-      const updatedCommentData = await Document.updateComment(this.selected.id, id, updatedComment);
-      const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
-      if (commentIndex !== -1) {
-        this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...updatedCommentData };
+      const result = await Document.updateComment(this.selected.id, id, updatedComment);
+      
+      if (result.success) {
+        const updatedCommentData = result.data;
+        const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
+        if (commentIndex !== -1) {
+          this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...updatedCommentData };
+        }
+        return updatedCommentData;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to update comment',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to update comment');
       }
-      return updatedCommentData;
     },
 
     async commentsDelete(id) {
-      await Document.deleteComment(this.selected.id, id);
-      this.selected.comments = this.selected.comments.filter(comment => comment.id !== id);
-      return id;
+      const result = await Document.deleteComment(this.selected.id, id);
+      
+      if (result.success) {
+        this.selected.comments = this.selected.comments.filter(comment => comment.id !== id);
+        return id;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to delete comment',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to delete comment');
+      }
     },
 
     async commentsUpdateData({ id, data }) {
-      const updatedCommentData = await Document.updateCommentData(this.selected.id, id, data);
-      const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
-      if (commentIndex !== -1) {
-        this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...data };
+      const result = await Document.updateCommentData(this.selected.id, id, data);
+      
+      if (result.success) {
+        const updatedCommentData = result.data;
+        const commentIndex = this.selected.comments.findIndex(comment => comment.id === id);
+        if (commentIndex !== -1) {
+          this.selected.comments[commentIndex] = { ...this.selected.comments[commentIndex], ...data };
+        }
+        return updatedCommentData;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to update comment data',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to update comment data');
       }
-      return updatedCommentData;
     },
 
     commentsSet(comments) {
@@ -795,6 +972,9 @@ export const useMainStore = defineStore('main', {
 
     // Folder Management
     async foldersUpdate({docId, target, action}) {
+      // Store original state for rollback
+      const originalFolders = JSON.parse(JSON.stringify(this.project.folders));
+      
       const sourceFolder = this.project.folders.find(folder => 
         folder.children.includes(docId)
       );
@@ -802,27 +982,100 @@ export const useMainStore = defineStore('main', {
       if (action === 'remove' && sourceFolder) {
         sourceFolder.children = sourceFolder.children.filter(id => id !== docId);
       } else if (action === 'add') {
+        // Remove from source folder first if it exists
+        if (sourceFolder) {
+          sourceFolder.children = sourceFolder.children.filter(id => id !== docId);
+        }
+        
+        // Add to target folder
         const targetFolder = this.project.folders.find(folder => folder.name === target);
         if (targetFolder) {
           targetFolder.children.push(docId);
         }
       }
-      await Project.updatefield(this.project.id, 'folders', this.project.folders);
+      
+      try {
+        const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
+        
+        if (!result.success) {
+          // Restore original state on failure
+          this.project.folders = originalFolders;
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to update folders',
+            autoClear: true 
+          });
+          throw new Error(result.message || 'Failed to update folders');
+        }
+      } catch (error) {
+        // Restore original state on any error
+        this.project.folders = originalFolders;
+        throw error;
+      }
     },
 
     async foldersAdd(folderName) {
+      // Store original state for rollback
+      const originalFolders = [...this.project.folders];
+      
       this.project.folders.push({
         name: folderName,
         children: [],
         isOpen: true
       });
-      await Project.updatefield(this.project.id, 'folders', this.project.folders);
-      this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+      
+      try {
+        const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
+        
+        if (result.success) {
+          this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+        } else {
+          // Restore original state on failure
+          this.project.folders = originalFolders;
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to add folder',
+            autoClear: true 
+          });
+          throw new Error('Failed to add folder');
+        }
+      } catch (error) {
+        // Restore original state on any error
+        this.project.folders = originalFolders;
+        if (error.message === 'Failed to add folder') {
+          throw error;
+        }
+        throw new Error('Failed to add folder');
+      }
     },
 
     async foldersRemove(folderName) {
+      // Store original state for rollback
+      const originalFolders = [...this.project.folders];
+      
       this.project.folders = this.project.folders.filter(folder => folder.name !== folderName);
-      await Project.updatefield(this.project.id, 'folders', this.project.folders);
+      
+      try {
+        const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
+        
+        if (!result.success) {
+          // Restore original state on failure
+          this.project.folders = originalFolders;
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to remove folder',
+            autoClear: true 
+          });
+          throw new Error('Failed to remove folder');
+        }
+      } catch (error) {
+        // Restore original state on any error
+        this.project.folders = originalFolders;
+        if (error.message === 'Failed to remove folder') {
+          throw error;
+        }
+        throw new Error('Failed to remove folder');
+      }
     },
 
     async foldersRename({toFolderName, fromFolderName}) {
@@ -850,71 +1103,117 @@ export const useMainStore = defineStore('main', {
     },
 
     async createVersion(newVersion) {
-      await Document.createVersion(this.selected.id, this.selected.data, newVersion);
+      const result = await Document.createVersion(this.selected.id, this.selected.data, newVersion);
       
-      // Update the versions array in the selected document
-      if (!this.selected.versions) {
-        this.selected.versions = [];
+      if (result.success) {
+        // Update the versions array in the selected document
+        if (!this.selected.versions) {
+          this.selected.versions = [];
+        }
+        this.selected.versions.push(newVersion);
+        
+        return newVersion;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to create version',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to create version');
       }
-      this.selected.versions.push(newVersion);
-      
-      return newVersion;
     },
 
     async deleteVersion(selectedVersion) {
-      await Document.deleteVersion(this.selected.id, selectedVersion);
+      const result = await Document.deleteVersion(this.selected.id, selectedVersion);
       
-      // Update the versions array in the selected document
-      if (this.selected.versions) {
-        this.selected.versions = this.selected.versions.filter(version => version !== selectedVersion);
+      if (result.success) {
+        // Update the versions array in the selected document
+        if (this.selected.versions) {
+          this.selected.versions = this.selected.versions.filter(version => version !== selectedVersion);
+        }
+        
+        return selectedVersion;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to delete version',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to delete version');
       }
-      
-      return selectedVersion;
     },
 
     async toggleVersionReleased({ versionNumber, released }) {
-      await Document.toggleVersionReleased(this.selected.id, versionNumber, released);
+      const result = await Document.toggleVersionReleased(this.selected.id, versionNumber, released);
       
-      // Update the versions array in the selected document
-      if (this.selected.versions) {
-        this.selected.versions = this.selected.versions.map(version => 
-          version.versionNumber === versionNumber ? { 
-            ...version, released: released
-          } : version
-        );
+      if (result.success) {
+        // Update the versions array in the selected document
+        if (this.selected.versions) {
+          this.selected.versions = this.selected.versions.map(version => 
+            version.versionNumber === versionNumber ? { 
+              ...version, released: released
+            } : version
+          );
+        }
+        
+        // Check document versions status after toggle
+        await this.documentsCheckVersionsStatus({ id: this.selected.id });
+        
+        return { versionNumber, released };
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to toggle version release status',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to toggle version release status');
       }
-      
-      // Check document versions status after toggle
-      await this.documentsCheckVersionsStatus({ id: this.selected.id });
-      
-      return { versionNumber, released };
     },
 
     async renameChat(payload) {
       // Chat renaming implementation
       const result = await ChatHistory.updateChatField(payload.id, 'name', payload.newName);
-      const chatIndex = this.chats.findIndex(chat => chat.id === payload.id);
-      if (chatIndex !== -1) {
-        this.chats[chatIndex].data.name = payload.newName;
+      
+      if (result.success) {
+        const chatIndex = this.chats.findIndex(chat => chat.id === payload.id);
+        if (chatIndex !== -1) {
+          this.chats[chatIndex].data.name = payload.newName;
+        }
+        return result;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to rename chat',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to rename chat');
       }
-      return result;
     },
 
     async updateTask(payload) {
       const result = await Task.updateTask(payload.docID, payload.identity, payload.task);
       
-      // Find the document containing the task
-      const docIndex = this.tasks.findIndex(doc => doc.docID === payload.docID);
-      if (docIndex !== -1) {
-        // Update the specific task within the document's tasks array
-        const updatedTasks = this.tasks[docIndex].tasks.map(t => 
-          t.identity === payload.identity 
-            ? payload.task 
-            : t
-        );
-        this.tasks[docIndex] = { ...this.tasks[docIndex], tasks: updatedTasks };
+      if (result.success) {
+        // Find the document containing the task
+        const docIndex = this.tasks.findIndex(doc => doc.docID === payload.docID);
+        if (docIndex !== -1) {
+          // Update the specific task within the document's tasks array
+          const updatedTasks = this.tasks[docIndex].tasks.map(t => 
+            t.identity === payload.identity 
+              ? payload.task 
+              : t
+          );
+          this.tasks[docIndex] = { ...this.tasks[docIndex], tasks: updatedTasks };
+        }
+        return result;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to update task',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to update task');
       }
-      return result;
     },
 
     async updateMarkedUpContent({ docID, versionContent, versionNumber }) {
@@ -922,18 +1221,25 @@ export const useMainStore = defineStore('main', {
         return; 
       }
       
-      await Document.updateMarkedUpContent(docID, versionContent, versionNumber);
+      const result = await Document.updateMarkedUpContent(docID, versionContent, versionNumber);
       
-      // Update the content in the selected document if we're viewing this document
-      if (this.selected.id === docID) {
-        this.selected.data = { 
-          ...this.selected.data, 
-          content: versionContent 
-        };
+      if (result.success) {
+        // Update the content in the selected document if we're viewing this document
+        if (this.selected.id === docID) {
+          this.selected.data = { 
+            ...this.selected.data, 
+            content: versionContent 
+          };
+        }
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to update marked up content',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to update marked up content');
       }
     },
-
-
 
     async toggleFavorite(docId) {
       const index = this.favorites.indexOf(docId);
@@ -945,21 +1251,105 @@ export const useMainStore = defineStore('main', {
         this.favorites.push(docId);
         newFavorites = [...this.favorites];
       }
-      await Favorites.updateFavorites(newFavorites);
+      
+      const result = await Favorites.updateFavorites(newFavorites);
+      
+      if (!result.success) {
+        // Revert the change if the update failed
+        if (index > -1) {
+          this.favorites.push(docId);
+        } else {
+          this.favorites.splice(this.favorites.indexOf(docId), 1);
+        }
+        
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to update favorites',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to update favorites');
+      }
+    },
+
+    async getChatById(id) {
+      const result = await ChatHistory.getDocById(id);
+      
+      if (result.success) {
+        // Ensure the chat has proper structure with messages array
+        const chat = {
+          ...result.data,
+          data: {
+            ...result.data.data,
+            messages: result.data.data.messages || []
+          }
+        };
+        return chat;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to load chat',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to load chat');
+      }
     },
 
     async getChats() {
-      this.chats = await ChatHistory.getAll()
+      try {
+        const rawChats = await ChatHistory.getAll();
+        
+        // Ensure each chat has proper structure with messages array
+        // Filter out malformed chat data
+        this.chats = rawChats
+          .filter(chat => chat && chat.id && chat.data && typeof chat.data === 'object')
+          .map(chat => ({
+            ...chat,
+            data: {
+              ...chat.data,
+              messages: Array.isArray(chat.data.messages) ? chat.data.messages : []
+            }
+          }));
+      } catch (error) {
+        console.error('Error loading chats:', error);
+        this.chats = []; // Set to empty array on error
+        
+        // Optionally show user-friendly error message
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to load chats. Please try again.',
+          autoClear: true 
+        });
+      }
     },
 
     async deleteChat(id) {
-      this.chats = this.chats.filter(chat => chat.id !== id);
-      await ChatHistory.deleteChat(id);
+      const result = await ChatHistory.deleteChat(id);
+      
+      if (result.success) {
+        this.chats = this.chats.filter(chat => chat.id !== id);
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to delete chat',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to delete chat');
+      }
     },
 
     async archiveChat(id) {
-      this.chats = this.chats.filter(chat => chat.id !== id);
-      await ChatHistory.archiveChat(id);
+      const result = await ChatHistory.archiveChat(id);
+      
+      if (result.success) {
+        this.chats = this.chats.filter(chat => chat.id !== id);
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to archive chat',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to archive chat');
+      }
     }
   }
 })
