@@ -217,6 +217,48 @@ export default {
         };
     },
     methods: {
+        // Helper method to safely check if editor context is actually available
+        isEditorContextReady() {
+            if (!this.get || this.loading) {
+                return false;
+            }
+            
+            try {
+                let contextReady = false;
+                this.get().action((ctx) => {
+                    // Actually try to get the editorViewCtx to verify it's available
+                    try {
+                        const view = ctx.get(editorViewCtx);
+                        contextReady = !!view && !!view.state && !!view.dispatch;
+                    } catch (error) {
+                        // Context not available yet
+                        contextReady = false;
+                    }
+                });
+                return contextReady;
+            } catch (error) {
+                // Editor action failed
+                return false;
+            }
+        },
+
+        // Enhanced method to safely execute editor actions with context validation
+        safeEditorAction(actionFn, fallbackFn = null) {
+            if (!this.isEditorContextReady()) {
+                if (fallbackFn) fallbackFn();
+                return false;
+            }
+            
+            try {
+                this.get().action(actionFn);
+                return true;
+            } catch (error) {
+                console.warn('Safe editor action failed:', error);
+                if (fallbackFn) fallbackFn();
+                return false;
+            }
+        },
+
         updatePlaceholder() {
             this.placeholder = this.placeholders[Math.floor(Math.random() * this.placeholders.length)];
         },
@@ -233,11 +275,7 @@ export default {
 
         // Method to scroll to a specific comment position in the editor
         scrollToComment(commentId) {
-            if (!this.get || this.loading) {
-                return;
-            }
-
-            this.get().action((ctx) => {
+            this.safeEditorAction((ctx) => {
                 const view = ctx.get(editorViewCtx);
                 
                 // Find the comment mark element by data-comment-id
@@ -312,8 +350,8 @@ export default {
 
         // Method to get the editor view for external use (e.g., AI comment creation)
         getEditorView() {
-            if (!this.get || this.loading) {
-                console.warn('Editor not ready, cannot get editor view');
+            if (!this.isEditorContextReady()) {
+                console.warn('Editor context not ready, cannot get editor view');
                 return null;
             }
 
@@ -331,9 +369,7 @@ export default {
 
         // Method to force update editor content without re-mounting
         forceUpdateContent(content) {
-            if (!this.get || this.loading) return;
-            
-            this.get().action((ctx) => {
+            this.safeEditorAction((ctx) => {
                 const view = ctx.get(editorViewCtx);
                 const parser = ctx.get(parserCtx);
                 const schema = ctx.get(schemaCtx);
@@ -349,16 +385,12 @@ export default {
 
         // Method to sync comment marks to reflect current comment states
         syncCommentMarks() {
-            if (!this.get || this.loading) {
-                return;
-            }
-            
             // Don't sync comment marks if user is not logged in
             if (!this.isUserLoggedIn) {
                 return;
             }
 
-            this.get().action((ctx) => {
+            this.safeEditorAction((ctx) => {
                 try {
                     const view = ctx.get(editorViewCtx);
                     if (!view) return;
@@ -467,11 +499,7 @@ export default {
 
         // Method to remove all comment marks from the editor
         removeAllCommentMarks() {
-            if (!this.get || this.loading) {
-                return;
-            }
-            
-            this.get().action((ctx) => {
+            this.safeEditorAction((ctx) => {
                 try {
                     const view = ctx.get(editorViewCtx);
                     if (!view) return;
@@ -520,34 +548,30 @@ export default {
 
         // Method to save marked up content when viewing a version
         saveMarkedUpContent() {
-            if (!this.get || this.loading || this.$store.selected.currentVersion === 'live') {
+            if (this.$store.selected.currentVersion === 'live') {
                 return;
             }
 
-            try {
-                this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    const parser = ctx.get(parserCtx);
-                    
-                    // Get the current markdown content including comment marks
-                    const currentMarkdown = this.getCurrentMarkdown();
-                    
-                    if (currentMarkdown) {
-                        this.$store.updateMarkedUpContent({
-                            docID: this.$store.selected.id,
-                            versionContent: currentMarkdown,
-                            versionNumber: this.$store.selected.currentVersion
-                        });
-                    }
-                });
-            } catch (error) {
-                console.warn('Error saving marked up content:', error);
-            }
+            this.safeEditorAction((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                const parser = ctx.get(parserCtx);
+                
+                // Get the current markdown content including comment marks
+                const currentMarkdown = this.getCurrentMarkdown();
+                
+                if (currentMarkdown) {
+                    this.$store.updateMarkedUpContent({
+                        docID: this.$store.selected.id,
+                        versionContent: currentMarkdown,
+                        versionNumber: this.$store.selected.currentVersion
+                    });
+                }
+            });
         },
 
         // Method to get current markdown content
         getCurrentMarkdown() {
-            if (!this.get || this.loading) return null;
+            if (!this.isEditorContextReady()) return null;
             
             try {
                 let markdown = null;
@@ -782,32 +806,26 @@ export default {
 
         // Set up event watcher for resolve-comment events
         this.resolveCommentWatcher = useEventWatcher(this.$eventStore, 'resolve-comment', (payload) => {
-            if (!this.get || this.loading) return;
-            
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    resolveComment(view, payload.commentId);
-                });
+            this.safeEditorAction((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                resolveComment(view, payload.commentId);
+            });
         });
 
         // Set up event watcher for add events
         this.unresolveCommentWatcher = useEventWatcher(this.$eventStore, 'un-resolve-comment', (payload) => {
-            if (!this.get || this.loading) return;
-            
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    unresolveComment(view, payload.commentId);
-                });
+            this.safeEditorAction((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                unresolveComment(view, payload.commentId);
+            });
         });
 
         // Set up event watcher for un-resolve-comment events
         this.deleteCommentWatcher = useEventWatcher(this.$eventStore, 'delete-comment', (payload) => {
-            if (!this.get || this.loading) return;
-            
-            this.get().action((ctx) => {
-                    const view = ctx.get(editorViewCtx);
-                    deleteComment(view, payload.commentId);
-                });
+            this.safeEditorAction((ctx) => {
+                const view = ctx.get(editorViewCtx);
+                deleteComment(view, payload.commentId);
+            });
         });
 
         this.scrollToCommentWatcher = useEventWatcher(this.$eventStore, 'scroll-to-comment', (payload) => {
