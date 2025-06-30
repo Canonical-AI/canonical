@@ -163,6 +163,18 @@ export default {
             
             try {
                 this.$eventStore.emitEvent('loading-modal', { show: true, message: 'Setting up your project', id: launchId });
+                
+                // Check if user can create projects (though this should rarely be an issue for new users)
+                if (!this.$store.canCreateProject.allowed) {
+                    this.$store.uiAlert({ 
+                        type: 'error', 
+                        message: this.$store.canCreateProject.reason,
+                        autoClear: true 
+                    });
+                    this.$eventStore.emitEvent('loading-modal', { show: false, message: '', id: launchId });
+                    return;
+                }
+                
                 await this.$store.projectCreate(this.setupProject)
                 await this.$store.userSetDefaultProject(this.$store.project.id)
                 

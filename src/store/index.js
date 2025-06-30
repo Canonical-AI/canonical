@@ -91,6 +91,41 @@ export const useMainStore = defineStore('main', {
     
     isProjectAdmin: (state) => state.user.projects?.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
     
+    isProjectArchived: (state) => state.project?.archived === true,
+    
+    isProjectReadOnly: (state) => state.project?.archived === true,
+    
+    canCreateProject: (state) => {
+      const userTier = state.user.tier;
+      
+      // Pro users have unlimited projects
+      if (userTier === 'pro' || userTier === 'trial') {
+        return { allowed: true, reason: null, projectCount: 0, limit: null };
+      }
+      
+      // Get user's current project count (only active projects)
+      const userProjects = state.user.projects || [];
+      const activeProjects = userProjects.filter(p => p.status === 'active');
+      const projectCount = activeProjects.length;
+      const freeLimit = 5;
+      
+      if (projectCount >= freeLimit) {
+        return { 
+          allowed: false, 
+          reason: `Free users are limited to ${freeLimit} projects. Upgrade to Pro for unlimited projects.`,
+          projectCount,
+          limit: freeLimit
+        };
+      }
+      
+      return { 
+        allowed: true, 
+        reason: null, 
+        projectCount,
+        limit: freeLimit
+      };
+    },
+    
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
     isFavorite: (state) => (id) => state.favorites.includes(id),
@@ -460,6 +495,19 @@ export const useMainStore = defineStore('main', {
         if (result.success) {
           this.project = result.data;
           this.projects.push(result.data);
+          
+          // Update user's projects list to include the new project
+          if (!this.user.projects) {
+            this.user.projects = [];
+          }
+          
+          this.user.projects.push({
+            projectId: result.data.id,
+            role: 'admin',
+            status: 'active',
+            isCreator: true
+          });
+          
           this.uiAlert({ type: 'success', message: result.message, autoClear: true });
           return result.data;
         } else {
@@ -485,7 +533,10 @@ export const useMainStore = defineStore('main', {
         project.projectId === projectId && project.status !== 'removed'
       );
       
-      if (!userInSpecificProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      // Also check if this is a project that was just created (exists in this.projects but not in user.projects yet)
+      const projectJustCreated = this.projects.find(p => p.id === projectId && p.createdBy === this.user.uid);
+      
+      if (!userInSpecificProject && !projectJustCreated && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
         this.uiAlert({
           type: 'error',
           message: 'You are not a member of this project',
@@ -541,9 +592,18 @@ export const useMainStore = defineStore('main', {
       try {
         // Load projects (with safety check for user.projects)
         if (this.user.projects && this.user.projects.length > 0) {
-          this.projects = await Promise.all(
-            this.user.projects.map(project => Project.getById(project.projectId, false, true))
-          );
+          const projectPromises = this.user.projects.map(async (project) => {
+            const projectData = await Project.getById(project.projectId, false, true);
+            if (projectData) {
+              // Add user's role to project data for easier access
+              projectData.userRole = project.role;
+              projectData.userStatus = project.status;
+            }
+            return projectData;
+          });
+          
+          const allProjects = await Promise.all(projectPromises);
+          this.projects = allProjects.filter(Boolean); // Remove any null projects
         }
         
         // Load documents (already has safety checks in Document.getAll)
@@ -617,6 +677,153 @@ export const useMainStore = defineStore('main', {
             status: 'active'
           };
         }
+      }
+    },
+
+    async projectArchive(projectId) {
+      try {
+        const result = await Project.archive(projectId);
+        
+        if (result.success) {
+          // Update local projects list to mark as archived
+          const projectIndex = this.projects.findIndex(p => p.id === projectId);
+          if (projectIndex !== -1) {
+            this.projects[projectIndex] = {
+              ...this.projects[projectIndex],
+              archived: true
+            };
+          }
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || 'Project archived successfully',
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to archive project',
+            autoClear: true 
+          });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to archive project',
+          autoClear: true 
+        });
+        console.error('Project archive error:', error);
+        return false;
+      }
+    },
+
+    async projectDelete(projectId) {
+      try {
+        const result = await Project.delete(projectId);
+        
+        if (result.success) {
+          // Remove from local projects list
+          this.projects = this.projects.filter(p => p.id !== projectId);
+          
+          // If this was the current project, switch to another project or trigger new user flow
+          if (this.project.id === projectId) {
+            await this.handleCurrentProjectDeleted();
+          }
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || 'Project deleted successfully',
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to delete project',
+            autoClear: true 
+          });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to delete project',
+          autoClear: true 
+        });
+        console.error('Project delete error:', error);
+        return false;
+      }
+    },
+
+    async projectUnarchive(projectId) {
+      try {
+        const result = await Project.unarchive(projectId);
+        
+        if (result.success) {
+          // Update local projects list to mark as unarchived
+          const projectIndex = this.projects.findIndex(p => p.id === projectId);
+          if (projectIndex !== -1) {
+            this.projects[projectIndex] = {
+              ...this.projects[projectIndex],
+              archived: false
+            };
+          }
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || 'Project restored successfully',
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || 'Failed to restore project',
+            autoClear: true 
+          });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to restore project',
+          autoClear: true 
+        });
+        console.error('Project unarchive error:', error);
+        return false;
+      }
+    },
+
+    async handleCurrentProjectDeleted() {
+      // Find the next available non-archived project
+      const availableProjects = this.projects.filter(p => !p.archived);
+      
+      if (availableProjects.length > 0) {
+        // Set the first available project as default
+        const nextProject = availableProjects[0];
+        await this.userSetDefaultProject(nextProject.id);
+        await this.projectSet(nextProject.id, true);
+        
+        this.uiAlert({
+          type: 'info',
+          message: `Switched to project: ${nextProject.name}`,
+          autoClear: true
+        });
+      } else {
+        // No projects available, trigger new user flow
+        this.user.defaultProject = null;
+        router.push('/new-user');
+        
+        this.uiAlert({
+          type: 'info',
+          message: 'No projects available. Let\'s create a new one!',
+          autoClear: true
+        });
       }
     },
 

@@ -11,11 +11,15 @@
       <v-card-actions class="py-0" density="compact" style="min-height: 32px;">
         <v-btn flat icon="mdi-close" @click="drawer = false" density="compact"></v-btn>
         <v-spacer></v-spacer>
-        <div v-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
+        <div v-if="$store.isProjectArchived" class="text-warning mr-4">
+          <v-icon size="small" class="mr-1">mdi-archive</v-icon>
+          Read-Only (Archived Project)
+        </div>
+        <div v-else-if="document.data.updatedDate" class="text-medium-emphasis mr-4">
           last update:
           {{ $dayjs(document.data.updatedDate.seconds * 1000).fromNow() }}
         </div>
-        <v-menu v-if="document.id" class="border border-surface-light" density="compact">
+        <v-menu v-if="document.id && !$store.isProjectReadOnly" class="border border-surface-light" density="compact">
           <template v-slot:activator="{ props }">
             <v-btn :disabled="isDisabled" v-bind="props" icon density="compact">
               <v-icon>mdi-dots-vertical</v-icon>
@@ -235,7 +239,7 @@
           v-model="document.data.name"
           class="document-title position-relative top-0 left-0 right-0 w-100 whitespace-normal text-3xl font-bold bg-transparent text-gray-900 -mt-2 rounded border-0 p-0"
           :style="{ minHeight: '1em', outline: 'none', resize: 'none' }"
-          :disabled="!isEditable"
+          :disabled="!isEditable || $store.isProjectReadOnly"
           @input="updateDocumentNameFromInput"
           @click.stop
           ref="titleInput"
@@ -489,8 +493,8 @@ export default {
         
         this.isFavorite = this.$store.isFavorite(this.document.id);
         
-        // Set editable state based on whether we're viewing a version
-        if (version) {
+        // Set editable state based on whether we're viewing a version or project is read-only
+        if (version || this.$store.isProjectReadOnly) {
           this.isEditable = false;
         } else {
           this.isEditable = true;
@@ -703,7 +707,7 @@ export default {
     },
     
     editorDisabled() {
-      return this.isDisabled || !this.isEditable;
+      return this.isDisabled || !this.isEditable || this.$store.isProjectReadOnly;
     },
 
     editorContent: {
