@@ -1,7 +1,9 @@
 <template>
   <v-responsive>
-    <v-app>
-      <v-main class=" h-100 overflow-y-auto">
+    <v-app class="home-grain">
+      <div class="home-background"></div>
+      <div class="grain-overlay"></div>
+      <v-main class=" h-100 overflow-y-auto position-relative">
         <v-container v-if="loading">
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
 
@@ -184,7 +186,41 @@ export default {
 </script>
 
 <style scoped>
-/* Add any styles you need here */
+/* Home Background */
+.home-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  background-image: url('/login-background.avif');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(15px) brightness(0.6) contrast(1.2);
+}
+
+/* Grain overlay as a dedicated element */
+.grain-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: url('/grain.png') repeat;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Ensure content is readable over background */
+.v-main {
+  backdrop-filter: blur(1px);
+  background: rgba(var(--v-theme-surface), 0.85);
+  position: relative;
+  z-index: 2;
+}
 
 .doc-card :deep(ul),
 .doc-card :deep(ol) {
@@ -195,5 +231,4 @@ export default {
   margin-top: .5em;
   margin-bottom: .5em;
 }
-
 </style>

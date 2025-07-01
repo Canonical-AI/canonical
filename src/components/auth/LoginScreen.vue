@@ -299,7 +299,7 @@ export default {
     
     const ANIMATION_CONFIG = {
       waveIntensity: 0.060,
-      timeSpeed: 0.008
+      timeSpeed: 0.004
     };
     
     // Check for signup query parameter
@@ -594,6 +594,19 @@ export default {
   overflow: hidden;
 }
 
+.login-screen-container::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: url('/grain.png') repeat;
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* WebGL Background */
 .background-container {
   position: absolute;
@@ -603,8 +616,10 @@ export default {
   height: 100%;
   z-index: 0;
   overflow: hidden;
-  filter: blur(15px);
+  filter: blur(15px) brightness(0.8);
 }
+
+
 
 .background-container canvas {
   display: block;
