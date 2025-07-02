@@ -39,6 +39,20 @@ vi.mock('../../env', () => ({
   VITE_DEFAULT_PROJECT_ID: 'demo-project-123'
 }))
 
+// Mock useBackgroundEffects composable
+vi.mock('../../composables/useBackgroundEffects.js', () => ({
+  useBackgroundEffects: vi.fn(() => ({
+    backgroundStyle: { value: { filter: 'blur(15px) brightness(0.8) contrast(1.2)' } },
+    grainStyle: { value: { opacity: 0.08 } },
+    isLightMode: { value: false },
+    theme: {
+      global: {
+        current: { value: { dark: false } }
+      }
+    }
+  }))
+}))
+
 // Mock Vuetify components for simpler testing
 const mockVuetifyComponents = {
   'v-container': { template: '<div class="v-container"><slot /></div>' },

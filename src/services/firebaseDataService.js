@@ -353,9 +353,37 @@ export class User{
   static async getUserData(id){
     const userRef = doc(db, "users", id);
     const userDoc = await getDoc(userRef);
-    const userProjects = await this.getProjectsForUser(id)
     
-    return { uid: userDoc.id, ...userDoc.data() , projects: userProjects };
+    if (!userDoc.exists()) {
+      return null;
+    }
+    
+    const userData = userDoc.data();
+    const userProjects = await this.getProjectsForUser(id);
+    
+    // Validate defaultProject consistency: if user has a defaultProject but no project memberships,
+    // clear the defaultProject to handle data inconsistency (e.g., user was removed from all projects)
+    if (userData.defaultProject && userProjects.length === 0) {
+      console.log(`User ${id} has defaultProject "${userData.defaultProject}" but no project memberships. Clearing defaultProject.`);
+      
+      try {
+        // Update the user document in Firestore to clear defaultProject
+        await updateDoc(userRef, { 
+          defaultProject: null,
+          updatedDate: serverTimestamp()
+        });
+        
+        // Update the local data we're returning
+        userData.defaultProject = null;
+        
+        console.log(`Successfully cleared defaultProject for user ${id}`);
+      } catch (error) {
+        console.error(`Failed to clear defaultProject for user ${id}:`, error);
+        // Don't throw error - still return the user data, but log the issue
+      }
+    }
+    
+    return { uid: userDoc.id, ...userData, projects: userProjects };
   }
   
   static async getUserAuth() {
@@ -834,7 +862,7 @@ export class User{
 
 export class Project {
   constructor(value) { 
-    this.name = value.name || ""; // String
+    this.name = value.name || "New Project"; // String
     this.createdBy = value.createdBy || getStore().user.uid;
     this.folders = value.folders || [];
     this.org = value.org || getStore().user.email.split('@')[1];
@@ -844,6 +872,12 @@ export class Project {
   static async create(value) {
     try {
       PermissionHelper.requireAuth();
+      
+      // Check if user can create more projects
+      const canCreate = await this.canUserCreateProject();
+      if (!canCreate.allowed) {
+        return DataServiceResult.error(new Error(canCreate.reason), canCreate.reason);
+      }
       
       const projectInstance = new Project(value);
       const docRef = await addDoc(collection(db, "project"), {...projectInstance});
@@ -857,6 +891,49 @@ export class Project {
       return DataServiceResult.error(error, 'Failed to create project');
     }
   }
+
+  static async canUserCreateProject() {
+    try {
+      PermissionHelper.requireAuth();
+      
+      const store = getStore();
+      const userTier = store.user.tier;
+      
+      // Pro users have unlimited projects
+      if (userTier === 'pro' || userTier === 'trial') {
+        return { allowed: true, reason: null, projectCount: 0, limit: null };
+      }
+      
+      // Get user's current project count (only active projects)
+      const userProjects = store.user.projects || [];
+      const activeProjects = userProjects.filter(p => p.status === 'active');
+      const projectCount = activeProjects.length;
+      const freeLimit = 5;
+      
+      if (projectCount >= freeLimit) {
+        return { 
+          allowed: false, 
+          reason: `Free users are limited to ${freeLimit} projects. Upgrade to Pro for unlimited projects.`,
+          projectCount,
+          limit: freeLimit
+        };
+      }
+      
+      return { 
+        allowed: true, 
+        reason: null, 
+        projectCount,
+        limit: freeLimit
+      };
+    } catch (error) {
+      return { 
+        allowed: false, 
+        reason: 'Unable to verify project limits',
+        projectCount: 0,
+        limit: 5
+      };
+    }
+  }
   
   static async getById(id, userDetails = false, skipAuthCheck = false) {
     try {
@@ -868,6 +945,11 @@ export class Project {
       
       const projectRef = doc(db, "project", id);
       const snapshot = await getDoc(projectRef);
+
+      if (!snapshot.exists()) {
+        if (skipAuthCheck) return null;
+        return DataServiceResult.error(new Error('Project not found'), 'Project not found');
+      }
 
       let invitations = [];
       let users = []
@@ -896,6 +978,39 @@ export class Project {
         return null;
       }
       return DataServiceResult.error(error, 'Failed to load project');
+    }
+  }
+
+  static async getAllForUser(userId, includeArchived = false) {
+    try {
+      PermissionHelper.requireAuth();
+      
+      // Get user's project memberships
+      const userProjectsRef = collection(db, "userProjects");
+      const userProjectsQuery = query(userProjectsRef, 
+        where('userId', '==', userId),
+        where('status', '==', 'active')
+      );
+      const userProjectsSnapshot = await getDocs(userProjectsQuery);
+      
+      if (userProjectsSnapshot.empty) {
+        return DataServiceResult.success([], 'No projects found');
+      }
+      
+      const projectIds = userProjectsSnapshot.docs.map(doc => doc.data().projectId);
+      
+      // Get all projects for the user
+      const projects = [];
+      for (const projectId of projectIds) {
+        const projectData = await this.getById(projectId, false, true);
+        if (projectData && (includeArchived || !projectData.archived)) {
+          projects.push(projectData);
+        }
+      }
+      
+      return DataServiceResult.success(projects, 'Projects loaded successfully');
+    } catch (error) {
+      return DataServiceResult.error(error, 'Failed to load projects');
     }
   }
   
@@ -942,7 +1057,7 @@ export class Project {
   static async archive(id) {
     try {
       PermissionHelper.requireAuth();
-      PermissionHelper.requireProject();
+      PermissionHelper.requireProjectAdmin();
       
       const projectRef = doc(db, "project", id);
       await updateDoc(projectRef, { 
@@ -962,20 +1077,66 @@ export class Project {
   static async delete(id) {
     try {
       PermissionHelper.requireAuth();
-      PermissionHelper.requireProject();
+      PermissionHelper.requireProjectAdmin();
+      
+      // Delete all associated documents
+      const documentsRef = collection(db, "documents");
+      const documentsQuery = query(documentsRef, where("project", "==", id));
+      const documentsSnapshot = await getDocs(documentsQuery);
+      const deleteDocumentsPromises = documentsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deleteDocumentsPromises);
+      
+      // Delete all associated chats
+      const chatsRef = collection(db, "chats");
+      const chatsQuery = query(chatsRef, where("project", "==", id));
+      const chatsSnapshot = await getDocs(chatsQuery);
+      const deleteChatsPromises = chatsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deleteChatsPromises);
+      
+      // Delete all userProject relationships
+      const userProjectsRef = collection(db, "userProjects");
+      const userProjectsQuery = query(userProjectsRef, where("projectId", "==", id));
+      const userProjectsSnapshot = await getDocs(userProjectsQuery);
+      const deleteUserProjectsPromises = userProjectsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deleteUserProjectsPromises);
+      
+      // Delete all invitations
+      const invitationsRef = collection(db, "invitations");
+      const invitationsQuery = query(invitationsRef, where("projectId", "==", id));
+      const invitationsSnapshot = await getDocs(invitationsQuery);
+      const deleteInvitationsPromises = invitationsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deleteInvitationsPromises);
+      
+      // Finally, delete the project itself
+      const projectRef = doc(db, "project", id);
+      await deleteDoc(projectRef);
+      
+      return DataServiceResult.success(
+        { id, deleted: true },
+        'Project and all associated data deleted successfully'
+      );
+    } catch (error) {
+      return DataServiceResult.error(error, 'Failed to delete project');
+    }
+  }
+
+  static async unarchive(id) {
+    try {
+      PermissionHelper.requireAuth();
+      PermissionHelper.requireProjectAdmin();
       
       const projectRef = doc(db, "project", id);
       await updateDoc(projectRef, { 
-        archived: true,
+        archived: false,
         updatedDate: serverTimestamp()
       });
       
       return DataServiceResult.success(
-        { id, archived: true },
-        'Project deleted successfully'
+        { id, archived: false },
+        'Project restored successfully'
       );
     } catch (error) {
-      return DataServiceResult.error(error, 'Failed to delete project');
+      return DataServiceResult.error(error, 'Failed to restore project');
     }
   }
 

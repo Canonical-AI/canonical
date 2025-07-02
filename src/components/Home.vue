@@ -1,7 +1,9 @@
 <template>
   <v-responsive>
     <v-app>
-      <v-main class=" h-100 overflow-y-auto">
+      <div class="canonical-background canonical-background--fixed" :style="backgroundStyle"></div>
+      <div class="canonical-grain canonical-grain--fixed" :style="grainStyle"></div>
+      <v-main class=" h-100 overflow-y-auto position-relative">
         <v-container v-if="loading">
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
 
@@ -53,11 +55,22 @@
 <script>
 import { marked } from 'marked';
 import ReferenceLink from './editor/reference-link/ReferenceLink.vue';
+import { useBackgroundEffects } from '../composables/useBackgroundEffects.js';
 
 export default {
   name: 'Home',
   components: {
     ReferenceLink,
+  },
+  setup() {
+    const { backgroundStyle, grainStyle } = useBackgroundEffects({
+      backgroundBlur: 15,
+      backgroundBrightness: 0.6,
+      backgroundContrast: 1.2,
+      grainOpacity: 0.08
+    });
+    
+    return { backgroundStyle, grainStyle };
   },
   data() {
     return {
@@ -82,7 +95,7 @@ export default {
         .filter(doc => doc.data?.content)
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds)
         .slice(0, 5);
-    }, 
+    }
   },
   watch: {
     favoriteDocuments: {
@@ -184,7 +197,13 @@ export default {
 </script>
 
 <style scoped>
-/* Add any styles you need here */
+/* Ensure content is readable over background */
+.v-main {
+  backdrop-filter: blur(1px);
+  background: rgba(var(--v-theme-surface), 0.85);
+  position: relative;
+  z-index: 2;
+}
 
 .doc-card :deep(ul),
 .doc-card :deep(ol) {
@@ -195,5 +214,6 @@ export default {
   margin-top: .5em;
   margin-bottom: .5em;
 }
-
 </style>
+
+

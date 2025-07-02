@@ -1,9 +1,12 @@
 <template>
   <div class="login-screen-container">
     <!-- WebGL Background -->
-    <div ref="backgroundContainer" class="background-container">
+    <div ref="backgroundContainer" class="background-container" :style="backgroundStyle">
       <img ref="backgroundImage" src="/login-background.avif" alt="" class="background-image-hidden" />
     </div>
+    
+    <!-- Grain Overlay -->
+    <div class="canonical-grain canonical-grain--fixed" :style="grainStyle"></div>
     
     <v-container class="d-flex align-center justify-center pa-0 position-relative">
       <v-card 
@@ -254,8 +257,9 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useBackgroundEffects } from '../../composables/useBackgroundEffects.js';
 
 import { 
   getAuth, 
@@ -284,6 +288,11 @@ export default {
     const router = useRouter();
     const store = useMainStore();
     const auth = getAuth(firebaseApp);
+    const { backgroundStyle, grainStyle } = useBackgroundEffects({
+      backgroundBlur: 15,
+      backgroundBrightness: 0.8,
+      grainOpacity: 0.08
+    });
     
     const selectedOption = ref(null);
     const error = ref('');
@@ -299,7 +308,7 @@ export default {
     
     const ANIMATION_CONFIG = {
       waveIntensity: 0.060,
-      timeSpeed: 0.008
+      timeSpeed: 0.004
     };
     
     // Check for signup query parameter
@@ -563,6 +572,8 @@ export default {
       window.removeEventListener('resize', handleResize);
     });
     
+
+    
     return {
       selectedOption,
       error,
@@ -573,6 +584,8 @@ export default {
       confirmPassword,
       backgroundContainer,
       backgroundImage,
+      backgroundStyle,
+      grainStyle,
       handleSignIn,
       handleSignUp,
       handleSocialSignIn,
@@ -594,6 +607,10 @@ export default {
   overflow: hidden;
 }
 
+
+
+
+
 /* WebGL Background */
 .background-container {
   position: absolute;
@@ -603,8 +620,9 @@ export default {
   height: 100%;
   z-index: 0;
   overflow: hidden;
-  filter: blur(15px);
+  /* Filter is now applied via reactive style binding */
 }
+
 
 .background-container canvas {
   display: block;

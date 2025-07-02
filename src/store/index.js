@@ -1,24 +1,121 @@
+/**
+ * Main Pinia Store
+ * 
+ * Code Quality Improvements Applied:
+ * - Consolidated all constants and utility functions in utils/index.js for better maintainability
+ * - Moved business logic functions directly into store for better encapsulation
+ * - Improved error handling consistency with centralized user-friendly messages
+ * - Used immutable array updates to prevent reactivity issues
+ * - Added clear documentation for duplicate getters and their semantic differences
+ * - Kept canCreateProject as getter for backward compatibility while adding action for better practices
+ * - Centralized project access checking with inline utility functions
+ * - Improved state mutations to use safe array operations
+ */
+
 import { defineStore } from 'pinia'
 import router from '../router'
 import {User, Document, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
 import { eventStore } from './eventStore'
+import { 
+  MESSAGES, 
+  ROUTES, 
+  ALERT_AUTO_CLEAR_TIMEOUT, 
+  ALERT_FADE_OUT_TIMEOUT,
+  PROJECT_STATUS,
+  USER_ROLES,
+  USER_TIERS,
+  PROJECT_LIMITS,
+  filterHelper,
+  updateArrayItem
+} from '../utils/index.js'
 
 // Static flag to prevent multiple simultaneous userEnter calls
 let isUserEnterInProgress = false;
 let userEnterPromise = null;
 
-function filterHelper(list, filter) {
-  return [...list].filter(function(item) {
-    var justTheData = [];
-    Object.keys(item.data).forEach(k => {
-      justTheData.push(item.data[k])
-    });
-    Object.keys(item).forEach(k => {
-      if(k != "data") {justTheData.push(item[k])}
-    });
-    let regex = new RegExp('(' + filter+ ')', 'i');
-    return JSON.stringify({justTheData}).match(regex);
-  })
+/**
+ * Determines if a user can create a new project based on their tier and current project count
+ * @param {Object} user - User object with tier and projects
+ * @returns {Object} Object with allowed boolean, reason string, projectCount, and limit
+ */
+function canUserCreateProject(user) {
+  const userTier = user?.tier;
+  
+  // Pro users have unlimited projects
+  if (userTier === USER_TIERS.PRO || userTier === USER_TIERS.TRIAL) {
+    return { 
+      allowed: true, 
+      reason: null, 
+      projectCount: 0, 
+      limit: null 
+    };
+  }
+  
+  // Get user's current project count (only active projects)
+  const userProjects = user?.projects || [];
+  const activeProjects = userProjects.filter(p => p.status === PROJECT_STATUS.ACTIVE);
+  const projectCount = activeProjects.length;
+  const freeLimit = PROJECT_LIMITS.FREE_TIER_LIMIT;
+  
+  if (projectCount >= freeLimit) {
+    return { 
+      allowed: false, 
+      reason: MESSAGES.PROJECT_LIMIT_EXCEEDED(freeLimit),
+      projectCount,
+      limit: freeLimit
+    };
+  }
+  
+  return { 
+    allowed: true, 
+    reason: null, 
+    projectCount,
+    limit: freeLimit
+  };
+}
+
+/**
+ * Checks if user has access to a specific project
+ * @param {Object} user - User object
+ * @param {string} projectId - Project ID to check
+ * @param {Array} projects - Array of projects (for newly created projects)
+ * @returns {boolean} Whether user has access to the project
+ */
+function hasProjectAccess(user, projectId, projects = []) {
+  // Check if user is in the specific project
+  const userInProject = user?.projects?.find(project => 
+    project.projectId === projectId && project.status !== PROJECT_STATUS.REMOVED
+  );
+  
+  // Check if this is a project that was just created
+  const projectJustCreated = projects.find(p => 
+    p.id === projectId && p.createdBy === user?.uid
+  );
+  
+  // Allow access to demo project
+  const isDemoProject = projectId === import.meta.env.VITE_DEFAULT_PROJECT_ID;
+  
+  return !!(userInProject || projectJustCreated || isDemoProject);
+}
+
+/**
+ * Safely updates user projects list
+ * @param {Array} userProjects - Current user projects array
+ * @param {Object} newProject - New project to add
+ * @returns {Array} Updated projects array
+ */
+function addUserProject(userProjects = [], newProject) {
+  return [...userProjects, newProject];
+}
+
+/**
+ * Removes a project from user's projects list
+ * @param {Array} userProjects - Current user projects array  
+ * @param {string} projectId - Project ID to remove
+ * @returns {Array} Updated projects array
+ */
+function removeUserProject(userProjects = [], projectId) {
+  return userProjects.filter(p => p.projectId !== projectId);
 }
 
 function getCookie(name) {
@@ -85,11 +182,21 @@ export const useMainStore = defineStore('main', {
   getters: {
     isUserLoggedIn: (state) => state.user.uid !== null,
     
-    canAccessAi: (state) => state.user.tier === 'pro' || state.user.tier === 'trial',
+    canAccessAi: (state) => state.user.tier === USER_TIERS.PRO || state.user.tier === USER_TIERS.TRIAL,
 
-    isUserInProject: (state) => !!state.user.projects?.find(project => project.projectId === state.project.id && project.status !== 'removed'),
+    isUserInProject: (state) => !!state.user.projects?.find(project => project.projectId === state.project.id && project.status !== PROJECT_STATUS.REMOVED),
     
-    isProjectAdmin: (state) => state.user.projects?.find(project => project.projectId === state.project.id && project.status !== 'removed')?.role === 'admin',
+    isProjectAdmin: (state) => state.user.projects?.find(project => project.projectId === state.project.id && project.status !== PROJECT_STATUS.REMOVED)?.role === USER_ROLES.ADMIN,
+    
+    // Semantic getter for checking if project is archived (used for display logic)
+    isProjectArchived: (state) => state.project?.archived === true,
+    
+    // Semantic getter for checking if project is read-only (used for edit permissions)
+    // Note: Currently same as archived, but separated for future extensibility
+    isProjectReadOnly: (state) => state.project?.archived === true,
+    
+    // Project creation permission checking (kept as getter for backward compatibility)
+    canCreateProject: (state) => canUserCreateProject(state.user),
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
@@ -185,6 +292,11 @@ export const useMainStore = defineStore('main', {
   },
 
   actions: {
+    // Project permission checking (moved from getter to action for better practice)
+    checkCanCreateProject() {
+      return canUserCreateProject(this.user);
+    },
+
     // User Management
     async userEnter() {
       if (isUserEnterInProgress) {
@@ -445,7 +557,7 @@ export const useMainStore = defineStore('main', {
           return false;
         }
       } catch (error) {
-        this.uiAlert({ type: 'error', message: 'Failed to set default project', autoClear: true });
+        this.uiAlert({ type: 'error', message: MESSAGES.DEFAULT_PROJECT_SET_FAILED, autoClear: true });
         console.error('Set default project error:', error);
         return false;
       }
@@ -459,15 +571,28 @@ export const useMainStore = defineStore('main', {
         const result = await Project.create(payload);
         if (result.success) {
           this.project = result.data;
-          this.projects.push(result.data);
+          this.projects = [...this.projects, result.data]; // Ensure immutable update
+          
+          // Update user's projects list to include the new project safely
+          if (!this.user.projects) {
+            this.user.projects = [];
+          }
+          
+          this.user.projects = addUserProject(this.user.projects, {
+            projectId: result.data.id,
+            role: USER_ROLES.ADMIN,
+            status: PROJECT_STATUS.ACTIVE,
+            isCreator: true
+          });
+          
           this.uiAlert({ type: 'success', message: result.message, autoClear: true });
           return result.data;
         } else {
-          this.uiAlert({ type: 'error', message: result.message, autoClear: true });
+          this.uiAlert({ type: 'error', message: result.message || MESSAGES.PROJECT_CREATE_FAILED, autoClear: true });
           return null;
         }
       } catch (error) {
-        this.uiAlert({ type: 'error', message: 'Failed to create project', autoClear: true });
+        this.uiAlert({ type: 'error', message: MESSAGES.PROJECT_CREATE_FAILED, autoClear: true });
         console.error('Project creation error:', error);
         return null;
       } finally {
@@ -476,31 +601,29 @@ export const useMainStore = defineStore('main', {
     },
     
     async projectSet(projectId, details = false) {
+      if (!projectId) return false;
 
-      // if user is not in project dont let them set it and fetch (unless its demo)
-      // TODO: if the user has no project then we should set the default project to null and have them go through the project create
-      
-      // Fix: Check if user is in the SPECIFIC PROJECT being set, not the current project
-      const userInSpecificProject = this.user.projects?.find(project => 
-        project.projectId === projectId && project.status !== 'removed'
-      );
-      
-      if (!userInSpecificProject && projectId !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      // Check if user has access to this project using utility function
+      if (!hasProjectAccess(this.user, projectId, this.projects)) {
         this.uiAlert({
           type: 'error',
-          message: 'You are not a member of this project',
+          message: MESSAGES.PROJECT_ACCESS_DENIED,
           autoClear: true
         });
         return false;
       }
 
-      if (!projectId ) return false;
       console.log('projectId', projectId);
    
       try {
         this.project.id = projectId;
-        this.project = await Project.getById(projectId, true, true);
-
+        const projectData = await Project.getById(projectId, true, true);
+        
+        if (!projectData) {
+          throw new Error(`Project with ID ${projectId} not found`);
+        }
+        
+        this.project = projectData;
         
         if (this.isUserLoggedIn) {
           await this.projectGetAllData();
@@ -511,7 +634,7 @@ export const useMainStore = defineStore('main', {
         console.error('Error setting project:', error);
         this.uiAlert({
           type: 'error',
-          message: error.message || 'Failed to load project',
+          message: error.message || MESSAGES.PROJECT_DATA_LOAD_FAILED,
           autoClear: true
         });
         return false;
@@ -541,9 +664,18 @@ export const useMainStore = defineStore('main', {
       try {
         // Load projects (with safety check for user.projects)
         if (this.user.projects && this.user.projects.length > 0) {
-          this.projects = await Promise.all(
-            this.user.projects.map(project => Project.getById(project.projectId, false, true))
-          );
+          const projectPromises = this.user.projects.map(async (project) => {
+            const projectData = await Project.getById(project.projectId, false, true);
+            if (projectData) {
+              // Add user's role to project data for easier access
+              projectData.userRole = project.role;
+              projectData.userStatus = project.status;
+            }
+            return projectData;
+          });
+          
+          const allProjects = await Promise.all(projectPromises);
+          this.projects = allProjects.filter(Boolean); // Remove any null projects
         }
         
         // Load documents (already has safety checks in Document.getAll)
@@ -563,7 +695,7 @@ export const useMainStore = defineStore('main', {
         console.error('Error loading project data:', error);
         this.uiAlert({
           type: 'error',
-          message: 'Failed to load project data. Please try refreshing the page.',
+          message: MESSAGES.PROJECT_DATA_LOAD_FAILED,
           autoClear: true
         });
       }
@@ -593,30 +725,216 @@ export const useMainStore = defineStore('main', {
     async projectRemoveUserFromProject({userId, projectId}) {
       await Project.removeUserFromProject({userId, projectId});
       
-      // Update local project users state to mark user as removed
+      // Update local project users state to mark user as removed using immutable update
       if (this.project.users) {
-        const userIndex = this.project.users.findIndex(user => user.userId === userId );
-        if (userIndex !== -1) {
-          this.project.users[userIndex] = {
-            ...this.project.users[userIndex],
-            status: 'removed'
-          };
-        }
+        this.project.users = updateArrayItem(
+          this.project.users, 
+          user => user.userId === userId, 
+          { status: PROJECT_STATUS.REMOVED }
+        );
       }
     },
 
     async projectReinstateUser({userId, projectId}) {
       await Project.reinstateUser({userId, projectId});
       
-      // Update local project users state to mark user as active
+      // Update local project users state to mark user as active using immutable update
       if (this.project.users) {
-        const userIndex = this.project.users.findIndex(user => user.userId === userId );
-        if (userIndex !== -1) {
-          this.project.users[userIndex] = {
-            ...this.project.users[userIndex],
-            status: 'active'
-          };
+        this.project.users = updateArrayItem(
+          this.project.users, 
+          user => user.userId === userId, 
+          { status: PROJECT_STATUS.ACTIVE }
+        );
+      }
+    },
+
+    async projectArchive(projectId) {
+      try {
+        const result = await Project.archive(projectId);
+        
+        if (result.success) {
+          // Update local projects list to mark as archived using immutable update
+          this.projects = updateArrayItem(this.projects, p => p.id === projectId, { archived: true });
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || MESSAGES.PROJECT_ARCHIVED_SUCCESS,
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || MESSAGES.PROJECT_ARCHIVE_FAILED,
+            autoClear: true 
+          });
+          return false;
         }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: MESSAGES.PROJECT_ARCHIVE_FAILED,
+          autoClear: true 
+        });
+        console.error('Project archive error:', error);
+        return false;
+      }
+    },
+
+    async projectDelete(projectId) {
+      try {
+        const result = await Project.delete(projectId);
+        
+        if (result.success) {
+          // Remove from local projects list  
+          this.projects = this.projects.filter(p => p.id !== projectId);
+          
+          // Remove from user's projects list
+          this.user.projects = removeUserProject(this.user.projects, projectId);
+          
+          // If this was the current project, switch to another project or trigger new user flow
+          if (this.project.id === projectId) {
+            await this.handleCurrentProjectDeleted();
+          }
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || MESSAGES.PROJECT_DELETED_SUCCESS,
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || MESSAGES.PROJECT_DELETE_FAILED,
+            autoClear: true 
+          });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: MESSAGES.PROJECT_DELETE_FAILED,
+          autoClear: true 
+        });
+        console.error('Project delete error:', error);
+        return false;
+      }
+    },
+
+    async projectUnarchive(projectId) {
+      try {
+        const result = await Project.unarchive(projectId);
+        
+        if (result.success) {
+          // Update local projects list to mark as unarchived using immutable update
+          this.projects = updateArrayItem(this.projects, p => p.id === projectId, { archived: false });
+          
+          this.uiAlert({ 
+            type: 'success', 
+            message: result.message || MESSAGES.PROJECT_RESTORED_SUCCESS,
+            autoClear: true 
+          });
+          
+          return true;
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message || MESSAGES.PROJECT_RESTORE_FAILED,
+            autoClear: true 
+          });
+          return false;
+        }
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: MESSAGES.PROJECT_RESTORE_FAILED,
+          autoClear: true 
+        });
+        console.error('Project unarchive error:', error);
+        return false;
+      }
+    },
+
+    async handleCurrentProjectDeleted() {
+      // Remove from user's projects list first  
+      this.user.projects = removeUserProject(this.user.projects, this.project.id);
+      
+      // Find the next available non-archived project
+      const availableProjects = this.projects.filter(p => !p.archived);
+      
+      if (availableProjects.length > 0) {
+        // Set the first available project as default
+        const nextProject = availableProjects[0];
+        console.log('Switching to next project:', nextProject.name);
+        
+        try {
+          // Update default project in database
+          await this.userSetDefaultProject(nextProject.id);
+          
+          // Set the project and force a full refresh
+          const result = await this.projectSet(nextProject.id, true);
+          
+          if (result) {
+            // Force refresh of all project data to ensure components update
+            await this.projectGetAllData();
+            
+            // Force reactive update for any components watching project state
+            this.$patch({
+              project: { ...this.project }
+            });
+            
+            this.uiAlert({
+              type: 'info', 
+              message: MESSAGES.PROJECT_SWITCHED(nextProject.name),
+              autoClear: true
+            });
+          } else {
+            throw new Error('Failed to set new project');
+          }
+        } catch (error) {
+          console.error('Error switching to next project:', error);
+          // If we can't switch to another project, fall back to new user flow
+          this.user.defaultProject = null;
+          this.$patch({
+            project: {
+              id: null,
+              folders: [],
+              name: null,
+              createdBy: null,
+              users: [],
+              invitation: [],
+              projectRole: null,
+            }
+          });
+          // Don't navigate here - let App.vue watcher handle it to avoid double navigation
+        }
+      } else {
+        // No projects available, clear state and let App.vue handle navigation
+        console.log('No projects available, clearing project state');
+        this.user.defaultProject = null;
+        this.$patch({
+          project: {
+            id: null,
+            folders: [],
+            name: null,
+            createdBy: null,
+            users: [],
+            invitation: [],
+            projectRole: null,
+          }
+        });
+        
+        this.uiAlert({
+          type: 'info',
+          message: MESSAGES.PROJECT_CREATE_PROMPT,
+          autoClear: true
+        });
+        
+        // Don't call router.push here - let App.vue watcher handle navigation
+        // to avoid double navigation calls
       }
     },
 
@@ -635,10 +953,10 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to create document',
+          message: result.message || MESSAGES.DOCUMENT_CREATE_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to create document');
+        throw new Error(result.message || MESSAGES.DOCUMENT_CREATE_FAILED);
       }
     },
 
@@ -781,10 +1099,10 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to delete document',
+          message: result.message || MESSAGES.DOCUMENT_DELETE_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to delete document');
+        throw new Error(result.message || MESSAGES.DOCUMENT_DELETE_FAILED);
       }
     },
 
@@ -796,10 +1114,10 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to archive document',
+          message: result.message || MESSAGES.DOCUMENT_ARCHIVE_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to archive document');
+        throw new Error(result.message || MESSAGES.DOCUMENT_ARCHIVE_FAILED);
       }
     },
 
@@ -807,7 +1125,7 @@ export const useMainStore = defineStore('main', {
       // Safety checks to prevent undefined errors
       if (!this.selected || !this.selected.id || !this.selected.data) {
         console.error('Cannot save document: selected document is invalid', this.selected);
-        throw new Error('Cannot save document: selected document is invalid');
+        throw new Error(MESSAGES.INVALID_DOCUMENT);
       }
 
       const result = await Document.updateDoc(this.selected.id, this.selected.data);
@@ -830,10 +1148,10 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to save document',
+          message: result.message || MESSAGES.DOCUMENT_SAVE_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to save document');
+        throw new Error(result.message || MESSAGES.DOCUMENT_SAVE_FAILED);
       }
     },
 
@@ -844,7 +1162,7 @@ export const useMainStore = defineStore('main', {
     // Comments Management
     async commentsAdd(comment) {
       if (!this.selected || !this.selected.id) {
-        throw new Error('No document selected');
+        throw new Error(MESSAGES.NO_DOCUMENT_SELECTED);
       }
       if (!this.selected.comments) {
         this.selected.comments = [];
@@ -860,16 +1178,16 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to create comment',
+          message: result.message || MESSAGES.COMMENT_CREATE_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to create comment');
+        throw new Error(result.message || MESSAGES.COMMENT_CREATE_FAILED);
       }
     },
 
     async commentsAddReply({ parentId, comment }) {
       if (!this.selected || !this.selected.id) {
-        throw new Error('No document selected');
+        throw new Error(MESSAGES.NO_DOCUMENT_SELECTED);
       }
       if (!this.selected.comments) {
         this.selected.comments = [];
@@ -978,9 +1296,9 @@ export const useMainStore = defineStore('main', {
             // Remove after fade out
             setTimeout(() => {
               this.globalAlerts.splice(index, 1);
-            }, 1000);
+            }, ALERT_FADE_OUT_TIMEOUT);
           }
-        }, 5000);
+        }, ALERT_AUTO_CLEAR_TIMEOUT);
       }
     },
 
@@ -1081,7 +1399,7 @@ export const useMainStore = defineStore('main', {
 
       // check if the folder name already exists
       if (this.project.folders.find(folder => folder.name === folderName)) {
-        this.uiAlert({type: 'error', message: 'New Folder already exists rename it before adding more folders', autoClear: true});
+        this.uiAlert({type: 'error', message: MESSAGES.FOLDER_EXISTS_ERROR, autoClear: true});
         return false;
       }
       
@@ -1095,24 +1413,26 @@ export const useMainStore = defineStore('main', {
         const result = await Project.updateField(this.project.id, 'folders', this.project.folders);
         
         if (result.success) {
-          this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
+          this.uiAlert({type: 'success', message: MESSAGES.FOLDER_UPDATE_SUCCESS, autoClear: true});
+          return true;
         } else {
           // Restore original state on failure
           this.project.folders = originalFolders;
           this.uiAlert({ 
             type: 'error', 
-            message: result.message || 'Failed to add folder',
+            message: result.message || MESSAGES.FOLDER_ADD_FAILED,
             autoClear: true 
           });
-          throw new Error('Failed to add folder');
+          throw new Error(MESSAGES.FOLDER_ADD_FAILED);
         }
       } catch (error) {
         // Restore original state on any error
         this.project.folders = originalFolders;
-        if (error.message === 'Failed to add folder') {
+        if (error.message === MESSAGES.FOLDER_ADD_FAILED) {
           throw error;
         }
-        throw new Error('Failed to add folder');
+        throw new Error(MESSAGES.FOLDER_ADD_FAILED);
+
       }
     },
 
@@ -1128,16 +1448,16 @@ export const useMainStore = defineStore('main', {
           this.uiAlert({type: 'success', message: 'Folder updated', autoClear: true});
         } else {
           this.project.folders = originalFolders;
-          this.uiAlert({type: 'error', message: 'Failed to remove folder', autoClear: true});
-          throw new Error('Failed to remove folder');
+          this.uiAlert({type: 'error', message: MESSAGES.FOLDER_REMOVE_FAILED, autoClear: true});
+          throw new Error(MESSAGES.FOLDER_REMOVE_FAILED);
         }
       } catch (error) {
         // Restore original state on any error
         this.project.folders = originalFolders;
-        if (error.message === 'Failed to remove folder') {
+        if (error.message === MESSAGES.FOLDER_REMOVE_FAILED) {
           throw error;
         }
-        throw new Error('Failed to remove folder');
+        throw new Error(MESSAGES.FOLDER_REMOVE_FAILED);
       }
     },
 
@@ -1363,10 +1683,10 @@ export const useMainStore = defineStore('main', {
       } else {
         this.uiAlert({ 
           type: 'error', 
-          message: result.message || 'Failed to load chat',
+          message: result.message || MESSAGES.CHAT_LOAD_FAILED,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to load chat');
+        throw new Error(result.message || MESSAGES.CHAT_LOAD_FAILED);
       }
     },
 
@@ -1392,7 +1712,7 @@ export const useMainStore = defineStore('main', {
         // Optionally show user-friendly error message
         this.uiAlert({ 
           type: 'error', 
-          message: 'Failed to load chats. Please try again.',
+          message: MESSAGES.CHATS_LOAD_FAILED,
           autoClear: true 
         });
       }
