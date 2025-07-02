@@ -353,9 +353,37 @@ export class User{
   static async getUserData(id){
     const userRef = doc(db, "users", id);
     const userDoc = await getDoc(userRef);
-    const userProjects = await this.getProjectsForUser(id)
     
-    return { uid: userDoc.id, ...userDoc.data() , projects: userProjects };
+    if (!userDoc.exists()) {
+      return null;
+    }
+    
+    const userData = userDoc.data();
+    const userProjects = await this.getProjectsForUser(id);
+    
+    // Validate defaultProject consistency: if user has a defaultProject but no project memberships,
+    // clear the defaultProject to handle data inconsistency (e.g., user was removed from all projects)
+    if (userData.defaultProject && userProjects.length === 0) {
+      console.log(`User ${id} has defaultProject "${userData.defaultProject}" but no project memberships. Clearing defaultProject.`);
+      
+      try {
+        // Update the user document in Firestore to clear defaultProject
+        await updateDoc(userRef, { 
+          defaultProject: null,
+          updatedDate: serverTimestamp()
+        });
+        
+        // Update the local data we're returning
+        userData.defaultProject = null;
+        
+        console.log(`Successfully cleared defaultProject for user ${id}`);
+      } catch (error) {
+        console.error(`Failed to clear defaultProject for user ${id}:`, error);
+        // Don't throw error - still return the user data, but log the issue
+      }
+    }
+    
+    return { uid: userDoc.id, ...userData, projects: userProjects };
   }
   
   static async getUserAuth() {
@@ -834,7 +862,7 @@ export class User{
 
 export class Project {
   constructor(value) { 
-    this.name = value.name || ""; // String
+    this.name = value.name || "New Project"; // String
     this.createdBy = value.createdBy || getStore().user.uid;
     this.folders = value.folders || [];
     this.org = value.org || getStore().user.email.split('@')[1];

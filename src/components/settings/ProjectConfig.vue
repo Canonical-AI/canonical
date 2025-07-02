@@ -108,8 +108,8 @@
             </v-alert>
 
             <div v-else class="d-flex justify-end">
-                <v-btn class="mx-1" density="compact" @click="reset()" :disabled="$store.isProjectReadOnly">reset</v-btn>
-                <v-btn class="mx-1" density="compact" v-if="isNewProject" type="submit" color="primary">Initialize</v-btn>
+                <v-btn class="mx-1" density="compact" v-if="!newUserSetup" @click="reset()" :disabled="$store.isProjectReadOnly">reset</v-btn>
+                <v-btn class="mx-1" density="compact" v-if="isNewProject && !newUserSetup" type="submit" color="primary">Initialize</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="!isNewProject && !$store.isProjectReadOnly" type="submit" color="primary">Update</v-btn>
                 <v-btn class="mx-1" density="compact" v-if="$store.isProjectArchived && $store.isProjectAdmin" @click="confirmUnarchive" color="success">Restore Project</v-btn>
                 
@@ -316,6 +316,29 @@ export default {
             },
             immediate: true
         },
+        // Watch for project changes from the store (e.g., after deletion/switching)
+        '$store.project.id': {
+            handler(newProjectId, oldProjectId) {
+                // Only update if this is a different project and not during component setup
+                if (newProjectId && newProjectId !== oldProjectId && !this.isLoading && !this.newUserSetup) {
+                    console.log('Store project changed from', oldProjectId, 'to', newProjectId);
+                    this.updateComponentForNewProject();
+                }
+            },
+            immediate: false  // Don't run on initial load
+        },
+        // Watch for changes in the projects list (e.g., after deletion)
+        '$store.projects': {
+            handler(newProjects, oldProjects) {
+                // Update dropdown options when projects list changes
+                if (newProjects.length !== oldProjects?.length) {
+                    console.log('Projects list changed, updating dropdown');
+                    // Force reactivity for computed dropdown
+                    this.$forceUpdate();
+                }
+            },
+            deep: true
+        }
     },
     async mounted() {
         // Wait for user auth to complete (similar to DocumentCreate.vue)
@@ -339,6 +362,11 @@ export default {
             await this.selectProject(this.$route.params.id)
             this.isNewProject = false
             return
+        }
+
+        // Check if user has no projects and handle appropriately
+        if (this.checkUserProjectAccess()) {
+            return; // checkUserProjectAccess handled the no-projects case
         }
 
         this.isNewProject = this.$store.project === null
@@ -584,6 +612,7 @@ export default {
         },
 
         handleNewProject() {
+            // Check if user can create projects
             if (!this.$store.canCreateProject.allowed) {
                 this.$store.uiAlert({
                     type: 'warning',
@@ -592,7 +621,53 @@ export default {
                 });
                 return;
             }
+            
             this.setupNewProject();
+        },
+
+        checkUserProjectAccess() {
+            // If user has no projects and can create them, show the new project setup
+            if (this.$store.projects.length === 0) {
+                if (this.$store.canCreateProject.allowed) {
+                    console.log('User has no projects, setting up new project flow');
+                    this.setupNewProject();
+                } else {
+                    // User can't create projects and has none - show limitation message
+                    this.$store.uiAlert({
+                        type: 'warning',
+                        message: `${this.$store.canCreateProject.reason} Please contact support or upgrade your account.`,
+                        autoClear: false
+                    });
+                }
+                return true; // Handled the no-projects case
+            }
+            return false; // User has projects, normal flow
+        },
+
+        updateComponentForNewProject() {
+            // Update component state when store project changes (e.g., after deletion)
+            if (this.$store.project?.id && !this.newUserSetup) {
+                console.log('Updating component for new project:', this.$store.project.name);
+                
+                // Update component data to match the new current project
+                this.projectData = { ...this.$store.project };
+                this.selectedFolders = this.projectData.folders.map(folder => folder.name);
+                this.default = { ...this.projectData };
+                this.users = this.$store.project.users || [];
+                this.isNewProject = false;
+                
+                // Update the URL to reflect the new current project
+                if (this.$route.params.id !== this.$store.project.id) {
+                    this.$router.replace({ path: `/settings/project/${this.$store.project.id}` });
+                }
+                
+                // Show a brief notification that we've switched projects
+                this.$store.uiAlert({
+                    type: 'info',
+                    message: `Now viewing: ${this.$store.project.name}`,
+                    autoClear: true
+                });
+            }
         }
     }
 }

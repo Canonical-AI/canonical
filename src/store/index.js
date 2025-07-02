@@ -787,8 +787,11 @@ export const useMainStore = defineStore('main', {
         const result = await Project.delete(projectId);
         
         if (result.success) {
-          // Remove from local projects list
+          // Remove from local projects list  
           this.projects = this.projects.filter(p => p.id !== projectId);
+          
+          // Remove from user's projects list
+          this.user.projects = removeUserProject(this.user.projects, projectId);
           
           // If this was the current project, switch to another project or trigger new user flow
           if (this.project.id === projectId) {
@@ -856,30 +859,82 @@ export const useMainStore = defineStore('main', {
     },
 
     async handleCurrentProjectDeleted() {
+      // Remove from user's projects list first  
+      this.user.projects = removeUserProject(this.user.projects, this.project.id);
+      
       // Find the next available non-archived project
       const availableProjects = this.projects.filter(p => !p.archived);
       
       if (availableProjects.length > 0) {
         // Set the first available project as default
         const nextProject = availableProjects[0];
-        await this.userSetDefaultProject(nextProject.id);
-        await this.projectSet(nextProject.id, true);
+        console.log('Switching to next project:', nextProject.name);
         
-        this.uiAlert({
-          type: 'info',
-          message: MESSAGES.PROJECT_SWITCHED(nextProject.name),
-          autoClear: true
-        });
+        try {
+          // Update default project in database
+          await this.userSetDefaultProject(nextProject.id);
+          
+          // Set the project and force a full refresh
+          const result = await this.projectSet(nextProject.id, true);
+          
+          if (result) {
+            // Force refresh of all project data to ensure components update
+            await this.projectGetAllData();
+            
+            // Force reactive update for any components watching project state
+            this.$patch({
+              project: { ...this.project }
+            });
+            
+            this.uiAlert({
+              type: 'info', 
+              message: MESSAGES.PROJECT_SWITCHED(nextProject.name),
+              autoClear: true
+            });
+          } else {
+            throw new Error('Failed to set new project');
+          }
+        } catch (error) {
+          console.error('Error switching to next project:', error);
+          // If we can't switch to another project, fall back to new user flow
+          this.user.defaultProject = null;
+          this.$patch({
+            project: {
+              id: null,
+              folders: [],
+              name: null,
+              createdBy: null,
+              users: [],
+              invitation: [],
+              projectRole: null,
+            }
+          });
+          // Don't navigate here - let App.vue watcher handle it to avoid double navigation
+        }
       } else {
-        // No projects available, trigger new user flow
+        // No projects available, clear state and let App.vue handle navigation
+        console.log('No projects available, clearing project state');
         this.user.defaultProject = null;
-        router.push(ROUTES.NEW_USER);
+        this.$patch({
+          project: {
+            id: null,
+            folders: [],
+            name: null,
+            createdBy: null,
+            users: [],
+            invitation: [],
+            projectRole: null,
+          }
+        });
         
         this.uiAlert({
           type: 'info',
           message: MESSAGES.PROJECT_CREATE_PROMPT,
           autoClear: true
         });
+        
+        // Don't call router.push here - let App.vue watcher handle navigation
+        // to avoid double navigation calls
       }
     },
 

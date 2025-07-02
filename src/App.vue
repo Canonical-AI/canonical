@@ -429,7 +429,17 @@ export default {
           if (this.$route.path === '/new-user') {
             this.$router.push('/');
           }
-        } else if (newDefaultProject === null && this.$store.loading.user === false && this.$store.isUserLoggedIn === true) {
+        } else if (newDefaultProject === null && 
+                   this.$store.loading.user === false && 
+                   this.$store.isUserLoggedIn === true &&
+                   this.$route.path !== '/new-user' &&
+                   this.$route.path !== '/login') {
+          // Only navigate if:
+          // - User is fully loaded
+          // - User is logged in  
+          // - We're not already on /new-user (avoid loop)
+          // - We're not on login page
+          console.log('User has no default project, navigating to new-user setup');
           this.isNewUser = true;
           this.$router.push('/new-user');
         }

@@ -617,6 +617,108 @@ describe('Project Lifecycle Integration Tests', () => {
       // Should clear project state when no other projects available
       expect(store.user.defaultProject).toBeNull()
     })
+
+    it('should properly switch to next project after deletion and update components', async () => {
+      // Setup user with multiple projects
+      store.userSetData({
+        uid: 'test-user-123',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: 'project-to-delete',
+        projects: [
+          { projectId: 'project-to-delete', status: 'active', role: 'admin' },
+          { projectId: 'remaining-project', status: 'active', role: 'admin' }
+        ]
+      })
+
+      // Setup projects list
+      store.projects = [
+        { id: 'project-to-delete', name: 'Project To Delete', archived: false },
+        { id: 'remaining-project', name: 'Remaining Project', archived: false }
+      ]
+
+      // Set current project to the one being deleted
+      store.project = { id: 'project-to-delete', name: 'Project To Delete' }
+
+      // Mock services
+      mockFirebase.Project.delete.mockResolvedValue({
+        success: true,
+        message: 'Project deleted successfully'
+      })
+
+      mockFirebase.Project.getById.mockResolvedValue({
+        id: 'remaining-project',
+        name: 'Remaining Project',
+        folders: [],
+        users: []
+      })
+
+      // Mock other services that projectGetAllData calls
+      mockFirebase.Document.getAll.mockResolvedValue([])
+      mockFirebase.Task.getAll.mockResolvedValue([])
+      mockFirebase.ChatHistory.getAll.mockResolvedValue([])
+      mockFirebase.Favorites.getAll.mockResolvedValue([])
+
+      // Mock userSetDefaultProject
+      mockFirebase.User.setDefaultProject.mockResolvedValue({
+        success: true
+      })
+
+      const result = await store.projectDelete('project-to-delete')
+
+      expect(result).toBe(true)
+      expect(mockFirebase.Project.delete).toHaveBeenCalledWith('project-to-delete')
+      
+      // Should remove project from projects list
+      expect(store.projects).toHaveLength(1)
+      expect(store.projects[0].id).toBe('remaining-project')
+      
+      // Should remove from user's projects list
+      expect(store.user.projects).toHaveLength(1)
+      expect(store.user.projects[0].projectId).toBe('remaining-project')
+      
+      // Should switch to remaining project
+      expect(store.project.id).toBe('remaining-project')
+      expect(store.user.defaultProject).toBe('remaining-project')
+    })
+
+    it('should navigate to new-user when deleting last project', async () => {
+      // Setup user with only one project
+      store.userSetData({
+        uid: 'test-user-123',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        tier: 'pro',
+        defaultProject: 'last-project',
+        projects: [
+          { projectId: 'last-project', status: 'active', role: 'admin' }
+        ]
+      })
+
+      store.projects = [
+        { id: 'last-project', name: 'Last Project', archived: false }
+      ]
+
+      store.project = { id: 'last-project', name: 'Last Project' }
+
+      mockFirebase.Project.delete.mockResolvedValue({
+        success: true,
+        message: 'Project deleted successfully'
+      })
+
+      const result = await store.projectDelete('last-project')
+
+      expect(result).toBe(true)
+      
+      // Should clear projects list
+      expect(store.projects).toHaveLength(0)
+      expect(store.user.projects).toHaveLength(0)
+      
+      // Should clear current project and default project
+      expect(store.project.id).toBeNull()
+      expect(store.user.defaultProject).toBeNull()
+    })
   })
 
   describe('Project Permissions and Access Control', () => {
