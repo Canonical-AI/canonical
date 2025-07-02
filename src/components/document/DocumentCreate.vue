@@ -411,6 +411,19 @@ export default {
         return;
       }
       
+      // Validate that the comment belongs to the current document
+      if (payload.commentId) {
+        const comment = this.$store.selected?.comments?.find(c => c.id === payload.commentId);
+        if (!comment || comment.documentId !== this.document.id) {
+          console.warn('Ignoring content replacement for comment that does not belong to current document', {
+            commentId: payload.commentId,
+            commentDocId: comment?.documentId,
+            currentDocId: this.document.id
+          });
+          return;
+        }
+      }
+      
       const content = this.document.data.content;
       const newContent = content.replace(payload.contentfrom, payload.contentto);
       this.document.data.content = newContent;
