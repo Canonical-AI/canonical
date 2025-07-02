@@ -373,11 +373,11 @@ export default {
     
     // Clear feedback when document changes
     '$route': {
-      handler(from, to) {
-        if (from.query.id === to.query.id || from.query.v === to.query.v) {
-          return;
+      handler(to, from) {
+        // Clear feedback if document ID changes (from params, not query)
+        if (from?.params?.id !== to?.params?.id) {
+          this.generativeFeedback = null;
         }
-        this.generativeFeedback = null;
       },
       deep: true
     },
@@ -386,6 +386,15 @@ export default {
     // Clear feedback when switching to/from version view
     isViewingVersion() {
       this.generativeFeedback = null;
+    },
+
+    // Clear feedback when document changes (additional safety measure)
+    'document.id': {
+      handler(newId, oldId) {
+        if (newId !== oldId && oldId !== undefined) {
+          this.generativeFeedback = null;
+        }
+      }
     },
   },
 

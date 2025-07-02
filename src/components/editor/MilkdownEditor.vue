@@ -397,15 +397,21 @@ export default {
 
                     const allComments = this.$store.selected.comments || [];
                     const currentVersion = this.$store.selected.currentVersion;
+                    const currentDocumentId = this.$store.selected?.id;
                     
-                    // Filter comments based on current version
+                    // Filter comments: first by document ID, then by current version
+                    // Only filter by document ID if we have a valid current document ID
+                    const documentComments = currentDocumentId 
+                        ? allComments.filter(comment => comment.documentId === currentDocumentId)
+                        : [];
+                    
                     let relevantComments;
                     if (!currentVersion || currentVersion === 'live') {
-                        // If viewing 'live' version, show ALL comments (from all versions)
-                        relevantComments = allComments;
+                        // If viewing 'live' version, show ALL comments for this document (from all versions)
+                        relevantComments = documentComments;
                     } else {
-                        // If viewing a specific version, show only comments for that version
-                        relevantComments = allComments.filter(comment => comment.documentVersion === currentVersion);
+                        // If viewing a specific version, show only comments for that version of this document
+                        relevantComments = documentComments.filter(comment => comment.documentVersion === currentVersion);
                     }
                     
                     // Create a set of valid comment IDs for the current version

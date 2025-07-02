@@ -33,7 +33,11 @@ export const useComments = (eventStore) => {
     }
 
     // 4. Update the document content
-    eventStore.emitEvent('replace-document-content', {contentfrom: selectedText, contentto: contentTo});
+    eventStore.emitEvent('replace-document-content', {
+      contentfrom: contentFrom, 
+      contentto: contentTo,
+      commentId: commentId
+    });
     
     // 4. Resolve the comment
     await store.commentsUpdateData({id: commentId, data: {resolved: true}});

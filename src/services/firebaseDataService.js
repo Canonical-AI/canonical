@@ -1583,6 +1583,7 @@ export class Project {
 export class Comment {
   constructor(value) {
     this.comment = value.comment; 
+    this.documentId = value.documentId || null; // Preserve document ID for proper filtering
     this.documentVersion = value.documentVersion || null;
     this.resolved = value.resolved || false;
     this.parentId = value.parentId || null; // For thread support
