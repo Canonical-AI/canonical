@@ -7,6 +7,10 @@
       dark
       elevate-on-scroll
       >
+      
+      <!-- App Bar Background Elements -->
+      <div class="canonical-background canonical-background--app-bar" :style="appBarBackgroundStyle"></div>
+      <div class="canonical-grain canonical-grain--app-bar" :style="appBarGrainStyle"></div>
 
       <img src="/canonical-logo.svg" alt="Canonical Logo" width="50" height="50" class="ml-3" />
        
@@ -324,7 +328,7 @@
 
 <script>
 import {User} from "./services/firebaseDataService";
-import { useTheme } from 'vuetify'
+import { useBackgroundEffects } from './composables/useBackgroundEffects.js';
 import ChatNav from './components/chat/ChatNav.vue'
 import DocumentTree from "./components/document/DocumentTree.vue";
 import Login from "./components/auth/Login.vue";
@@ -367,8 +371,14 @@ export default {
 
   }),
   setup(){
-    const theme = useTheme()
-    return theme
+    const { theme, backgroundStyle: appBarBackgroundStyle, grainStyle: appBarGrainStyle } = useBackgroundEffects({
+      backgroundBlur: 8,
+      backgroundBrightness: 0.7,
+      backgroundContrast: 1.1,
+      grainOpacity: 0.0 // User set this to 0 in their changes
+    });
+    
+    return { theme, appBarBackgroundStyle, appBarGrainStyle };
   },
   async mounted() {
 
@@ -465,7 +475,6 @@ export default {
 
   },
   computed:{
-
     nonInfoAlerts(){
       return this.$store.globalAlerts
         .filter(a => a.show === true && a.type !== 'info')
@@ -495,7 +504,7 @@ export default {
     },
     switchTheme(themeName) {
       const darkMode = this.$vuetify.theme.themes[themeName].dark;
-      this.global.name.value = themeName; 
+      this.theme.global.name.value = themeName; 
       
       document.documentElement.setAttribute(
         "data-theme",
@@ -592,14 +601,10 @@ export default {
 }
 
 .main-app-bar{
-  //background: linear-gradient(42deg, #2C4560 0%, #4B7D6F 25%, #3A6054 50%, #3A5A7D 75%, #2D1F30 100%) !important;
-  background: linear-gradient(42deg, 
-  rgba(var(--v-theme-surface),1) 0%, 
-  rgba(var(--v-theme-success),1) 45%, 
-  rgba(var(--v-theme-secondary-darken-1),1) 56%, 
-  rgba(var(--v-theme-primary),1) 78%, 
-  rgba(var(--v-theme-surface),1) 100%) !important;
-
+  position: relative;
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface), 0.8) !important;
+  backdrop-filter: blur(10px);
 }
 
 .user-menu{

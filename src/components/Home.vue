@@ -1,8 +1,8 @@
 <template>
   <v-responsive>
-    <v-app class="home-grain">
-      <div class="home-background"></div>
-      <div class="grain-overlay"></div>
+    <v-app>
+      <div class="canonical-background canonical-background--fixed" :style="backgroundStyle"></div>
+      <div class="canonical-grain canonical-grain--fixed" :style="grainStyle"></div>
       <v-main class=" h-100 overflow-y-auto position-relative">
         <v-container v-if="loading">
           <span class="d-flex justify-space-between align-center w-100 mb-5" > <!-- Added justify-space-between and w-100 -->
@@ -55,11 +55,22 @@
 <script>
 import { marked } from 'marked';
 import ReferenceLink from './editor/reference-link/ReferenceLink.vue';
+import { useBackgroundEffects } from '../composables/useBackgroundEffects.js';
 
 export default {
   name: 'Home',
   components: {
     ReferenceLink,
+  },
+  setup() {
+    const { backgroundStyle, grainStyle } = useBackgroundEffects({
+      backgroundBlur: 15,
+      backgroundBrightness: 0.6,
+      backgroundContrast: 1.2,
+      grainOpacity: 0.08
+    });
+    
+    return { backgroundStyle, grainStyle };
   },
   data() {
     return {
@@ -84,7 +95,7 @@ export default {
         .filter(doc => doc.data?.content)
         .sort((a, b) => b.data?.updatedDate?.seconds - a.data?.updatedDate?.seconds)
         .slice(0, 5);
-    }, 
+    }
   },
   watch: {
     favoriteDocuments: {
@@ -186,34 +197,6 @@ export default {
 </script>
 
 <style scoped>
-/* Home Background */
-.home-background {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  background-image: url('/login-background.avif');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  filter: blur(15px) brightness(0.6) contrast(1.2);
-}
-
-/* Grain overlay as a dedicated element */
-.grain-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: url('/grain.png') repeat;
-  opacity: 0.08;
-  pointer-events: none;
-  z-index: 1;
-}
-
 /* Ensure content is readable over background */
 .v-main {
   backdrop-filter: blur(1px);
@@ -232,3 +215,5 @@ export default {
   margin-bottom: .5em;
 }
 </style>
+
+
