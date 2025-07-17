@@ -1,166 +1,171 @@
 <template>
-    <div>
-        <v-menu 
-            v-model="open"
-            :close-on-content-click="false">
-            <template v-slot:activator="{ props: menu }">
-                <div>
-                    <v-tooltip 
-                        v-if="$store.selected.isVersion"
-                        text="toggle released status" 
-                        location="bottom">
+    <div class="d-inline-flex align-center version-pill rounded-full mx-2" @click="handlePillClick">
+        <!-- Collapsed state: Just S/R indicator -->
+        <transition name="app-fade" mode="out-in">
+            <div v-if="!isExpanded" key="collapsed" class="d-flex align-center animate-slide-in-left">
+                <v-tooltip 
+                    :text="$store.selected.isVersion ? 'Click to toggle status and view version controls' : 'Click to view version controls'" 
+                    location="bottom">
+                    <template v-slot:activator="{ props: tooltip }">
+                                                 
+                             <!-- Status indicator -->
+                             <v-btn 
+                                 :disabled="disabled || versionReleasedStatus.status"
+                                 density="compact"
+                                 @click.stop="handleStatusButtonClick"
+                                 :color="versionReleasedStatus.color" 
+                                 class="px-3 py-1 hover-scale rounded-l-full">
+                                 {{ versionReleasedStatus.shortLabel }}
+                             </v-btn>
+    
+                    </template>
+                </v-tooltip>
+            </div>
+
+            <!-- Expanded state: Full controls -->
+            <div v-else key="expanded" class="d-flex align-center animate-slide-in-right" style="gap: 8px; width: 100%;">
+                <!-- Status button (expanded) -->
+                <v-tooltip 
+                    :text="$store.selected.isVersion ? 'toggle released status' : ($store.selected.data?.releasedVersion?.length > 0 ? 'release status' : 'create a version and release it')" 
+                    location="bottom">
+                    <template v-slot:activator="{ props: tooltip }">
+                                            <v-btn 
+                        :disabled="disabled || versionReleasedStatus.status" 
+                        variant="tonal" 
+                        density="compact"
+                        v-bind="tooltip" 
+                        :color="versionReleasedStatus.color" 
+                        class="text-none hover-scale px-3 py-1 rounnded-l-full" 
+                        @click.stop="$store.selected.isVersion ? toggleDraft() : null">
+                        {{ versionReleasedStatus.label }}
+                    </v-btn>
+                    </template>
+                </v-tooltip>
+
+                <!-- Commit UI when there are uncommitted changes -->
+                <div v-if="showCommitUI" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                    <v-tooltip text="uncommitted changes" location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
-                            <v-btn 
-                                v-if="$store.selected.data" 
-                                :disabled="disabled" 
-                                variant="tonal" 
-                                density="compact" 
-                                v-bind="tooltip" 
-                                :color="!versionReleasedStatus ? 'orange' : undefined" 
-                                :text-color="!versionReleasedStatus ? 'white' : undefined" 
-                                class="mx-1 mr-0 text-none rounded-s-pill" 
-                                @click="toggleDraft()">
-                                {{ !versionReleasedStatus ? 'Staged' : 'Released' }}
-                            </v-btn>
+                            <v-icon 
+                                v-bind="tooltip"
+                                color="warning" 
+                                size="small"
+                                class="mx-1"
+                            >
+                                mdi-alert
+                            </v-icon>
                         </template>
                     </v-tooltip>
-                    <v-tooltip 
-                        v-else
-                        :text="$store.selected.data?.releasedVersion?.length > 0 ? 'release status' : 'create a version and release it'" 
-                        location="bottom">
-                        <template v-slot:activator="{ props: tooltip }">
-                            <v-btn 
-                                :disabled="true" 
-                                variant="tonal" 
-                                density="compact" 
-                                v-bind="tooltip" 
-                                :color="$store.selected.data?.releasedVersion?.length > 0 ? undefined : 'orange'" 
-                                :text-color="$store.selected.data?.releasedVersion?.length > 0 ? undefined : 'white'" 
-                                class="mx-1 mr-0 text-none rounded-s-pill" >
-                                {{ $store.selected.data?.releasedVersion?.length > 0 ? 'Released' : 'Staged' }}
-                            </v-btn>
-                        </template>
-                    </v-tooltip>
-                    <!-- Show commit input when there are uncommitted changes -->
-                    <div v-if="showCommitUI" 
-                         class="d-flex align-center rounded-e-pill ml-0 pa-1" 
-                         style="background-color: rgb(var(--v-theme-surface-variant)); border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));">
-                        <v-tooltip text="uncommitted changes" location="bottom">
-                            <template v-slot:activator="{ props: tooltip }">
-                                <v-icon 
-                                    v-bind="tooltip"
-                                    color="warning" 
-                                    size="small"
-                                    class="ml-2 mr-1"
-                                >
-                                    mdi-alert
-                                </v-icon>
-                            </template>
-                        </v-tooltip>
-                        <input
-                            v-model="commitMessage"
-                            placeholder="Commit message..."
-                            class="commit-input flex-grow-1 mr-2"
-                            @keyup.enter="createCommit()"
-                        />
-                        <v-btn 
-                            :disabled="!commitMessage || commitMessage.trim() === '' || disableVersionManagement"
-                            color="success" 
-                            variant="flat"
-                            density="compact"
-                            size="small"
-                            class="text-none mr-1"
-                            @click="createCommit()"
-                        >
-                            Commit
-                        </v-btn>
+                    <input
+                        v-model="commitMessage"
+                        placeholder="Commit message..."
+                        class="commit-input"
+                        @keyup.enter="createCommit()"
+                        @click.stop
+                    />
+                    <v-btn 
+                        :disabled="!commitMessage || commitMessage.trim() === '' || disableVersionManagement"
+                        color="success" 
+                        variant="flat"
+                        density="compact"
+                        size="small"
+                        class="text-none mx-1 hover-scale-small"
+                        @click.stop="createCommit()"
+                    >
+                        Commit
+                    </v-btn>
+                </div>
+
+            <!-- Version controls -->
+
+            <!-- Close button -->
+                         <v-btn 
+                 variant="text" 
+                 density="compact" 
+                 size="small"
+                 icon="mdi-close"
+                 class="ml-2 animate-fade-in-up stagger-3 hover-scale"
+                 @click.stop="toggleExpanded()"
+             ></v-btn>
+            </div>
+        
+        </transition>
+
+        <div class="animate-fade-in-up flex-grow-1 d-flex align-center" @click.stop>
+                <v-menu :close-on-content-click="false">
+                    <template v-slot:activator="{ props: menu }">
                         <v-tooltip text="switch version" location="bottom">
                             <template v-slot:activator="{ props: tooltip }">
                                 <v-btn 
-                                    variant="text" 
+                                    variant="tonal" 
                                     density="compact" 
-                                    size="small"
-                                    icon
-                                    @click.stop="open = !open" 
-                                    v-bind="mergeProps(menu, tooltip)"
-                                >
-                                    <v-icon>mdi-chevron-down</v-icon>
+                                    class="text-none font-weight-bold rounded-r-full px-2 py-1" 
+                                    color="primary"
+                                    style="min-width: 80px;"
+                                    v-bind="mergeProps(menu, tooltip)">
+                                    <v-icon size="small" class="mr-1">mdi-source-branch</v-icon>
+                                    {{ currentVersion }}
+                                    <v-icon size="small" class="ml-1">mdi-chevron-down</v-icon>
                                 </v-btn>
                             </template>
                         </v-tooltip>
-                    </div>
-                    
-                    <!-- Normal version display when no uncommitted changes -->
-                    <v-tooltip v-else text="switch version" location="bottom">
-                        <template v-slot:activator="{ props: tooltip }">
-                            <v-btn 
-                                variant="tonal" 
-                                density="compact" 
-                                class="text-none rounded-e-pill ml-0" 
-                                @click.stop="open = !open" 
-                                v-bind="mergeProps(menu, tooltip)">
-                                {{ currentVersion }}
-                            </v-btn>
-                        </template>
-                    </v-tooltip>
-                </div>
-            </template>
+                    </template>
 
-        <v-card class="pa-2 ma-2" style="min-width: 200px;">
+                    <v-card class="pa-2" style="min-width: 200px;">
+                        <v-select v-if="versions.length > 0 && !creatingVersion"
+                            v-model="selectedVersion"
+                            :items="computedVersions"
+                            :item-title="item => item.versionNumber"
+                            :item-value="item => item.versionNumber"
+                            :key="JSON.stringify(versions)"
+                            label="Select Version"
+                            @update:modelValue="selectVersion"
+                            density="compact"
+                            hide-details="auto"
+                        >
+                          <template v-slot:item="{ props, item }">
+                            <v-list-item v-bind="props">
+                              <template v-slot:append>
+                                <v-icon 
+                                  v-if="!(item.raw?.released)" 
+                                  color="warning" 
+                                  size="small"
+                                >
+                                mdi-pencil
+                                </v-icon>
+                              </template>
+                            </v-list-item>
+                          </template>
+                        </v-select>
+                        <v-text-field v-if="versions.length === 0 || creatingVersion === true"
+                            v-model="newVersion"
+                            label="New Version"
+                            placeholder="v0.0.1"
+                            density="compact"
+                            hide-details="auto"
+                        ></v-text-field>
 
-            <v-select v-if="versions.length > 0 && !creatingVersion"
-                v-model="selectedVersion"
-                :items="computedVersions"
-                :item-title="item => item.versionNumber"
-                :item-value="item => item.versionNumber"
-                :key="JSON.stringify(versions)"
-                label="Select Version"
-                @update:modelValue="selectVersion"
-                density="compact"
-                hide-details="auto"
-            >
-              <template v-slot:item="{ props, item }">
-                <v-list-item v-bind="props">
-                  <template v-slot:append>
-                    <v-icon 
-                      v-if="!(item.raw?.released)" 
-                      color="warning" 
-                      size="small"
-                    >
-                    mdi-pencil
-                    </v-icon>
-                  </template>
-                </v-list-item>
-              </template>
-            </v-select>
-            <v-text-field v-if="versions.length === 0 || creatingVersion === true"
-                v-model="newVersion"
-                label="New Version"
-                placeholder="v0.0.1"
-                density="compact"
-                hide-details="auto"
-            ></v-text-field>
+                        <v-card-actions v-if="!creatingVersion">
+                            <v-btn :disabled="disableVersionManagement" v-if="selectedVersion && selectedVersion != 'live'" color="error" @click="deleteVersion()">Delete</v-btn>      
+                            <v-spacer></v-spacer>        
+                            <v-btn :disabled="disableVersionManagement" class="text-none" color="primary" @click="creatingVersion = true">New</v-btn>
+                       </v-card-actions>
+                        <v-card-actions v-if="creatingVersion">
+                            <v-spacer></v-spacer>        
+                            <v-btn :disabled="disableVersionManagement" class="text-none" @click="creatingVersion = false; newVersion = ''">Back</v-btn>
+                            <v-btn :disabled="disableVersionManagement" v-if="newVersion" class="text-none" color="success" @click="createVersion()">Create</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-menu>
+        </div>
 
-            <v-card-actions v-if=" !creatingVersion">
-                <v-btn :disabled="disableVersionManagement" v-if="selectedVersion && selectedVersion != 'live'" color="error" @click="deleteVersion()">Delete</v-btn>      
-                <v-spacer></v-spacer>        
-                <!-- <v-btn class="text-none" @click="creatingVersion = true">Fork</v-btn>       -->
-                <v-btn :disabled="disableVersionManagement" class="text-none" color="primary" @click="creatingVersion = true">New</v-btn>
-           </v-card-actions>
-            <v-card-actions v-if="creatingVersion">
-                <v-spacer></v-spacer>        
-                <v-btn :disabled="disableVersionManagement" class="text-none" @click="creatingVersion = false; newVersion = ''">Back</v-btn>
-                <v-btn :disabled="disableVersionManagement" v-if="newVersion" class="text-none" color="success" @click="createVersion()">Create</v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-menu>
     </div>
-
 </template>
 
 <script>
 import { Document } from "../../services/firebaseDataService";
 import { mergeProps } from 'vue'
+import { injectAnimations, ANIMATION_TIMING, ANIMATION_PRESETS } from '../../utils/transitions'
 
 export default {
     name: 'VersionModal',
@@ -190,7 +195,12 @@ export default {
             return this.$store.selected?.versions?.find(version => version.versionNumber === this.currentVersion)
         },
         versionReleasedStatus() {
-            return this.versionData?.released ?? false
+            return { 
+                status: this.versionData?.released ?? false,
+                label: this.versionData?.released ? 'Released' : 'Staged',
+                shortLabel: this.versionData?.released ? 'R' : 'S',
+                color: this.versionData?.released ? 'success' : 'warning'
+            }
         },
         showCommitUI() {
             // Show commit UI if user is logged in, on live version, and has uncommitted changes
@@ -201,16 +211,19 @@ export default {
     },
     data() {
         return {
-            open: false,
             creatingVersion: false,
             newVersion: '',
             selectedVersion: null,
             commitMessage: '',
+            isExpanded: false,
         }
     },
     created() {
         this.selectedVersion = this.currentVersion;
+        // Inject global animations
+        injectAnimations();
     },
+
     watch: {
         currentVersion(newVal) {
             this.selectedVersion = newVal;
@@ -240,14 +253,14 @@ export default {
             this.$router.push({ query: { v: this.newVersion }});
             this.creatingVersion = false;
             this.newVersion = '';
-            this.open = false;
+            this.isExpanded = false;
         },
 
         async deleteVersion() {
             await this.$store.deleteVersion(this.selectedVersion);
             this.creatingVersion = false;
             this.newVersion = '';
-            this.open = false;
+            this.isExpanded = false;
             this.selectedVersion = null;
             this.$router.replace({'query': null});
         },
@@ -265,11 +278,31 @@ export default {
             try {
                 await this.$store.createCommit(this.commitMessage);
                 this.commitMessage = '';
-                this.open = false;
+                this.isExpanded = false;
             } catch (error) {
                 console.error('Error creating commit:', error);
             }
         },
+
+        // New methods for expanded/collapsed state
+        toggleExpanded() {
+            this.isExpanded = !this.isExpanded;
+        },
+        handlePillClick() {
+            // Only expand when collapsed, don't interfere with expanded state interactions
+            if (!this.isExpanded) {
+                this.isExpanded = true;
+            }
+        },
+        handleStatusButtonClick() {
+            // Always expand to show more options
+            this.isExpanded = true;
+            
+            // If it's a version, also toggle the draft status
+            if (this.$store.selected.isVersion) {
+                this.toggleDraft();
+            }
+        }
     }
 }
 </script>
@@ -292,6 +325,12 @@ export default {
 .commit-input::placeholder {
   color: rgb(var(--v-theme-on-surface-variant));
   opacity: 0.7;
+}
+
+/* Minimal custom styles - use Tailwind/Vuetify classes where possible */
+.version-pill {
+    background-color: rgb(var(--v-theme-surface-variant));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 </style>
