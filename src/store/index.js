@@ -973,6 +973,7 @@ export const useMainStore = defineStore('main', {
         data: {},
         comments: [],
         versions: [],
+        commits: [],
         isVersion: false,
         currentVersion: 'live',
         isLoading: true 
@@ -993,6 +994,27 @@ export const useMainStore = defineStore('main', {
           selectedData = selectedBase;
         } else {
           selectedData = await Document.getDocById(id);
+          
+          // Auto-redirect demo users to latest version
+          if (!this.isUserLoggedIn && selectedData.versions && selectedData.versions.length > 0) {
+            // Find the most recently created version
+            const sortedVersions = selectedData.versions
+              .filter(v => v.createDate) // Only versions with createDate
+              .sort((a, b) => {
+                const aTime = a.createDate?.seconds || 0;
+                const bTime = b.createDate?.seconds || 0;
+                return bTime - aTime; // Most recent first
+              });
+            
+            if (sortedVersions.length > 0) {
+              const latestVersion = sortedVersions[0];
+              // Redirect to the latest version
+              return { 
+                redirectToVersion: latestVersion.versionNumber,
+                documentId: id 
+              };
+            }
+          }
         }
 
         // Ensure selectedData has the required structure
@@ -1008,6 +1030,11 @@ export const useMainStore = defineStore('main', {
         // Ensure comments array exists
         if (!selectedData.comments) {
           selectedData.comments = [];
+        }
+
+        // Ensure commits array exists
+        if (!selectedData.commits) {
+          selectedData.commits = [];
         }
 
         selectedData.isLoading = false;
@@ -1027,6 +1054,7 @@ export const useMainStore = defineStore('main', {
           data: {},
           comments: [],
           versions: [],
+          commits: [],
           isVersion: false,
           currentVersion: 'live',
           isLoading: false
@@ -1564,6 +1592,84 @@ export const useMainStore = defineStore('main', {
         });
         throw new Error(result.message || 'Failed to toggle version release status');
       }
+    },
+
+    // Commit Management
+    async createCommit(commitMessage) {
+      const result = await Document.createCommit(this.selected.id, this.selected.data, commitMessage);
+      
+      if (result.success) {
+        // Update the commits array in the selected document
+        if (!this.selected.commits) {
+          this.selected.commits = [];
+        }
+        this.selected.commits.push(result.data);
+        
+        this.uiAlert({ 
+          type: 'success', 
+          message: `Commit ${result.data.commitId} created successfully`,
+          autoClear: true 
+        });
+        
+        return result.data;
+      } else {
+        this.uiAlert({ 
+          type: 'error', 
+          message: result.message || 'Failed to create commit',
+          autoClear: true 
+        });
+        throw new Error(result.message || 'Failed to create commit');
+      }
+    },
+
+    hasUncommittedChanges() {
+      // Check if there are changes since the last commit or version
+      if (!this.selected || !this.selected.id) {
+        return false;
+      }
+
+      // Get all commits and versions sorted by creation date
+      const commits = this.selected.commits || [];
+      const versions = this.selected.versions || [];
+      
+      const allItems = [
+        ...commits.map(c => ({ ...c, type: 'commit', createDate: c.createDate })),
+        ...versions.map(v => ({ ...v, type: 'version', createDate: v.createDate }))
+      ].sort((a, b) => {
+        const aTime = a.createDate?.seconds || 0;
+        const bTime = b.createDate?.seconds || 0;
+        return bTime - aTime; // Most recent first
+      });
+
+      if (allItems.length === 0) {
+        // No commits or versions, so any content is uncommitted
+        return !!(this.selected.data?.content && this.selected.data.content.trim() !== '');
+      }
+
+      const mostRecent = allItems[0];
+      const mostRecentContent = mostRecent.content || '';
+      const currentContent = this.selected.data?.content || '';
+
+      // Compare current content with most recent commit/version content
+      return mostRecentContent !== currentContent;
+    },
+
+    getMostRecentCommitOrVersion() {
+      if (!this.selected) return null;
+
+      const commits = this.selected.commits || [];
+      const versions = this.selected.versions || [];
+      
+      const allItems = [
+        ...commits.map(c => ({ ...c, type: 'commit' })),
+        ...versions.map(v => ({ ...v, type: 'version' }))
+      ].sort((a, b) => {
+        const aTime = a.createDate?.seconds || 0;
+        const bTime = b.createDate?.seconds || 0;
+        return bTime - aTime; // Most recent first
+      });
+
+      return allItems[0] || null;
     },
 
     async renameChat(payload) {

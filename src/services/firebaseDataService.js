@@ -1730,12 +1730,19 @@ export class Document {
     
     const commentsRef = collection(documentRef, "comments");
     const commentsSnapshot = await getDocs(commentsRef);
+
+    const commitsRef = collection(documentRef, "commits");
+    const commitsSnapshot = await getDocs(commitsRef);
     
     return {
       id: docSnapshot.id,
       data: docData,
       versions: versionsSnapshot.docs.map(doc => ({
         id: doc.id, 
+        ...doc.data()
+      })),
+      commits: commitsSnapshot.docs.map(doc => ({
+        id: doc.id,
         ...doc.data()
       })),
       comments: commentsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}))
@@ -1959,6 +1966,143 @@ export class Document {
     return snapshot.docs.map(doc => ({
         id: doc.id, 
         ...doc.data()}))[0];
+  }
+
+  ///-----------------------------------
+  /// DOC COMMITS
+  ///-----------------------------------
+  static generateCommitId() {
+    // Generate a short hash similar to git (7 characters)
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 7; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  static async getMostRecentCommitOrVersion(docID) {
+    try {
+      const documentRef = doc(db, "documents", docID);
+      
+      // Get all commits and versions
+      const commitsRef = collection(documentRef, "commits");
+      const versionsRef = collection(documentRef, "versions");
+      
+      const [commitsSnapshot, versionsSnapshot] = await Promise.all([
+        getDocs(commitsRef),
+        getDocs(versionsRef)
+      ]);
+
+      const commits = commitsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'commit',
+        createDate: doc.data().createDate,
+        ...doc.data()
+      }));
+
+      const versions = versionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        type: 'version',
+        createDate: doc.data().createDate,
+        ...doc.data()
+      }));
+
+      // Combine and sort by creation date (most recent first)
+      const allItems = [...commits, ...versions].sort((a, b) => {
+        const aTime = a.createDate?.seconds || 0;
+        const bTime = b.createDate?.seconds || 0;
+        return bTime - aTime;
+      });
+
+      return allItems[0] || null;
+    } catch (error) {
+      console.error('Error getting most recent commit or version:', error);
+      return null;
+    }
+  }
+
+  static async createCommit(docId, versionContent, commitMessage) {
+    try {
+      PermissionHelper.requireAuth();
+
+      if (!commitMessage || commitMessage.trim() === '') {
+        throw new Error('Commit message is required');
+      }
+
+      // Get the current document
+      const documentRef = doc(db, "documents", docId);
+
+      // Get the most recent commit or version to determine parent
+      const mostRecent = await this.getMostRecentCommitOrVersion(docId);
+      
+      let parentId = null;
+      let parentType = null;
+      if (mostRecent) {
+        parentId = mostRecent.type === 'commit' ? mostRecent.commitId : mostRecent.versionNumber;
+        parentType = mostRecent.type;
+      }
+
+      // Generate unique commit ID
+      const commitId = this.generateCommitId();
+
+      // Create a new commit
+      const newCommit = {
+        content: versionContent,
+        createdBy: getStore().user.uid,
+        createDate: serverTimestamp(),
+        commitId: commitId,
+        message: commitMessage.trim(),
+        parentId: parentId,
+        parentType: parentType
+      };
+
+      // Add the new commit to the commits subcollection
+      const commitsRef = collection(documentRef, "commits");
+      const commitRef = await addDoc(commitsRef, newCommit);
+
+      return DataServiceResult.success(
+        { id: commitRef.id, ...newCommit },
+        `Commit ${commitId} created successfully`
+      );
+    } catch (error) {
+      return DataServiceResult.error(error, `Failed to create commit: ${error.message}`);
+    }
+  }
+
+  static async getCommits(docID) {
+    try {
+      const documentRef = doc(db, "documents", docID);
+      const commitsRef = collection(documentRef, "commits");
+      const snapshot = await getDocs(commitsRef);
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error getting commits:', error);
+      return [];
+    }
+  }
+
+  static async getCommit(docID, commitId) {
+    try {
+      const documentRef = doc(db, "documents", docID);
+      const commitsRef = collection(documentRef, "commits");
+      const q = query(commitsRef, where("commitId", "==", commitId));
+      
+      const snapshot = await getDocs(q);
+      const commitData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))[0];
+
+      return commitData || null;
+    } catch (error) {
+      console.error('Error getting commit:', error);
+      return null;
+    }
   }
   
   static async createVersion(docId, versionContent, versionNumber) {

@@ -41,7 +41,57 @@
                             </v-btn>
                         </template>
                     </v-tooltip>
-                    <v-tooltip text="switch version" location="bottom">
+                    <!-- Show commit input when there are uncommitted changes -->
+                    <div v-if="showCommitUI" 
+                         class="d-flex align-center rounded-e-pill ml-0 pa-1" 
+                         style="background-color: rgb(var(--v-theme-surface-variant)); border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));">
+                        <v-tooltip text="uncommitted changes" location="bottom">
+                            <template v-slot:activator="{ props: tooltip }">
+                                <v-icon 
+                                    v-bind="tooltip"
+                                    color="warning" 
+                                    size="small"
+                                    class="ml-2 mr-1"
+                                >
+                                    mdi-alert
+                                </v-icon>
+                            </template>
+                        </v-tooltip>
+                        <input
+                            v-model="commitMessage"
+                            placeholder="Commit message..."
+                            class="commit-input flex-grow-1 mr-2"
+                            @keyup.enter="createCommit()"
+                        />
+                        <v-btn 
+                            :disabled="!commitMessage || commitMessage.trim() === '' || disableVersionManagement"
+                            color="success" 
+                            variant="flat"
+                            density="compact"
+                            size="small"
+                            class="text-none mr-1"
+                            @click="createCommit()"
+                        >
+                            Commit
+                        </v-btn>
+                        <v-tooltip text="switch version" location="bottom">
+                            <template v-slot:activator="{ props: tooltip }">
+                                <v-btn 
+                                    variant="text" 
+                                    density="compact" 
+                                    size="small"
+                                    icon
+                                    @click.stop="open = !open" 
+                                    v-bind="mergeProps(menu, tooltip)"
+                                >
+                                    <v-icon>mdi-chevron-down</v-icon>
+                                </v-btn>
+                            </template>
+                        </v-tooltip>
+                    </div>
+                    
+                    <!-- Normal version display when no uncommitted changes -->
+                    <v-tooltip v-else text="switch version" location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-btn 
                                 variant="tonal" 
@@ -141,6 +191,12 @@ export default {
         },
         versionReleasedStatus() {
             return this.versionData?.released ?? false
+        },
+        showCommitUI() {
+            // Show commit UI if user is logged in, on live version, and has uncommitted changes
+            return this.$store.isUserLoggedIn && 
+                   this.currentVersion === 'live' && 
+                   this.$store.hasUncommittedChanges();
         }
     },
     data() {
@@ -149,6 +205,7 @@ export default {
             creatingVersion: false,
             newVersion: '',
             selectedVersion: null,
+            commitMessage: '',
         }
     },
     created() {
@@ -198,6 +255,21 @@ export default {
         async toggleDraft() {
             await this.$store.toggleVersionReleased({ versionNumber: this.currentVersion, released: !this.versionReleasedStatus });
         },
+
+        async createCommit() {
+            if (!this.commitMessage || this.commitMessage.trim() === '') {
+                this.$store.uiAlert({type: 'error', message: 'Commit message is required', autoClear: true});
+                return;
+            }
+
+            try {
+                await this.$store.createCommit(this.commitMessage);
+                this.commitMessage = '';
+                this.open = false;
+            } catch (error) {
+                console.error('Error creating commit:', error);
+            }
+        },
     }
 }
 </script>
@@ -206,6 +278,20 @@ export default {
 
 .v-btn--size-default{
   padding: 0px 8px !important;
+}
+
+.commit-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: rgb(var(--v-theme-on-surface));
+  min-width: 120px;
+}
+
+.commit-input::placeholder {
+  color: rgb(var(--v-theme-on-surface-variant));
+  opacity: 0.7;
 }
 
 </style>

@@ -479,6 +479,15 @@ export default {
           this.isLoading = false;
           return;
         }
+
+        // Handle auto-redirect for demo users
+        if (result.redirectToVersion && result.documentId) {
+          this.$router.replace({ 
+            path: `/document/${result.documentId}`, 
+            query: { v: result.redirectToVersion } 
+          });
+          return;
+        }
         
         const selectedDocument = this.$store.selected;
         
