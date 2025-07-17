@@ -14,7 +14,7 @@
 
 import { defineStore } from 'pinia'
 import router from '../router'
-import {User, Document, ChatHistory, Favorites, Project, Comment, Task} from '../services/firebaseDataService'
+import {User, Document, ChatHistory, Favorites, Project, Comment, Task, Commit} from '../services/firebaseDataService'
 import { eventStore } from './eventStore'
 import { 
   MESSAGES, 
@@ -168,8 +168,16 @@ export const useMainStore = defineStore('main', {
       version: null,
       comments: [],
       versions: [],
+      commits: [],
       isVersion: false,
-      currentVersion: 'live'
+      currentVersion: 'live',
+    },
+    commit: {
+      currentCommit:null,
+      currentBranch:'main',
+      currentVersion:'live',
+      currentVersionNumber:null,
+      currentVersionTags:[]
     },
     detailClose: 1,
     globalAlerts: [],
@@ -200,7 +208,65 @@ export const useMainStore = defineStore('main', {
     
     filteredDocuments: (state) => filterHelper(Array.isArray(state.documents) ? state.documents : [], state.filter),
     
+    // selected document getters
     isFavorite: (state) => (id) => state.favorites.includes(id),
+
+    documentComments: (state) => {
+      return state.selected.comments
+        .sort((a, b) => a.date?.createDate - b.date?.createDate);
+    },
+
+    currentCommit: (state) => {
+      if (!state.selected.commits || state.selected.commits.length === 0) return null;
+
+      // Sort commits by creation date and return the most recent one
+      const sortedCommits = [...state.selected.commits].sort((a, b) => {
+        const aTime = a.createDate?.seconds || 0;
+        const bTime = b.createDate?.seconds || 0;
+        return bTime - aTime; // Most recent first
+      });
+
+      return sortedCommits[0] || null;
+    },
+    
+    filteredCommentsByVersion: (state) => {
+      if (!state.selected.comments) return [];
+      
+      const currentVersion = state.selected.currentVersion;
+      
+      if (!currentVersion || currentVersion === 'live') {
+        return state.selected.comments
+          .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+      }
+      
+      return state.selected.comments
+        .filter(comment => comment.documentVersion === currentVersion)
+        .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
+    
+    threadedCommentsByVersion() {
+      const filteredComments = this.filteredCommentsByVersion;
+      const threaded = [];
+      const commentMap = new Map();
+      
+      filteredComments.forEach(comment => {
+        commentMap.set(comment.id, { 
+          ...comment, 
+          children: [] 
+        });
+      });
+      
+      filteredComments.forEach(comment => {
+        if (comment.parentId && commentMap.has(comment.parentId)) {
+          commentMap.get(comment.parentId).children.push(commentMap.get(comment.id));
+        } else if (!comment.parentId) {
+          threaded.push(commentMap.get(comment.id));
+        }
+      });
+      
+      return threaded.sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+    },
+
     
     projectFolderTree: (state) => {
       // Ensure documents is an array before trying to map
@@ -247,48 +313,11 @@ export const useMainStore = defineStore('main', {
       return [...(updatedFolders || []), ...ungroupedDocuments];
     },
     
-    documentComments: (state) => {
-      return state.selected.comments
-        .sort((a, b) => a.date?.createDate - b.date?.createDate);
-    },
-    
-    filteredCommentsByVersion: (state) => {
-      if (!state.selected.comments) return [];
-      
-      const currentVersion = state.selected.currentVersion;
-      
-      if (!currentVersion || currentVersion === 'live') {
-        return state.selected.comments
-          .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
-      }
-      
-      return state.selected.comments
-        .filter(comment => comment.documentVersion === currentVersion)
-        .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
-    },
-    
-    threadedCommentsByVersion() {
-      const filteredComments = this.filteredCommentsByVersion;
-      const threaded = [];
-      const commentMap = new Map();
-      
-      filteredComments.forEach(comment => {
-        commentMap.set(comment.id, { 
-          ...comment, 
-          children: [] 
-        });
-      });
-      
-      filteredComments.forEach(comment => {
-        if (comment.parentId && commentMap.has(comment.parentId)) {
-          commentMap.get(comment.parentId).children.push(commentMap.get(comment.id));
-        } else if (!comment.parentId) {
-          threaded.push(commentMap.get(comment.id));
-        }
-      });
-      
-      return threaded.sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
-    },
+  
+
+
+
+
   },
 
   actions: {
@@ -395,7 +424,9 @@ export const useMainStore = defineStore('main', {
         comments: [],
         versions: [],
         isVersion: false,
-        currentVersion: 'live'
+        currentVersion: 'live',
+        currentbranch:'main',
+        currentCommit:null
       };
       this.favorites = [];
       this.tasks = [];
@@ -983,7 +1014,16 @@ export const useMainStore = defineStore('main', {
         let selectedData;
         if (version) {
           let selectedBase = await Document.getDocById(id);
-          let selectedVersion = await Document.getDocVersion(id, version);
+          
+          // Use new getVersionContent method that handles both content-based and tag-based versions
+          let selectedVersion;
+          try {
+            selectedVersion = await Document.getVersionContent(id, version);
+          } catch (error) {
+            // Fallback to old method for backwards compatibility
+            console.warn('Falling back to legacy version loading for version:', version);
+            selectedVersion = await Document.getDocVersion(id, version);
+          }
 
           selectedBase.data = selectedVersion.content;
           if (selectedVersion.markedUpContent) {
@@ -1567,6 +1607,7 @@ export const useMainStore = defineStore('main', {
       }
     },
 
+
     async toggleVersionReleased({ versionNumber, released }) {
       const result = await Document.toggleVersionReleased(this.selected.id, versionNumber, released);
       
@@ -1595,8 +1636,10 @@ export const useMainStore = defineStore('main', {
     },
 
     // Commit Management
-    async createCommit(commitMessage) {
-      const result = await Document.createCommit(this.selected.id, this.selected.data, commitMessage);
+    async createCommit(commitMessage, params = {}) {
+      // get last commit
+      const currentCommit = this.currentCommit;
+      const result = await Commit.create(this.selected.id, this.selected.data, commitMessage, currentCommit?.id, params);
       
       if (result.success) {
         // Update the commits array in the selected document

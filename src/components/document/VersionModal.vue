@@ -12,6 +12,7 @@
                              <v-btn 
                                  :disabled="disabled || versionReleasedStatus.status"
                                  density="compact"
+                                 variant="tonal" 
                                  @click.stop="handleStatusButtonClick"
                                  :color="versionReleasedStatus.color" 
                                  class="px-3 py-1 hover-scale rounded-l-full">
@@ -126,13 +127,27 @@
                           <template v-slot:item="{ props, item }">
                             <v-list-item v-bind="props">
                               <template v-slot:append>
-                                <v-icon 
-                                  v-if="!(item.raw?.released)" 
-                                  color="warning" 
-                                  size="small"
-                                >
-                                mdi-pencil
-                                </v-icon>
+                                <div class="d-flex align-center">
+                                  <!-- Tag-based version indicator -->
+                                  <v-chip 
+                                    v-if="item.raw?.isTagBased"
+                                    size="x-small"
+                                    color="blue"
+                                    variant="outlined"
+                                    class="mr-1"
+                                  >
+                                    <v-icon size="10" class="mr-1">mdi-tag</v-icon>
+                                    tag
+                                  </v-chip>
+                                  <!-- Draft/Released status -->
+                                  <v-icon 
+                                    v-if="!(item.raw?.released)" 
+                                    color="warning" 
+                                    size="small"
+                                  >
+                                  mdi-pencil
+                                  </v-icon>
+                                </div>
                               </template>
                             </v-list-item>
                           </template>
@@ -150,11 +165,54 @@
                             <v-spacer></v-spacer>        
                             <v-btn :disabled="disableVersionManagement" class="text-none" color="primary" @click="creatingVersion = true">New</v-btn>
                        </v-card-actions>
-                        <v-card-actions v-if="creatingVersion">
+                        <v-card-actions v-if="creatingVersion && !taggingCommit">
                             <v-spacer></v-spacer>        
                             <v-btn :disabled="disableVersionManagement" class="text-none" @click="creatingVersion = false; newVersion = ''">Back</v-btn>
                             <v-btn :disabled="disableVersionManagement" v-if="newVersion" class="text-none" color="success" @click="createVersion()">Create</v-btn>
+                            <v-btn :disabled="disableVersionManagement" class="text-none" color="secondary" @click="showCommitTagging()">Tag Commit</v-btn>
                         </v-card-actions>
+
+                        <!-- Commit tagging section -->
+                        <div v-if="taggingCommit" class="mt-2">
+                            <v-divider class="mb-2"></v-divider>
+                            <div class="text-caption mb-2">Tag an existing commit as a version:</div>
+                            
+                            <v-text-field 
+                                v-model="newVersionTag"
+                                label="Version Number"
+                                placeholder="v0.0.1"
+                                density="compact"
+                                hide-details="auto"
+                                class="mb-2"
+                            ></v-text-field>
+                            
+                            <v-select
+                                v-model="selectedCommitId"
+                                :items="availableCommits"
+                                :item-title="item => `${item.commitId.substring(0,7)} - ${item.message}`"
+                                :item-value="item => item.commitId"
+                                label="Select Commit"
+                                density="compact"
+                                hide-details="auto"
+                                class="mb-2"
+                            >
+                              <template v-slot:item="{ props, item }">
+                                <v-list-item v-bind="props">
+                                  <template v-slot:subtitle>
+                                    <div class="text-caption">
+                                      {{ $dayjs(item.raw.createDate?.seconds * 1000).fromNow() }}
+                                    </div>
+                                  </template>
+                                </v-list-item>
+                              </template>
+                            </v-select>
+                            
+                            <v-card-actions>
+                                <v-spacer></v-spacer>        
+                                <v-btn :disabled="disableVersionManagement" class="text-none" @click="cancelCommitTagging()">Cancel</v-btn>
+                                <v-btn :disabled="disableVersionManagement || !newVersionTag || !selectedCommitId" class="text-none" color="success" @click="createVersionTag()">Tag</v-btn>
+                            </v-card-actions>
+                        </div>
                     </v-card>
                 </v-menu>
         </div>
@@ -216,6 +274,11 @@ export default {
             selectedVersion: null,
             commitMessage: '',
             isExpanded: false,
+            // Phase 2: Tag-based versions
+            taggingCommit: false,
+            newVersionTag: '',
+            selectedCommitId: null,
+            availableCommits: [],
         }
     },
     created() {
@@ -301,6 +364,41 @@ export default {
             // If it's a version, also toggle the draft status
             if (this.$store.selected.isVersion) {
                 this.toggleDraft();
+            }
+        },
+
+        // Phase 2: Tag-based version methods
+        async showCommitTagging() {
+            this.taggingCommit = true;
+            this.creatingVersion = false;
+            this.availableCommits = await this.$store.getAvailableCommitsForTagging();
+        },
+
+        cancelCommitTagging() {
+            this.taggingCommit = false;
+            this.newVersionTag = '';
+            this.selectedCommitId = null;
+            this.availableCommits = [];
+            this.creatingVersion = true;
+        },
+
+        async createVersionTag() {
+            if (this.newVersionTag === 'live') {
+                console.warn('cannot name version live');
+                this.$store.uiAlert({type: 'error', message: 'Cannot name version live', autoClear: true});
+                return;
+            }
+
+            try {
+                await this.$store.createVersionTag(this.newVersionTag, this.selectedCommitId);
+                this.$router.push({ query: { v: this.newVersionTag }});
+                this.taggingCommit = false;
+                this.newVersionTag = '';
+                this.selectedCommitId = null;
+                this.availableCommits = [];
+                this.isExpanded = false;
+            } catch (error) {
+                console.error('Error creating version tag:', error);
             }
         }
     }
