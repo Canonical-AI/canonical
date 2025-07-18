@@ -23,6 +23,7 @@
 		"seed:clear": "node scripts/seed-emulator-data.js clear"
 	},
 	"dependencies": {
+		"@gitgraph/js": "^1.4.0",
 		"@mdi/font": "5.9.55",
 		"@milkdown/core": "^7.13.1",
 		"@milkdown/crepe": "^7.5.7",
