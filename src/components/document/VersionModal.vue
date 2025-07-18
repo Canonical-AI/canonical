@@ -44,7 +44,7 @@
                 </v-tooltip>
 
                 <!-- Commit UI when there are uncommitted changes -->
-                <div v-if="showCommitUI" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                <div v-if="showCommitUI && uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
                     <v-tooltip text="uncommitted changes" location="bottom">
                         <template v-slot:activator="{ props: tooltip }">
                             <v-icon 
@@ -53,7 +53,7 @@
                                 size="small"
                                 class="mx-1"
                             >
-                                mdi-alert
+                                mdi-circle-medium
                             </v-icon>
                         </template>
                     </v-tooltip>
@@ -75,6 +75,10 @@
                     >
                         Commit
                     </v-btn>
+                </div>
+
+                <div v-else="showCommitUI && !uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                    no changes
                 </div>
 
             <!-- Version controls -->
@@ -242,6 +246,9 @@ export default {
         }
     },
     computed: {
+        uncommittedChanges() {
+            return this.$store.uncommittedChanges;
+        },
         computedVersions() {
             const versions = this.$store.selected.versions;
             return ['live', ...(Array.isArray(versions) ? versions : [])]

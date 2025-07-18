@@ -160,9 +160,7 @@ export const useMainStore = defineStore('main', {
     projects: [],
     documents: [],
     chats: [],
-    pendingInvitations: [],
-    pendingInvitationsDismissed: false,
-    selected: {
+    selected: { // selected document
       id: null,
       data: {},
       version: null,
@@ -171,14 +169,11 @@ export const useMainStore = defineStore('main', {
       commits: [],
       isVersion: false,
       currentVersion: 'live',
-    },
-    commit: {
-      currentCommit:null,
       currentBranch:'main',
-      currentVersion:'live',
-      currentVersionNumber:null,
-      currentVersionTags:[]
+      currentCommit:null
     },
+    pendingInvitations: [],
+    pendingInvitationsDismissed: false,
     detailClose: 1,
     globalAlerts: [],
     filter: "",
@@ -227,6 +222,10 @@ export const useMainStore = defineStore('main', {
       });
 
       return sortedCommits[0] || null;
+    },
+
+    uncommittedChanges: (state) => {
+      return state.currentCommit.documentContent !== state.selected.data.content || state.currentCommit.documentName !== state.selected.data.name;
     },
     
     filteredCommentsByVersion: (state) => {

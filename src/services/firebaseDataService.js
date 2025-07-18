@@ -2161,7 +2161,8 @@ export class Commit {
       const commit = addInDefaults({
         message: commitMessage,
         parentCommitId: parentCommitId,
-        content: documentData.content,
+        documentName: documentData.name,
+        documentContent: documentData.content,
         versionNumber: params.versionNumber || "",
         branch: params.branch || "main",
         released: params.released || false,
@@ -2178,8 +2179,21 @@ export class Commit {
       const commitRef = await addDoc(collection(documentRef, "commits"), commit);
       console.log(commitRef);
       
+      // Replace serverTimestamp placeholders with client-side timestamps for return
+      const now = Date.now();
+      const firestoreTimestamp = {
+        seconds: Math.floor(now / 1000),
+        nanoseconds: (now % 1000) * 1000000
+      };
+      
+      const returnData = {
+        ...commit,
+        createDate: firestoreTimestamp,
+        updatedDate: firestoreTimestamp
+      };
+      
       return DataServiceResult.success(
-        {id: commitRef.id, ...commit},
+        {id: commitRef.id, ...returnData},
         'Commit created successfully'
       );
     } catch (error) {

@@ -60,6 +60,14 @@
           <v-icon size="16" class="mr-1">mdi-robot</v-icon>
           Chat
         </v-tab>
+        <v-tab 
+          v-if="document.id && $store.isUserLoggedIn" 
+          value="history" 
+          class="text-none"
+        >
+          <v-icon size="16" class="mr-1">mdi-source-branch</v-icon>
+          History
+        </v-tab>
       </v-tabs>
     </div>
 
@@ -94,6 +102,14 @@
           :document-id="document.id"
           :document-content="editorContent"
           @close="activeTab = 'review'"
+        />
+      </div>
+      
+      <!-- History Tab Content -->
+      <div v-else-if="activeTab === 'history'" class="history-tab-content h-100">
+        <CommitHistory
+          :disabled="isDisabled"
+          :document="document"
         />
       </div>
     </div>
@@ -320,6 +336,7 @@ import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
+import CommitHistory from "./CommitHistory.vue";
 import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers";
 import { useEventWatcher } from "../../composables/useEventWatcher";
 import { useComments } from "../../composables/comments";
@@ -334,6 +351,7 @@ export default {
     MilkdownProvider,
     VersionModal,
     ReviewPanel,
+    CommitHistory,
     ChatSidepanel,
   },
   emits: ["scrollToBottom"],
@@ -1255,6 +1273,12 @@ input.h1 {
 
 /* Chat tab content */
 .chat-tab-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* History tab content */
+.history-tab-content {
   display: flex;
   flex-direction: column;
 }

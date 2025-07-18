@@ -97,6 +97,65 @@ After registration, you'll be guided through:
 3. Click **"Generate"** to create an AI-powered template
 4. Customize the generated content as needed
 
+### Document Versions and History
+
+Documents in Canonical automatically track changes through a commit-based version control system similar to git.
+
+#### Accessing Document History
+1. Open any document
+2. Click the document icon in the top-right to open the sidepanel
+3. Navigate to the **History** tab to view:
+   - **Commit timeline**: Visual timeline of all document changes
+   - **Version tags**: Released versions of the document
+   - **Uncommitted changes**: Current working state
+
+#### Creating Commits
+Commits save the current state of your document for version tracking:
+
+1. Make changes to your document
+2. In the History tab, you'll see an "Uncommitted changes" indicator
+3. Click **Commit** or the "Commit" button in the header
+4. Enter a descriptive commit message
+5. Click **Create** to save the current state
+
+**Best Practices for Commit Messages:**
+- Use present tense: "Add new section", "Fix formatting"
+- Be descriptive but concise
+- Reference what changed: "Update pricing table", "Add conclusion paragraph"
+
+#### Creating Versions
+Versions are tagged snapshots that can be released to make documents officially available:
+
+1. Go to the History tab
+2. Click **Version** in the header
+3. Enter a version number (e.g., "v1.0.0", "draft-2")
+4. Click **Create**
+
+You can also tag existing commits as versions by clicking **Tag** next to any commit.
+
+#### Version States
+- **Staged**: Version created but not yet released (shows warning chip)
+- **Released**: Version officially published (shows success chip)
+
+#### Switching Between Versions
+- Click **View** next to any version to switch to that version
+- Use the version selector in the document header
+- Return to "live" to see the latest working version
+
+#### Visual Timeline
+The History tab shows a visual timeline with:
+- **Working changes** (yellow): Current uncommitted edits
+- **Commits** (blue): Saved document states with commit messages
+- **Versions** (green): Tagged releases with version numbers
+- **Current commit** (highlighted): The most recent commit
+
+#### Version Management Actions
+- **Release**: Make a staged version officially available
+- **View**: Switch to view a specific version
+- **Tag**: Convert an existing commit into a version
+
+This system ensures you never lose work and can always return to previous states of your document.
+
 ### Document States
 - **Draft**: Document is not published (shows pencil icon)
 - **Published**: Document has released versions and is visible to all project members
@@ -464,7 +523,7 @@ You can customize, rename, or delete these as needed.
 
 ---
 
-## 🤖 Chat & AI Features
+## �� Chat & AI Features
 
 ### Document Chat
 1. Open any document
