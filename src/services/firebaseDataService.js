@@ -1969,37 +1969,57 @@ export class Document {
   /// DOC COMMITS
   ///-----------------------------------
 
-  static async createVersion(docId, versionContent, versionNumber) {
+  static async createVersion(docId, versionContent, versionNumber, commitId = null, released = false) {
     try {
       PermissionHelper.requireAuth();
 
-      // Get the current document
-      const documentRef = doc(db, "documents", docId);
+      if (commitId) {
+        // New approach: Update existing commit with version information
+        const documentRef = doc(db, "documents", docId);
+        const commitsRef = collection(documentRef, "commits");
+        const commitRef = doc(commitsRef, commitId);
+        
+        // Update the commit with version information
+        const updateData = {
+          versionNumber: versionNumber,
+          released: released
+        };
+        
+        await updateDoc(commitRef, updateData);
+        
+        return DataServiceResult.success(
+          { id: commitId, versionNumber: versionNumber, released: released },
+          `Commit ${commitId} tagged as version ${versionNumber}`
+        );
+      } else {
+        // Legacy approach: Create version document for backwards compatibility
+        const documentRef = doc(db, "documents", docId);
 
-      // Check to make sure version number is unique
-      const versionsRef = collection(documentRef, "versions");
-      const versionsSnapshot = await getDocs(versionsRef);
-      const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
+        // Check to make sure version number is unique
+        const versionsRef = collection(documentRef, "versions");
+        const versionsSnapshot = await getDocs(versionsRef);
+        const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
 
-      // Use ValidationHelper
-      ValidationHelper.validateVersionNumber(existingVersionNumbers, versionNumber);
+        // Use ValidationHelper
+        ValidationHelper.validateVersionNumber(existingVersionNumbers, versionNumber);
 
-      // Create a new version
-      const newVersion = {
-        content: versionContent,
-        createdBy: getStore().user.uid,
-        createDate: serverTimestamp(),
-        versionNumber: versionNumber,
-        released: false,
-      };
+        // Create a new version
+        const newVersion = {
+          content: versionContent,
+          createdBy: getStore().user.uid,
+          createDate: serverTimestamp(),
+          versionNumber: versionNumber,
+          released: released,
+        };
 
-      // Add the new version to the versions subcollection
-      const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
+        // Add the new version to the versions subcollection
+        const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
 
-      return DataServiceResult.success(
-        { id: versionRef.id, ...newVersion },
-        `Version ${versionNumber} created successfully`
-      );
+        return DataServiceResult.success(
+          { id: versionRef.id, ...newVersion },
+          `Version ${versionNumber} created successfully`
+        );
+      }
     } catch (error) {
       return DataServiceResult.error(error, `Failed to create version ${versionNumber}`);
     }

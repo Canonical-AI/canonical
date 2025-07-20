@@ -16,6 +16,7 @@ import { defineStore } from 'pinia'
 import router from '../router'
 import {User, Document, ChatHistory, Favorites, Project, Comment, Task, Commit} from '../services/firebaseDataService'
 import { eventStore } from './eventStore'
+import { MigrationSystem } from './migrations'
 import { 
   MESSAGES, 
   ROUTES, 
@@ -127,6 +128,8 @@ function getCookie(name) {
   return null;
 }
 
+
+
 export const useMainStore = defineStore('main', {
   state: () => ({
     user: {
@@ -225,7 +228,13 @@ export const useMainStore = defineStore('main', {
     },
 
     uncommittedChanges: (state) => {
-      return state.currentCommit.documentContent !== state.selected.data.content || state.currentCommit.documentName !== state.selected.data.name;
+      // If there's no current commit, any content means there are uncommitted changes
+      if (!state.currentCommit) {
+        return !!(state.selected.data?.content && state.selected.data.content.trim() !== '');
+      }
+      
+      return state.currentCommit.documentContent !== state.selected.data.content || 
+             state.currentCommit.documentName !== state.selected.data.name;
     },
     
     filteredCommentsByVersion: (state) => {
@@ -429,6 +438,13 @@ export const useMainStore = defineStore('main', {
       };
       this.favorites = [];
       this.tasks = [];
+    },
+
+    async userMigrate() {
+      // Migration function to handle data structure changes between versions
+      // This runs after user data loads and checks for migration needs
+      const migrationSystem = new MigrationSystem(this);
+      await migrationSystem.runMigrations();
     },
 
     async userGetPendingInvitations() {
@@ -657,6 +673,9 @@ export const useMainStore = defineStore('main', {
         
         if (this.isUserLoggedIn) {
           await this.projectGetAllData();
+          
+          // Run migration after all project data is loaded
+          await this.userMigrate();
         }
 
         return true;
@@ -996,7 +1015,7 @@ export const useMainStore = defineStore('main', {
       return documents;
     },
 
-    async documentsSelect({ id, version = null }) {
+    async documentsSelect({ id, version = null, commitId = null }) {
       // Initialize selected with safe defaults
       this.selected = { 
         id: null,
@@ -1005,13 +1024,39 @@ export const useMainStore = defineStore('main', {
         versions: [],
         commits: [],
         isVersion: false,
+        isCommit: false,
         currentVersion: 'live',
+        currentCommitId: null,
         isLoading: true 
       };
 
       try {
         let selectedData;
-        if (version) {
+        
+        // Handle commit ID selection (new primary method)
+        if (commitId) {
+          selectedData = await Document.getDocById(id);
+          
+          // Find the specific commit
+          const commit = selectedData.commits?.find(c => c.id === commitId);
+          if (!commit) {
+            throw new Error(`Commit with ID ${commitId} not found`);
+          }
+          
+          // Use commit data to populate document
+          selectedData.data = {
+            name: commit.documentName || selectedData.data.name,
+            content: commit.documentContent || commit.content || '',
+            type: selectedData.data.type
+          };
+          
+          selectedData.viewingCommit = commitId;
+          selectedData.isCommit = true;
+          selectedData.currentCommitId = commitId;
+          selectedData.currentVersion = commit.versionNumber || 'commit';
+        }
+        // Handle version selection (backwards compatibility)
+        else if (version) {
           let selectedBase = await Document.getDocById(id);
           
           // Use new getVersionContent method that handles both content-based and tag-based versions
@@ -1031,25 +1076,27 @@ export const useMainStore = defineStore('main', {
           }
           selectedBase.viewingVersion = version;
           selectedData = selectedBase;
-        } else {
+        } 
+        // Handle live document (default)
+        else {
           selectedData = await Document.getDocById(id);
           
-          // Auto-redirect demo users to latest version
-          if (!this.isUserLoggedIn && selectedData.versions && selectedData.versions.length > 0) {
-            // Find the most recently created version
-            const sortedVersions = selectedData.versions
-              .filter(v => v.createDate) // Only versions with createDate
+          // Auto-redirect demo users to latest commit
+          if (!this.isUserLoggedIn && selectedData.commits && selectedData.commits.length > 0) {
+            // Find the most recently created commit
+            const sortedCommits = selectedData.commits
+              .filter(c => c.createDate) // Only commits with createDate
               .sort((a, b) => {
                 const aTime = a.createDate?.seconds || 0;
                 const bTime = b.createDate?.seconds || 0;
                 return bTime - aTime; // Most recent first
               });
             
-            if (sortedVersions.length > 0) {
-              const latestVersion = sortedVersions[0];
-              // Redirect to the latest version
+            if (sortedCommits.length > 0) {
+              const latestCommit = sortedCommits[0];
+              // Redirect to the latest commit
               return { 
-                redirectToVersion: latestVersion.versionNumber,
+                redirectToCommit: latestCommit.id,
                 documentId: id 
               };
             }
@@ -1079,8 +1126,10 @@ export const useMainStore = defineStore('main', {
         selectedData.isLoading = false;
         this.selected = {
           ...selectedData,
-          currentVersion: version || 'live',
-          isVersion: !!version
+          currentVersion: commitId ? (selectedData.currentVersion || 'commit') : (version || 'live'),
+          currentCommitId: commitId || null,
+          isVersion: !!version,
+          isCommit: !!commitId
         };
         
         // Check document versions status after selecting
@@ -1095,7 +1144,9 @@ export const useMainStore = defineStore('main', {
           versions: [],
           commits: [],
           isVersion: false,
+          isCommit: false,
           currentVersion: 'live',
+          currentCommitId: null,
           isLoading: false
         };
         console.error('Error selecting document:', error);
@@ -1105,56 +1156,80 @@ export const useMainStore = defineStore('main', {
 
     async documentsCheckVersionsStatus({ id }) {
       try {
-        const releasedVersions = this.selected.versions.filter(version => version?.released === true).map(version => version.versionNumber);
+        // Get released versions from commits (new commit-based versioning system)
+        const releasedVersions = this.selected.commits
+          ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
+          ?.map(commit => commit.versionNumber) || [];
+
+        // Also check legacy versions array for backwards compatibility
+        const legacyReleasedVersions = this.selected.versions
+          ?.filter(version => version?.released === true)
+          ?.map(version => version.versionNumber) || [];
+
+        // Combine both arrays and remove duplicates
+        const allReleasedVersions = [...new Set([...releasedVersions, ...legacyReleasedVersions])];
         const currentReleasedVersions = this.selected.data.releasedVersion || [];
 
         // Compare arrays by value using JSON.stringify (with sorting for consistent comparison)
-        const releasedVersionsSorted = [...releasedVersions].sort();
+        const releasedVersionsSorted = [...allReleasedVersions].sort();
         const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
         const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
         
         if (!arraysAreEqual || (this.selected.data.draft === true && this.selected.data.releasedVersion && this.selected.data.releasedVersion.length > 0)) {
-          const result1 = await Document.updateDocField(id, 'releasedVersion', releasedVersions);
-          const result2 = await Document.updateDocField(id, 'draft', false);
-          
-          if (result1.success && result2.success) {
-            // Update the local state immediately
-            this.selected.data = {
-              ...this.selected.data,
-              releasedVersion: releasedVersions,
-              draft: false
-            };
-            
-            // Update the document in the documents array to reflect changes
-            const docIndex = this.documents.findIndex(doc => doc.id === id);
-            if (docIndex !== -1) {
-              this.documents[docIndex].data = {
-                ...this.documents[docIndex].data,
-                releasedVersion: releasedVersions,
-                draft: false
-              };
-            }
-          } else {
-            console.error('Failed to update document version status:', result1.error || result2.error);
-          }
-        } else if (this.selected.data.draft === false && (!this.selected.data.releasedVersion || this.selected.data.releasedVersion.length === 0)) {
+          await this.updateDocumentReleasedVersions(id, allReleasedVersions);
+        } else if (allReleasedVersions.length === 0 && (this.selected.data.releasedVersion.length > 0 || this.selected.data.draft === false)) {
           // This is something to protect backwards compatibility, before version releases were implemented
           console.log('setting draft to true');
-          const result1 = await Document.updateDocField(id, 'releasedVersion', []);
-          const result2 = await Document.updateDocField(id, 'draft', true);
-          
-          if (result1.success && result2.success) {
-            this.selected.data = {
-              ...this.selected.data,
-              releasedVersion: [],
-              draft: true
-            };
-          } else {
-            console.error('Failed to update document draft status:', result1.error || result2.error);
-          }
+          await this.updateDocumentReleasedVersions(id, []);
         }
       } catch (error) {
         console.error('Error checking document versions status:', error);
+      }
+    },
+
+    /**
+     * Helper method to update document's releasedVersion and draft fields both in database and local state
+     * This ensures consistency across the application when version data changes
+     */
+    async updateDocumentReleasedVersions(docId, releasedVersions) {
+      try {
+        const isDraft = releasedVersions.length === 0;
+        
+        // Update database fields
+        const result1 = await Document.updateDocField(docId, 'releasedVersion', releasedVersions);
+        const result2 = await Document.updateDocField(docId, 'draft', isDraft);
+        
+        if (result1.success && result2.success) {
+          // Update the local selected document state immediately using immutable approach
+          this.selected.data = {
+            ...this.selected.data,
+            releasedVersion: releasedVersions,
+            draft: isDraft
+          };
+          
+          // Update the document in the documents array to reflect changes using immutable approach
+          const docIndex = this.documents.findIndex(doc => doc.id === docId);
+          if (docIndex !== -1) {
+            this.documents = this.documents.map((doc, index) => 
+              index === docIndex 
+                ? {
+                    ...doc,
+                    data: {
+                      ...doc.data,
+                      releasedVersion: releasedVersions,
+                      draft: isDraft
+                    }
+                  }
+                : doc
+            );
+          }
+          
+          console.log(`Updated document ${docId} releasedVersions:`, releasedVersions, `draft: ${isDraft}`);
+        } else {
+          console.error('Failed to update document version status:', result1.error || result2.error);
+        }
+      } catch (error) {
+        console.error('Error updating document released versions:', error);
       }
     },
 
@@ -1565,15 +1640,55 @@ export const useMainStore = defineStore('main', {
       document.cookie = `folderStatus=${encodeURIComponent(JSON.stringify(folderStatus))}; path=/;`;  
     },
 
-    async createVersion(newVersion) {
-      const result = await Document.createVersion(this.selected.id, this.selected.data, newVersion);
+    async createVersion(newVersion, options = {}) {
+      // Use provided content or current selected document data
+      const versionData = options.content ? { 
+        name: this.selected.data.name,
+        content: options.content,
+        type: this.selected.data.type
+      } : this.selected.data;
+      
+      const result = await Document.createVersion(
+        this.selected.id, 
+        versionData, 
+        newVersion, 
+        options.fromCommitId, 
+        options.released === true
+      );
       
       if (result.success) {
-        // Update the versions array in the selected document
-        if (!this.selected.versions) {
-          this.selected.versions = [];
+        // If this was created from a commit, update the local commits array
+        if (options.fromCommitId && this.selected.commits) {
+          const commitIndex = this.selected.commits.findIndex(c => c.id === options.fromCommitId);
+          if (commitIndex !== -1) {
+            // Create new array with updated commit object to ensure reactivity
+            this.selected.commits = this.selected.commits.map((commit, index) => 
+              index === commitIndex 
+                ? { ...commit, versionNumber: newVersion, released: options.released === true }
+                : commit
+            );
+          }
+        } else {
+          // Legacy: Update the versions array in the selected document for backwards compatibility
+          if (!this.selected.versions) {
+            this.selected.versions = [];
+          }
+          
+          const versionObj = {
+            ...result.data,
+            versionNumber: newVersion
+          };
+          
+          this.selected.versions.push(versionObj);
         }
-        this.selected.versions.push(newVersion);
+        
+        // Always recalculate releasedVersions based on all commits after version creation/update
+        const releasedVersions = this.selected.commits
+          ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
+          ?.map(commit => commit.versionNumber) || [];
+        
+        // Update document releasedVersion field directly
+        await this.updateDocumentReleasedVersions(this.selected.id, releasedVersions);
         
         return newVersion;
       } else {
@@ -1586,51 +1701,108 @@ export const useMainStore = defineStore('main', {
       }
     },
 
-    async deleteVersion(selectedVersion) {
-      const result = await Document.deleteVersion(this.selected.id, selectedVersion);
-      
-      if (result.success) {
-        // Update the versions array in the selected document
-        if (this.selected.versions) {
-          this.selected.versions = this.selected.versions.filter(version => version !== selectedVersion);
+
+
+
+    async toggleCommitVersionRelease({ commitId, released }) {
+      try {
+        // Update the commit's released status
+        const result = await Commit.setCommitParams(this.selected.id, commitId, {
+          released: released
+        });
+        
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to update commit');
         }
         
-        return selectedVersion;
-      } else {
+        // Update local commits array using immutable approach for proper reactivity
+        if (this.selected.commits) {
+          const commitIndex = this.selected.commits.findIndex(c => c.id === commitId);
+          if (commitIndex !== -1) {
+            // Create new array with updated commit object to ensure reactivity
+            this.selected.commits = this.selected.commits.map((commit, index) => 
+              index === commitIndex 
+                ? { ...commit, released: released }
+                : commit
+            );
+          }
+        }
+        
+        // Calculate new releasedVersions based on all released version commits
+        const releasedVersions = this.selected.commits
+          ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
+          ?.map(commit => commit.versionNumber) || [];
+        
+        // Update document releasedVersion field directly
+        await this.updateDocumentReleasedVersions(this.selected.id, releasedVersions);
+        
+        const commit = this.selected.commits?.find(c => c.id === commitId);
+        const versionNumber = commit?.versionNumber;
+        
         this.uiAlert({ 
-          type: 'error', 
-          message: result.message || 'Failed to delete version',
+          type: 'success', 
+          message: `Version ${versionNumber} ${released ? 'released' : 'unreleased'}`,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to delete version');
+        
+        return { commitId, versionNumber, released };
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: error.message || 'Failed to update version release status',
+          autoClear: true 
+        });
+        throw error;
       }
     },
 
-
-    async toggleVersionReleased({ versionNumber, released }) {
-      const result = await Document.toggleVersionReleased(this.selected.id, versionNumber, released);
-      
-      if (result.success) {
-        // Update the versions array in the selected document
-        if (this.selected.versions) {
-          this.selected.versions = this.selected.versions.map(version => 
-            version.versionNumber === versionNumber ? { 
-              ...version, released: released
-            } : version
-          );
+    async removeCommitVersionTag({ commitId, versionNumber }) {
+      try {
+        // Remove version tagging from commit
+        const result = await Commit.setCommitParams(this.selected.id, commitId, {
+          versionNumber: null,
+          released: false
+        });
+        
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to update commit');
         }
         
-        // Check document versions status after toggle
-        await this.documentsCheckVersionsStatus({ id: this.selected.id });
+        // Update local commits array using immutable approach for proper reactivity
+        if (this.selected.commits) {
+          const commitIndex = this.selected.commits.findIndex(c => c.id === commitId);
+          if (commitIndex !== -1) {
+            // Create new array with updated commit object to ensure reactivity
+            this.selected.commits = this.selected.commits.map((commit, index) => 
+              index === commitIndex 
+                ? { ...commit, versionNumber: null, released: false }
+                : commit
+            );
+          }
+        }
         
-        return { versionNumber, released };
-      } else {
+        // Calculate new releasedVersions based on remaining released version commits
+        const releasedVersions = this.selected.commits
+          ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
+          ?.map(commit => commit.versionNumber) || [];
+        
+        // Update document releasedVersion field directly
+        await this.updateDocumentReleasedVersions(this.selected.id, releasedVersions);
+        
         this.uiAlert({ 
-          type: 'error', 
-          message: result.message || 'Failed to toggle version release status',
+          type: 'success', 
+          message: `Version ${versionNumber} removed`,
           autoClear: true 
         });
-        throw new Error(result.message || 'Failed to toggle version release status');
+        
+        return { commitId, versionNumber };
+      } catch (error) {
+        this.uiAlert({ 
+          type: 'error', 
+          message: error.message || 'Failed to remove version tag',
+          autoClear: true 
+        });
+        throw error;
       }
     },
 
@@ -1647,9 +1819,24 @@ export const useMainStore = defineStore('main', {
         }
         this.selected.commits.push(result.data);
         
+        // If this commit was created with version information, update document status immediately
+        if (params.versionNumber) {
+          // Calculate new releasedVersions based on all released version commits
+          const releasedVersions = this.selected.commits
+            ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
+            ?.map(commit => commit.versionNumber) || [];
+          
+          // Update document releasedVersion field directly
+          await this.updateDocumentReleasedVersions(this.selected.id, releasedVersions);
+        }
+        
+        const successMessage = params.versionNumber 
+          ? `Version ${params.versionNumber} created with commit ${result.data.commitId}`
+          : `Commit ${result.data.commitId} created successfully`;
+          
         this.uiAlert({ 
           type: 'success', 
-          message: `Commit ${result.data.commitId} created successfully`,
+          message: successMessage,
           autoClear: true 
         });
         

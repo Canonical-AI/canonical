@@ -91,7 +91,27 @@
                 </div>
 
                 <div v-else="showCommitUI && !uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                    <v-tooltip 
+                        v-if="canTagCurrentCommit" 
+                        text="Tag current commit as version" 
+                        location="bottom"
+                    >
+                        <template v-slot:activator="{ props }">
+                            <v-btn
+                                v-bind="props"
+                                color="success"
+                                density="compact"
+                                class="text-none hover-scale px-3 py-1"
+                                variant="tonal"
+                                @click="openCreateVersionDialog"
+                            >
+                                <v-icon size="small" class="mr-1">mdi-tag-plus</v-icon>
+                                Tag Version
+                            </v-btn>
+                        </template>
+                    </v-tooltip>
                     <v-btn
+                        v-else
                         color="success"
                         density="compact"
                         class="text-none hover-scale px-3 py-1"
@@ -103,6 +123,20 @@
             </div>
         
         </transition>
+
+        <!-- Return to Live button when viewing a commit -->
+        <div v-if="currentCommitId" class="d-flex align-center mx-2" @click.stop>
+            <v-btn
+                color="primary"
+                variant="outlined"
+                density="compact"
+                class="text-none return-to-live-btn"
+                @click="returnToLive"
+            >
+                <v-icon size="small" class="mr-1">mdi-home</v-icon>
+                Return to Live
+            </v-btn>
+        </div>
 
         <div class="animate-fade-in-up flex-grow-1 d-flex align-center" @click.stop>
                 <v-menu :close-on-content-click="false">
@@ -125,13 +159,13 @@
                     </template>
 
                     <v-card class="pa-2" style="min-width: 200px;">
-                        <v-select v-if="versions.length > 0 && !creatingVersion"
+                        <v-select v-if="computedVersions.length > 1 && !creatingVersion"
                             v-model="selectedVersion"
                             :items="computedVersions"
-                            :item-title="item => item.versionNumber"
-                            :item-value="item => item.versionNumber"
-                            :key="JSON.stringify(versions)"
-                            label="Select Version"
+                            :item-title="item => item.displayName || item.versionNumber || item"
+                            :item-value="item => item.value || item.versionNumber || item"
+                            :key="JSON.stringify(computedVersions)"
+                            label="Select Version/Commit"
                             @update:modelValue="selectVersion"
                             density="compact"
                             hide-details="auto"
@@ -164,7 +198,7 @@
                             </v-list-item>
                           </template>
                         </v-select>
-                        <v-text-field v-if="versions.length === 0 || creatingVersion === true"
+                        <v-text-field v-if="computedVersions.filter(v => v.type === 'version').length === 0 || creatingVersion === true"
                             v-model="newVersion"
                             label="New Version"
                             placeholder="v0.0.1"
@@ -203,6 +237,16 @@
                             hide-details="auto"
                         ></v-text-field>
             
+            <v-alert 
+                v-if="!uncommittedChanges && canTagCurrentCommit"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="my-2"
+            >
+                Current commit will be tagged as this version
+            </v-alert>
+            
             <v-switch 
                 color="success"
                 v-model="newVersionRelease"
@@ -237,14 +281,11 @@
 import { Document } from "../../services/firebaseDataService";
 import { mergeProps } from 'vue'
 import { injectAnimations, ANIMATION_TIMING, ANIMATION_PRESETS } from '../../utils/transitions'
+import { useVersionCreation } from './composables/useVersionCreation'
 
 export default {
     name: 'VersionModal',
     props: {
-        versions: {
-            type: Array,
-            default: () => []
-        },
         disabled: {
             type: Boolean,
             default: false
@@ -252,6 +293,23 @@ export default {
         currentVersion: {
             type: String,
             default: 'live'
+        },
+        currentCommitId: {
+            type: String,
+            default: null
+        }
+    },
+    setup() {
+        const { 
+            createVersion: createVersionFromComposable, 
+            getSuggestedVersionNumber, 
+            canTagCurrentCommit 
+        } = useVersionCreation()
+        
+        return {
+            createVersionFromComposable,
+            getSuggestedVersionNumber,
+            canTagCurrentCommit
         }
     },
     computed: {
@@ -259,14 +317,45 @@ export default {
             return this.$store.uncommittedChanges;
         },
         computedVersions() {
-            const versions = this.$store.selected.versions;
-            return ['live', ...(Array.isArray(versions) ? versions : [])]
+            const commits = this.$store.selected.commits || [];
+            
+            // Create items for commits with version numbers (versions) and regular commits
+            const versionItems = commits
+              .filter(c => c.versionNumber)
+              .map(c => ({
+                ...c,
+                type: 'version',
+                displayName: `${c.versionNumber} - ${c.message || 'Untitled'}`,
+                value: c.versionNumber,
+                versionNumber: c.versionNumber
+              }));
+            
+            const commitItems = commits
+              .filter(c => !c.versionNumber)
+              .map(c => ({
+                ...c,
+                type: 'commit',
+                displayName: `${c.message || 'Untitled'} (${c.id.substring(0, 8)})`,
+                value: c.id
+              }));
+            
+            // Combine with live option and sort versions first
+            return [
+                { type: 'live', displayName: 'live', value: 'live' },
+                ...versionItems,
+                ...commitItems
+            ];
         }, 
         disableVersionManagement() {
             return !this.$store.isUserLoggedIn
         },
         versionData() {
-            return this.$store.selected?.versions?.find(version => version.versionNumber === this.currentVersion)
+            // If we're viewing a specific commit, find that commit
+            if (this.currentCommitId) {
+                return this.$store.selected?.commits?.find(commit => commit.id === this.currentCommitId)
+            }
+            // Otherwise, find commit with the current version number
+            return this.$store.selected?.commits?.find(commit => commit.versionNumber === this.currentVersion)
         },
         versionReleasedStatus() {
             return { 
@@ -277,10 +366,11 @@ export default {
             }
         },
         showCommitUI() {
-            // Show commit UI if user is logged in, on live version, and has uncommitted changes
+            // Show commit UI if user is logged in, on live version (not viewing commit/version), and has uncommitted changes
             return this.$store.isUserLoggedIn && 
                    this.currentVersion === 'live' && 
-                   this.$store.hasUncommittedChanges();
+                   !this.currentCommitId &&
+                   this.uncommittedChanges;
         }
     },
     data() {
@@ -300,14 +390,20 @@ export default {
         }
     },
     created() {
-        this.selectedVersion = this.currentVersion;
+        // Set initial selected version based on current state
+        this.selectedVersion = this.currentCommitId || this.currentVersion;
         // Inject global animations
         injectAnimations();
     },
 
     watch: {
         currentVersion(newVal) {
-            this.selectedVersion = newVal;
+            if (!this.currentCommitId) {
+                this.selectedVersion = newVal;
+            }
+        },
+        currentCommitId(newVal) {
+            this.selectedVersion = newVal || this.currentVersion;
         }
     },
     methods: {
@@ -319,26 +415,44 @@ export default {
             if (this.selectedVersion === 'live') {
                 this.$router.replace({'query': null});
             } else {
-                this.$router.push({ query: { v: this.selectedVersion }})
+                // Check if selected item is a commit ID or version number
+                const selectedItem = this.computedVersions.find(item => 
+                    item.value === this.selectedVersion || item.versionNumber === this.selectedVersion
+                );
+                
+                if (selectedItem && selectedItem.type === 'commit') {
+                    // Navigate to commit
+                    this.$router.push({ query: { c: this.selectedVersion }});
+                } else if (selectedItem && selectedItem.type === 'version') {
+                    // For versions, find the commit that has this version number and navigate to it
+                    const commits = this.$store.selected.commits || [];
+                    
+                    const associatedCommit = commits.find(commit => 
+                        commit.versionNumber === selectedItem.versionNumber
+                    );
+                    
+                    if (associatedCommit) {
+                        // Navigate to the commit that has this version number
+                        this.$router.push({ query: { c: associatedCommit.id }});
+                    } else {
+                        // Fallback to version navigation if no associated commit found
+                        this.$router.push({ query: { v: this.selectedVersion }});
+                    }
+                } else {
+                    // Fallback for unknown types
+                    this.$router.push({ query: { v: this.selectedVersion }});
+                }
             }
         },
 
-        async createVersion() {
-            if (this.newVersion === 'live') {
-                console.warn('cannont name version live');
-                this.$store.uiAlert({type: 'error', message: 'Cannot name version live', autoClear: true});
-                return;
-            }
-                
-            await this.$store.createVersion(this.newVersion);
-            this.$router.push({ query: { v: this.newVersion }});
-            this.creatingVersion = false;
-            this.newVersion = '';
-            this.isExpanded = false;
-        },
+
 
         // Shared dialog methods
         openCreateVersionDialog() {
+            // Pre-fill with suggested version number if none exists
+            if (!this.newVersion) {
+                this.newVersion = this.getSuggestedVersionNumber();
+            }
             this.showCreateVersionDialog = true;
         },
 
@@ -349,12 +463,32 @@ export default {
         },
 
         async handleCreateVersion() {
-            await this.createVersion();
-            this.closeCreateVersionDialog();
+            try {
+                await this.createVersionFromComposable({
+                    versionNumber: this.newVersion,
+                    released: this.newVersionRelease,
+                    commitMessage: this.commitMessage
+                });
+                this.closeCreateVersionDialog();
+            } catch (error) {
+                console.error('Error creating version:', error);
+            }
         },
 
         async deleteVersion() {
-            await this.$store.deleteVersion(this.selectedVersion);
+            // Find the commit with this version number and remove its version tagging
+            const commitWithVersion = this.$store.selected.commits?.find(c => c.versionNumber === this.selectedVersion);
+            if (commitWithVersion) {
+                try {
+                    await this.$store.removeCommitVersionTag({
+                        commitId: commitWithVersion.id,
+                        versionNumber: this.selectedVersion
+                    });
+                } catch (error) {
+                    console.error('Error removing version tag:', error);
+                }
+            }
+            
             this.creatingVersion = false;
             this.newVersion = '';
             this.isExpanded = false;
@@ -363,7 +497,16 @@ export default {
         },
 
         async toggleDraft() {
-            await this.$store.toggleVersionReleased({ versionNumber: this.currentVersion, released: !this.versionReleasedStatus });
+            if (this.versionData) {
+                try {
+                    await this.$store.toggleCommitVersionRelease({
+                        commitId: this.versionData.id,
+                        released: !this.versionData.released
+                    });
+                } catch (error) {
+                    console.error('Error toggling version release:', error);
+                }
+            }
         },
 
         async createCommit() {
@@ -399,6 +542,11 @@ export default {
             if (this.$store.selected.isVersion) {
                 this.toggleDraft();
             }
+        },
+
+        // Return to live document method
+        returnToLive() {
+            this.$router.replace({'query': null});
         },
 
         // Phase 2: Tag-based version methods
@@ -463,6 +611,23 @@ export default {
 .version-pill {
     background-color: rgb(var(--v-theme-surface-variant));
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Pulse animation for return to live button */
+.return-to-live-btn {
+    animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(var(--v-theme-primary), 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0);
+    }
 }
 
 </style>

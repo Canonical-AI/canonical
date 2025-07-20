@@ -15,13 +15,13 @@
         >
           <template v-slot:activator="{ props }">
             <v-btn
-              :disabled="disabled"
+              :disabled="disabled || !commitMessage || commitMessage.trim() === ''"
               color="success"
               variant="flat"
               density="compact"
               class="text-none hover-scale rounded-none"
               v-bind="props"
-              @click="showCommitDialog = true"
+              @click="createCommit"
             >
               <v-icon size="16" class="mr-1">mdi-source-commit</v-icon>
               Commit
@@ -52,8 +52,12 @@
     v-model="commitMessage" 
     placeholder="Commit message..."
     density="compact" 
-    class="p-4"
-    hide-details="auto"></v-text-field>
+    variant="outlined"
+    class="mx-4 mb-2"
+    hide-details
+    single-line
+    style="max-height: 40px;"
+    flat></v-text-field>
 
     <!-- Enhanced Git-style Commit Timeline -->
     <div class="commit-timeline flex-grow-1 overflow-y-auto px-4">
@@ -183,19 +187,31 @@
                         size="x-small"
                         variant="text"
                         class="text-caption px-1"
-                        @click="switchToVersion(item.data.versionNumber)"
+                        @click="item.type === 'version' ? switchToVersion(item.data.versionNumber) : switchToCommit(item.data.id)"
                       >
                         <v-icon size="10">mdi-eye</v-icon>
                       </v-btn>
+                      <!-- Release button for unreleased versions -->
                       <v-btn
                         v-if="!item.data.released"
                         size="x-small"
                         variant="text"
                         color="success"
                         class="text-caption px-1"
-                        @click="toggleVersionRelease(item.data)"
+                        @click="toggleCommitVersionRelease(item.data)"
                       >
                         <v-icon size="10">mdi-rocket-launch</v-icon>
+                      </v-btn>
+                      <!-- Unrelease button for released versions -->
+                      <v-btn
+                        v-if="item.data.released"
+                        size="x-small"
+                        variant="text"
+                        color="warning"
+                        class="text-caption px-1"
+                        @click="toggleCommitVersionRelease(item.data)"
+                      >
+                        <v-icon size="10">mdi-rocket-launch-outline</v-icon>
                       </v-btn>
                     </div>
                   </div>
@@ -235,15 +251,24 @@
                       >
                         <v-icon size="10">mdi-eye</v-icon>
                       </v-btn>
-                      <v-btn
+                      <v-tooltip 
                         v-if="!item.data.versionNumber"
-                        size="small"
-                        variant="text"
-                        class="text-caption px-1"
-                        @click="tagCommitAsVersion(item.data)"
+                        text="Convert commit to version" 
+                        location="bottom"
                       >
-                        <v-icon size="10">mdi-tag-plus</v-icon>
-                      </v-btn>
+                        <template v-slot:activator="{ props }">
+                          <v-btn
+                            v-bind="props"
+                            size="small"
+                            variant="text"
+                            color="secondary"
+                            class="text-caption px-1"
+                            @click="tagCommitAsVersion(item.data)"
+                          >
+                            <v-icon size="10">mdi-tag-plus</v-icon>
+                          </v-btn>
+                        </template>
+                      </v-tooltip>
                   </div>
   
                   
@@ -275,105 +300,70 @@
       </div>
     </div>
 
-    <!-- Commit Dialog -->
-    <v-dialog v-model="showCommitDialog" max-width="400">
-      <v-card>
-        <v-card-title class="text-h6 pa-4">
-          <v-icon class="mr-2">mdi-source-commit</v-icon>
-          Create Commit
-        </v-card-title>
-        <v-card-text class="pa-4 pt-0">
-          <v-textarea
-            v-model="commitMessage"
-            label="Commit message"
-            placeholder="Describe your changes..."
-            rows="3"
-            variant="outlined"
-            density="compact"
-            hide-details="auto"
-            class="mb-3"
-          ></v-textarea>
-          <div class="text-caption text-disabled d-flex align-center">
-            <v-icon size="14" class="mr-1">mdi-information-outline</v-icon>
-            This will create a new commit with your current changes
-          </div>
-        </v-card-text>
-        <v-card-actions class="pa-4 pt-0">
-          <v-spacer></v-spacer>
-          <v-btn 
-            variant="text" 
-            density="compact"
-            class="text-none"
-            @click="showCommitDialog = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            :disabled="!commitMessage || commitMessage.trim() === ''"
-            color="primary"
-            density="compact"
-            class="text-none"
-            @click="createCommit"
-          >
-            <v-icon size="16" class="mr-1">mdi-source-commit</v-icon>
-            Commit
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- Version Dialog -->
+    <!-- Version Dialog - Exact same as VersionModal.vue -->
     <v-dialog v-model="showVersionDialog" max-width="500">
-      <v-card title="Create a Version" class="p-4">
-        <v-text-field
-          v-model="versionNumber"
-          label="Version Number"
-          placeholder="v0.0.1"
-          density="compact"
-        ></v-text-field>
-        
-        <v-text-field 
-          v-if="uncommittedChanges"
-          v-model="commitMessageForVersion"
-          label="Commit Message"
-          placeholder="Commit message..."
-          density="compact"
-          hide-details="auto"
-        ></v-text-field>
-        
-        <v-switch 
-          color="success"
-          v-model="versionRelease"
-          density="compact"
-        >
-          <template v-slot:label>
-            {{ versionRelease ? 'Version will release to project readers' : 'Staged, visible only to collaborators' }}
-          </template>
-        </v-switch>
+        <v-card title="Create a Version" class="p-4">
+            <v-text-field 
+                label="Version Number" 
+                placeholder="v0.0.1" 
+                density="compact" 
+                v-model="versionNumber"
+            ></v-text-field>
+            
+            <v-text-field 
+                v-if="uncommittedChanges && !selectedCommitForVersion"
+                v-model="commitMessageForVersion"
+                label="Commit Message"
+                placeholder="Commit message..."
+                density="compact"
+                hide-details="auto"
+            ></v-text-field>
+            
+            <v-alert 
+                v-if="!uncommittedChanges && !selectedCommitForVersion && canTagCurrentCommit"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="my-2"
+            >
+                Current commit will be tagged as this version
+            </v-alert>
+            
+            <v-switch 
+                color="success"
+                v-model="versionRelease"
+                density="compact"
+            >
+                <template v-slot:label>
+                    {{ versionRelease ? 'Version will release to project readers' : 'Staged, visible only to collaborators' }}
+                </template>
+            </v-switch>
 
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn
-            text="Close"
-            class="text-none"
-            variant="tonal"
-            @click="closeVersionDialog"
-          ></v-btn>
-          <v-btn
-            text="Create"
-            color="success"
-            class="text-none"
-            variant="elevated"
-            :disabled="!versionNumber || versionNumber.trim() === ''"
-            @click="createVersion"
-          ></v-btn>
-        </v-card-actions>
-      </v-card>
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn
+                    text="Close"
+                    class="text-none"
+                    variant="tonal"
+                    @click="closeVersionDialog"
+                ></v-btn>
+                <v-btn
+                    text="Create"
+                    color="success"
+                    class="text-none"
+                    variant="elevated"
+                    :disabled="!versionNumber || versionNumber.trim() === ''"
+                    @click="createVersion"
+                ></v-btn>
+            </v-card-actions>
+        </v-card>
     </v-dialog>
   </div>
 </template>
 
 <script>
+import { useVersionCreation } from './composables/useVersionCreation'
+
 export default {
   name: "CommitHistory",
   props: {
@@ -386,55 +376,56 @@ export default {
       required: true
     }
   },
+  setup() {
+    const { 
+      createVersion: createVersionFromComposable, 
+      getSuggestedVersionNumber, 
+      canTagCurrentCommit,
+      uncommittedChanges 
+    } = useVersionCreation()
+    
+    return {
+      createVersionFromComposable,
+      getSuggestedVersionNumber,
+      canTagCurrentCommit,
+      uncommittedChanges
+    }
+  },
   data() {
     return {
-      showCommitDialog: false,
       showVersionDialog: false,
       commitMessage: '',
       versionNumber: '',
       versionRelease: false,
       commitMessageForVersion: '',
+      selectedCommitForVersion: null, // Store commit data when converting to version
     };
   },
   computed: {
     commits() {
       return this.$store.selected?.commits || [];
     },
-    versions() {
-      return this.$store.selected?.versions || [];
-    },
     currentBranch() {
       return this.$store.selected?.currentBranch || 'main';
     },
-    uncommittedChanges() {
-      return this.$store.uncommittedChanges;
-    },
+
     showCommitUI() {
       return this.$store.isUserLoggedIn && 
              this.$store.selected.currentVersion === 'live' && 
              this.$store.uncommittedChanges;
     },
     timeline() {
-      // Combine commits and versions into a single timeline
-      const commits = this.commits.map(commit => ({
+      // Convert commits to timeline items, marking those with version numbers as versions
+      const items = this.commits.map(commit => ({
         id: commit.id,
-        type: 'commit',
+        type: commit.versionNumber ? 'version' : 'commit',
         data: commit,
         sortDate: commit.createDate?.seconds || 0,
         isCurrent: this.isCurrentCommit(commit)
       }));
 
-      const versions = this.versions.map(version => ({
-        id: version.id,
-        type: 'version',
-        data: version,
-        sortDate: version.createDate?.seconds || 0,
-        isCurrent: false
-      }));
-
-      // Combine and sort by date (newest first)
-      return [...commits, ...versions]
-        .sort((a, b) => b.sortDate - a.sortDate);
+      // Sort by date (newest first)
+      return items.sort((a, b) => b.sortDate - a.sortDate);
     }
   },
   methods: {
@@ -451,38 +442,31 @@ export default {
       try {
         await this.$store.createCommit(this.commitMessage);
         this.commitMessage = '';
-        this.showCommitDialog = false;
       } catch (error) {
         console.error('Error creating commit:', error);
       }
     },
 
     async createVersion() {
-      if (!this.versionNumber || this.versionNumber.trim() === '') {
-        return;
-      }
-
-      if (this.versionNumber === 'live') {
-        this.$store.uiAlert({
-          type: 'error',
-          message: 'Cannot name version "live"',
-          autoClear: true
-        });
-        return;
-      }
-
       try {
-        // If there are uncommitted changes and a commit message, create a commit first
-        if (this.uncommittedChanges && this.commitMessageForVersion && this.commitMessageForVersion.trim() !== '') {
-          await this.$store.createCommit(this.commitMessageForVersion);
+        // Check if we're creating from a specific commit
+        if (this.selectedCommitForVersion) {
+          await this.createVersionFromComposable({
+            versionNumber: this.versionNumber,
+            released: this.versionRelease,
+            fromCommit: this.selectedCommitForVersion,
+            stayOnCommit: true // Stay on the commit after tagging
+          });
+        } else {
+          // Standard version creation - use composable logic to handle both cases
+          await this.createVersionFromComposable({
+            versionNumber: this.versionNumber,
+            released: this.versionRelease,
+            commitMessage: this.commitMessageForVersion
+          });
         }
-
-        const newVersionNumber = this.versionNumber;
-        await this.$store.createVersion(newVersionNumber, { released: this.versionRelease });
-        this.closeVersionDialog();
         
-        // Optionally switch to the new version
-        this.$router.push({ query: { v: newVersionNumber }});
+        this.closeVersionDialog();
       } catch (error) {
         console.error('Error creating version:', error);
       }
@@ -493,40 +477,62 @@ export default {
       this.versionNumber = '';
       this.versionRelease = false;
       this.commitMessageForVersion = '';
+      this.selectedCommitForVersion = null; // Reset commit selection
     },
 
     switchToVersion(versionNumber) {
       if (versionNumber === 'live') {
         this.$router.replace({'query': null});
       } else {
-        this.$router.push({ query: { v: versionNumber }});
+        // Find the commit that has this version number and navigate to it
+        const associatedCommit = this.commits.find(commit => 
+          commit.versionNumber === versionNumber
+        );
+        
+        if (associatedCommit) {
+          // Navigate to the commit that has this version number
+          this.$router.push({ query: { c: associatedCommit.id }});
+        } else {
+          // Fallback to version navigation if no associated commit found
+          this.$router.push({ query: { v: versionNumber }});
+        }
       }
     },
 
-    async toggleVersionRelease(version) {
+    async toggleCommitVersionRelease(commit) {
       try {
-        await this.$store.toggleVersionReleased({
-          versionNumber: version.versionNumber,
-          released: !version.released
+        await this.$store.toggleCommitVersionRelease({
+          commitId: commit.id,
+          released: !commit.released
         });
       } catch (error) {
-        console.error('Error toggling version release:', error);
+        console.error('Error toggling commit version release:', error);
       }
     },
 
     viewCommit(commit) {
-      // For now, just show an alert with commit details
-      // Could be expanded to show a diff view
-      this.$store.uiAlert({
-        type: 'info',
-        message: `Commit: ${commit.message}\nID: ${commit.commitId}`,
-        autoClear: true
-      });
+      // Navigate to view the commit content
+      this.switchToCommit(commit.id);
+    },
+
+    switchToCommit(commitId) {
+      if (commitId) {
+        this.$router.push({ query: { c: commitId }});
+      } else {
+        // If no commit ID, go to live version
+        this.$router.replace({'query': null});
+      }
     },
 
     tagCommitAsVersion(commit) {
-      // Pre-fill the version dialog when tagging a commit
-      this.versionNumber = `v${this.versions.length + 1}.0.0`;
+      // Store the commit data for the dialog
+      this.selectedCommitForVersion = commit;
+      
+      // Pre-fill version number using composable
+      this.versionNumber = this.getSuggestedVersionNumber();
+      this.versionRelease = false;
+      
+      // Show the proper version dialog
       this.showVersionDialog = true;
     }
   }
