@@ -1081,6 +1081,17 @@ export const useMainStore = defineStore('main', {
         else {
           selectedData = await Document.getDocById(id);
           
+          // Check and migrate document versions if needed (when document is opened)
+          if (this.isUserLoggedIn ) {
+            try {
+              const migrationSystem = new MigrationSystem(this);
+              await migrationSystem.checkDocumentMigrationOnOpen(selectedData);
+            } catch (migrationError) {
+              console.error('Document migration check failed:', migrationError);
+              // Don't block document opening if migration fails
+            }
+          }
+          
           // Auto-redirect demo users to latest commit
           if (!this.isUserLoggedIn && selectedData.commits && selectedData.commits.length > 0) {
             // Find the most recently created commit
@@ -1123,7 +1134,7 @@ export const useMainStore = defineStore('main', {
           selectedData.commits = [];
         }
 
-        selectedData.isLoading = false;
+        
         this.selected = {
           ...selectedData,
           currentVersion: commitId ? (selectedData.currentVersion || 'commit') : (version || 'live'),
@@ -1131,6 +1142,19 @@ export const useMainStore = defineStore('main', {
           isVersion: !!version,
           isCommit: !!commitId
         };
+
+        // Quick check if document might need migration (avoid unnecessary reads)
+        if (this.isUserLoggedIn) {
+          try {
+            const migrationSystem = new MigrationSystem(this);
+            await migrationSystem.checkSelectedDocumentMigration();
+          } catch (migrationError) {
+            console.error('Document migration check failed:', migrationError);
+            // Don't block document opening if migration fails
+          }
+        }
+
+        selectedData.isLoading = false;
         
         // Check document versions status after selecting
         await this.documentsCheckVersionsStatus({ id: this.selected.id });

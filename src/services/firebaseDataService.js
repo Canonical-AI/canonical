@@ -422,7 +422,7 @@ export class User{
         unsubscribe(); // Unsubscribe immediately to prevent multiple listeners
         
         if (!user) {
-          console.log('user not logged in');
+          console.warn('user not logged in');
           return resolve(null);
         }
 
@@ -1619,6 +1619,7 @@ export class Document {
     }
 
     if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      console.warn('User is not a member of this project');
       getStore().uiAlert({
         type: 'error',
         message: 'You are not a member of this project',
