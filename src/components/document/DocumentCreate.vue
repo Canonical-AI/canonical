@@ -1,12 +1,14 @@
 <template>
+  <div>
   <v-navigation-drawer
     v-model="drawer"
     location="right"
     width="400"
     :temporary="!drawer"
     class="h-100 d-flex flex-column sidepanel-container"
+    :class="{ 'invisible': !drawer}"
   >
-    <!-- Fixed header section -->
+
     <div class="drawer-header flex-shrink-0">
       <v-card-actions class="py-0" density="compact" style="min-height: 32px;">
         <v-btn flat icon="mdi-close" @click="drawer = false" density="compact"></v-btn>
@@ -327,6 +329,7 @@
       </div>
     </v-fade-transition>
   </div>
+</div>
 </template>
 
 <script>
