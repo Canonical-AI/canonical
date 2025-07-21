@@ -2269,15 +2269,7 @@ export class Commit {
   }
 
 
-  // static async migrateVersionToCommit(docID, versionNumber) {
-  //   // update versions to commits for backwards compatibility
-  //   //TODO finish this
-  //   try {
-  //     PermissionHelper.requireAuth();
-      
-      
-  //   }
-  // }
+
 
 
 

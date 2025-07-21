@@ -1154,7 +1154,8 @@ export const useMainStore = defineStore('main', {
           }
         }
 
-        selectedData.isLoading = false;
+        // Set loading to false after all operations complete
+        this.selected.isLoading = false;
         
         // Check document versions status after selecting
         await this.documentsCheckVersionsStatus({ id: this.selected.id });
@@ -1180,30 +1181,22 @@ export const useMainStore = defineStore('main', {
 
     async documentsCheckVersionsStatus({ id }) {
       try {
-        // Get released versions from commits (new commit-based versioning system)
+        // Get released versions from commits (commit-based versioning system)
         const releasedVersions = this.selected.commits
           ?.filter(commit => commit.versionNumber && commit.versionNumber.trim() !== '' && commit.released)
           ?.map(commit => commit.versionNumber) || [];
 
-        // Also check legacy versions array for backwards compatibility
-        const legacyReleasedVersions = this.selected.versions
-          ?.filter(version => version?.released === true)
-          ?.map(version => version.versionNumber) || [];
-
-        // Combine both arrays and remove duplicates
-        const allReleasedVersions = [...new Set([...releasedVersions, ...legacyReleasedVersions])];
         const currentReleasedVersions = this.selected.data.releasedVersion || [];
 
         // Compare arrays by value using JSON.stringify (with sorting for consistent comparison)
-        const releasedVersionsSorted = [...allReleasedVersions].sort();
+        const releasedVersionsSorted = [...releasedVersions].sort();
         const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
         const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
         
         if (!arraysAreEqual || (this.selected.data.draft === true && this.selected.data.releasedVersion && this.selected.data.releasedVersion.length > 0)) {
-          await this.updateDocumentReleasedVersions(id, allReleasedVersions);
-        } else if (allReleasedVersions.length === 0 && (this.selected.data.releasedVersion.length > 0 || this.selected.data.draft === false)) {
-          // This is something to protect backwards compatibility, before version releases were implemented
-          console.log('setting draft to true');
+          await this.updateDocumentReleasedVersions(id, releasedVersions);
+        } else if (releasedVersions.length === 0 && (this.selected.data.releasedVersion.length > 0 || this.selected.data.draft === false)) {
+          // Set draft status when no released versions exist
           await this.updateDocumentReleasedVersions(id, []);
         }
       } catch (error) {
@@ -1692,18 +1685,6 @@ export const useMainStore = defineStore('main', {
                 : commit
             );
           }
-        } else {
-          // Legacy: Update the versions array in the selected document for backwards compatibility
-          if (!this.selected.versions) {
-            this.selected.versions = [];
-          }
-          
-          const versionObj = {
-            ...result.data,
-            versionNumber: newVersion
-          };
-          
-          this.selected.versions.push(versionObj);
         }
         
         // Always recalculate releasedVersions based on all commits after version creation/update
@@ -1876,53 +1857,30 @@ export const useMainStore = defineStore('main', {
     },
 
     hasUncommittedChanges() {
-      // Check if there are changes since the last commit or version
+      // Check if there are changes since the last commit
       if (!this.selected || !this.selected.id) {
         return false;
       }
 
-      // Get all commits and versions sorted by creation date
-      const commits = this.selected.commits || [];
-      const versions = this.selected.versions || [];
+      const currentCommit = this.currentCommit;
       
-      const allItems = [
-        ...commits.map(c => ({ ...c, type: 'commit', createDate: c.createDate })),
-        ...versions.map(v => ({ ...v, type: 'version', createDate: v.createDate }))
-      ].sort((a, b) => {
-        const aTime = a.createDate?.seconds || 0;
-        const bTime = b.createDate?.seconds || 0;
-        return bTime - aTime; // Most recent first
-      });
-
-      if (allItems.length === 0) {
-        // No commits or versions, so any content is uncommitted
+      if (!currentCommit) {
+        // No commits exist, so any content means there are uncommitted changes
         return !!(this.selected.data?.content && this.selected.data.content.trim() !== '');
       }
 
-      const mostRecent = allItems[0];
-      const mostRecentContent = mostRecent.content || '';
+      // Compare current content with most recent commit content
+      const mostRecentContent = currentCommit.documentContent || '';
       const currentContent = this.selected.data?.content || '';
+      const mostRecentName = currentCommit.documentName || '';
+      const currentName = this.selected.data?.name || '';
 
-      // Compare current content with most recent commit/version content
-      return mostRecentContent !== currentContent;
+      return mostRecentContent !== currentContent || mostRecentName !== currentName;
     },
 
-    getMostRecentCommitOrVersion() {
+    getMostRecentCommit() {
       if (!this.selected) return null;
-
-      const commits = this.selected.commits || [];
-      const versions = this.selected.versions || [];
-      
-      const allItems = [
-        ...commits.map(c => ({ ...c, type: 'commit' })),
-        ...versions.map(v => ({ ...v, type: 'version' }))
-      ].sort((a, b) => {
-        const aTime = a.createDate?.seconds || 0;
-        const bTime = b.createDate?.seconds || 0;
-        return bTime - aTime; // Most recent first
-      });
-
-      return allItems[0] || null;
+      return this.currentCommit;
     },
 
     async renameChat(payload) {
