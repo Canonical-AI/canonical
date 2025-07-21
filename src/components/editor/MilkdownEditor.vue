@@ -487,12 +487,7 @@ export default {
                         }
                     });
 
-                    // If viewing a version and marks were updated, save the markedUpContent
-                    if (marksUpdated && this.$store.selected.currentVersion !== 'live') {
-                        this.$nextTick(() => {
-                            this.saveMarkedUpContent();
-                        });
-                    }
+
                 } catch (error) {
                     console.warn('Error syncing comment marks:', error);
                 }
@@ -563,30 +558,6 @@ export default {
                     }
                 } catch (error) {
                     console.warn('Error removing all comment marks:', error);
-                }
-            });
-        },
-
-        // Method to save marked up content when viewing a version
-        //TODO: this needs to update when viewing a commit
-        saveMarkedUpContent() {
-            if (this.$store.selected.currentVersion === 'live') {
-                return;
-            }
-
-            this.safeEditorAction((ctx) => {
-                const view = ctx.get(editorViewCtx);
-                const parser = ctx.get(parserCtx);
-                
-                // Get the current markdown content including comment marks
-                const currentMarkdown = this.getCurrentMarkdown();
-                
-                if (currentMarkdown) {
-                    this.$store.updateMarkedUpContent({
-                        docID: this.$store.selected.id,
-                        versionContent: currentMarkdown,
-                        versionNumber: this.$store.selected.currentVersion
-                    });
                 }
             });
         },
@@ -803,12 +774,6 @@ export default {
                     this.processContentBeforeRender(newVal);
                 }
 
-                if (this.$store.selected.currentVersion !== 'live' && !this.loading) {
-                    this.$store.updateMarkedUpContent({
-                        docID: this.$store.selected.id, 
-                        versionContent: this.$store.selected.data.content, 
-                        versionNumber: this.$store.selected.currentVersion});
-                    }
 
                 // Sync comment marks when document content changes (only if user is logged in)
                 if (!this.loading && this.isUserLoggedIn) {

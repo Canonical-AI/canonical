@@ -1952,19 +1952,6 @@ export class Document {
 
 
 
-  ///-----------------------------------
-  /// DOC VERSIONS
-  ///-----------------------------------  
-  static async getDocVersion(docID, versionNumber){
-    const documentRef = doc(db, "documents", docID);
-    const versionsRef = collection(documentRef, "versions");
-    const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-    
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-        id: doc.id, 
-        ...doc.data()}))[0];
-  }
 
   ///-----------------------------------
   /// DOC COMMITS
@@ -2025,90 +2012,6 @@ export class Document {
       return DataServiceResult.error(error, `Failed to create version ${versionNumber}`);
     }
   }
-  
-  static async deleteVersion(docId, versionNumber) {
-    try {
-      PermissionHelper.requireAuth();
-
-      const documentRef = doc(db, "documents", docId);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
-      
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await deleteDoc(versionDocRef);
-        
-        return DataServiceResult.success(
-          { docId, versionNumber },
-          `Version ${versionNumber} deleted successfully`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
-    } catch (error) {
-      return DataServiceResult.error(error, `Failed to delete version ${versionNumber}`);
-    }
-  } 
-
-
-  static async updateMarkedUpContent(docID, versionContent, versionNumber) {
-    try {
-      PermissionHelper.requireAuth();
-      
-      const documentRef = doc(db, "documents", docID);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
-      
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await updateDoc(versionDocRef, {
-          markedUpContent: versionContent,
-          updatedDate: serverTimestamp()
-        });
-        
-        return DataServiceResult.success(
-          { docID, versionNumber, markedUpContent: versionContent },
-          `Marked up content updated for version ${versionNumber}`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
-    } catch (error) {
-      return DataServiceResult.error(error, `Failed to update marked up content for version ${versionNumber}`);
-    }
-  }
-
-  static async toggleVersionReleased(docID, versionNumber, released) {
-    try {
-      PermissionHelper.requireAuth();
-      
-      const documentRef = doc(db, "documents", docID);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
-      
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await updateDoc(versionDocRef, {
-          released: released,
-          updatedDate: serverTimestamp()
-        });
-        
-        const action = released ? 'released' : 'unreleased';
-        return DataServiceResult.success(
-          { docID, versionNumber, released },
-          `Version ${versionNumber} ${action} successfully`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
-    } catch (error) {
-      return DataServiceResult.error(error, `Failed to toggle release status for version ${versionNumber}`);
-    }
-  }
-
 
 }
 

@@ -1969,31 +1969,6 @@ export const useMainStore = defineStore('main', {
       }
     },
 
-    async updateMarkedUpContent({ docID, versionContent, versionNumber }) {
-      if (this.selected.id === null || this.selected.currentVersion === 'live') { 
-        return; 
-      }
-      
-      const result = await Document.updateMarkedUpContent(docID, versionContent, versionNumber);
-      
-      if (result.success) {
-        // Update the content in the selected document if we're viewing this document
-        if (this.selected.id === docID) {
-          this.selected.data = { 
-            ...this.selected.data, 
-            content: versionContent 
-          };
-        }
-      } else {
-        this.uiAlert({ 
-          type: 'error', 
-          message: result.message || 'Failed to update marked up content',
-          autoClear: true 
-        });
-        throw new Error(result.message || 'Failed to update marked up content');
-      }
-    },
-
     async toggleFavorite(docId) {
       const index = this.favorites.indexOf(docId);
       let newFavorites;

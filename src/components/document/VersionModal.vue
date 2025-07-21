@@ -291,14 +291,6 @@ export default {
         disabled: {
             type: Boolean,
             default: false
-        },
-        currentVersion: {
-            type: String,
-            default: 'live'
-        },
-        currentCommitId: {
-            type: String,
-            default: null
         }
     },
     setup() {
@@ -315,6 +307,13 @@ export default {
         }
     },
     computed: {
+        // new computed values replacing removed props
+        currentVersion() {
+            return this.$store?.selected?.currentVersion || 'live';
+        },
+        currentCommitId() {
+            return this.$route?.query?.c || null;
+        },
         uncommittedChanges() {
             return this.$store.uncommittedChanges;
         },

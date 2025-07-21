@@ -128,9 +128,6 @@
       class="-mr-5"
       :disabled="isDisabled"
       :key="document.id"
-      :versions="document.versions"
-      :current-version="$route.query.v || 'live'"
-      :current-commit-id="$route.query.c"
     />
     
     <!-- Show template button for new documents -->
