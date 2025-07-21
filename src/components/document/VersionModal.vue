@@ -26,7 +26,9 @@
             <div v-else key="expanded" class="d-flex align-center animate-slide-in-right" style="gap: 8px; width: 100%;">
                 <!-- Status button (expanded) -->
                 <v-tooltip 
-                    :text="$store.selected.isVersion ? 'toggle released status' : ($store.selected.data?.releasedVersion?.length > 0 ? 'a version of this document has been released to project readers' : 'no versions have been released to project readers')" 
+                    :text="currentCommitId && currentCommitData ? 
+                        (currentCommitData.versionNumber ? 'Toggle this version release status' : 'This commit has no version number') :
+                        (documentHasReleasedVersions ? 'This document has released versions available to project readers' : 'This document has no released versions - all versions are drafts')" 
                     location="bottom">
                     <template v-slot:activator="{ props: tooltip }">
                                             <v-btn 
@@ -349,22 +351,54 @@ export default {
         disableVersionManagement() {
             return !this.$store.isUserLoggedIn
         },
-        versionData() {
-            // If we're viewing a specific commit, find that commit
-            if (this.currentCommitId) {
-                return this.$store.selected?.commits?.find(commit => commit.id === this.currentCommitId)
-            }
-            // Otherwise, find commit with the current version number
-            return this.$store.selected?.commits?.find(commit => commit.versionNumber === this.currentVersion)
+        
+        // Simplified: Current commit data when viewing a specific commit
+        currentCommitData() {
+            if (!this.currentCommitId) return null;
+            return this.$store.selected?.commits?.find(commit => commit.id === this.currentCommitId) || null;
         },
+        
+        // Simplified: Document released status
+        documentHasReleasedVersions() {
+            const releasedVersions = this.$store.selected?.data?.releasedVersion || [];
+            return releasedVersions.length > 0;
+        },
+        
+        // Simplified: Version status for display
         versionReleasedStatus() {
-            return { 
-                status: this.versionData?.released ?? false,
-                label: this.versionData?.released ? 'Released' : 'Staged',
-                shortLabel: this.versionData?.released ? 'R' : 'S',
-                color: this.versionData?.released ? 'success' : 'warning'
+            // Case 1: Viewing a specific commit - show that commit's release status
+            if (this.currentCommitId && this.currentCommitData) {
+                const isReleased = this.currentCommitData.released || false;
+                const hasVersion = this.currentCommitData.versionNumber || false;
+                
+                // If commit has no version number, show different status
+                if (!hasVersion) {
+                    return {
+                        status: false,
+                        label: 'No Version',
+                        shortLabel: 'C',
+                        color: 'secondary'
+                    };
+                }
+                
+                return {
+                    status: isReleased,
+                    label: isReleased ? 'Released' : 'Staged',
+                    shortLabel: isReleased ? 'R' : 'S',
+                    color: isReleased ? 'success' : 'warning'
+                };
             }
+            
+            // Case 2: Viewing live document - show if document has any released versions
+            const hasReleased = this.documentHasReleasedVersions;
+            return {
+                status: hasReleased,
+                label: hasReleased ? 'Has Released' : 'Draft',
+                shortLabel: hasReleased ? 'P' : 'D', // P = Published, D = Draft
+                color: hasReleased ? 'success' : 'warning'
+            };
         },
+        
         showCommitUI() {
             // Show commit UI if user is logged in, on live version (not viewing commit/version), and has uncommitted changes
             return this.$store.isUserLoggedIn && 
@@ -497,16 +531,22 @@ export default {
         },
 
         async toggleDraft() {
-            if (this.versionData) {
+            // Case 1: Viewing a specific commit with a version - toggle that commit's release status
+            if (this.currentCommitId && this.currentCommitData && this.currentCommitData.versionNumber) {
                 try {
                     await this.$store.toggleCommitVersionRelease({
-                        commitId: this.versionData.id,
-                        released: !this.versionData.released
+                        commitId: this.currentCommitData.id,
+                        released: !this.currentCommitData.released
                     });
                 } catch (error) {
-                    console.error('Error toggling version release:', error);
+                    console.error('Error toggling commit version release:', error);
                 }
+                return;
             }
+            
+            // Case 2: Viewing live document or commit without version - no toggle action available
+            // This could be expanded in the future if needed
+            console.log('Toggle not available for current view');
         },
 
         async createCommit() {
@@ -538,8 +578,8 @@ export default {
             // Always expand to show more options
             this.isExpanded = true;
             
-            // If it's a version, also toggle the draft status
-            if (this.$store.selected.isVersion) {
+            // If viewing a commit with a version, also toggle the release status
+            if (this.currentCommitId && this.currentCommitData && this.currentCommitData.versionNumber) {
                 this.toggleDraft();
             }
         },
