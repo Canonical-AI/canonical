@@ -362,6 +362,26 @@ describe('Version Management Integration Tests (Commit-Based System)', () => {
          true
        )
      })
+
+    it('should handle document without releasedVersion field gracefully', async () => {
+      // Simulate a document that doesn't have releasedVersion field (undefined)
+      store.selected.data = {
+        name: 'Test Document',
+        content: 'Current document content',
+        draft: true
+        // releasedVersion is undefined
+      }
+
+      // Should not throw error when releasedVersion is undefined
+      await expect(store.documentsCheckVersionsStatus({ id: 'test-doc-123' })).resolves.not.toThrow()
+
+      // Should update document with released versions from commits
+      expect(mockDocument.updateDocField).toHaveBeenCalledWith(
+        'test-doc-123',
+        'releasedVersion',
+        ['v1.0.0']
+      )
+    })
   })
 
   describe('Uncommitted Changes Detection', () => {
@@ -429,6 +449,81 @@ describe('Version Management Integration Tests (Commit-Based System)', () => {
       
       const currentCommit = store.currentCommit
       expect(currentCommit.id).toBe('commit-3')
+    })
+  })
+
+  describe('Comment Integration with Commit-Based Versions', () => {
+    beforeEach(() => {
+      // Setup comments that represent different scenarios
+      store.selected.comments = [
+        {
+          id: 'comment-1',
+          comment: 'Comment on live document',
+          documentVersion: null, // Live comment
+          createDate: { seconds: Date.now() / 1000 }
+        },
+        {
+          id: 'comment-2', 
+          comment: 'Comment on v1.0.0',
+          documentVersion: 'v1.0.0', // Version-specific comment
+          createDate: { seconds: Date.now() / 1000 }
+        },
+        {
+          id: 'comment-3',
+          comment: 'Comment on untagged commit',
+          documentVersion: 'commit', // Created on commit before tagging
+          createDate: { seconds: Date.now() / 1000 }
+        }
+      ]
+    })
+
+    it('should show all comments when viewing live document', () => {
+      store.selected.currentVersion = 'live'
+      store.selected.isCommit = false
+      
+      const filteredComments = store.filteredCommentsByVersion
+      expect(filteredComments).toHaveLength(3)
+    })
+
+    it('should filter comments correctly when viewing version-tagged commit', () => {
+      store.selected.currentVersion = 'v1.0.0'
+      store.selected.currentCommitId = 'commit-1' 
+      store.selected.isCommit = true
+      
+      const filteredComments = store.filteredCommentsByVersion
+      
+      // Should show:
+      // 1. Comments specifically for v1.0.0
+      // 2. Comments with 'commit' documentVersion (edge case handling)
+      expect(filteredComments).toHaveLength(2)
+      
+      const commentIds = filteredComments.map(c => c.id)
+      expect(commentIds).toContain('comment-2') // v1.0.0 comment
+      expect(commentIds).toContain('comment-3') // 'commit' comment (handles tagging edge case)
+      expect(commentIds).not.toContain('comment-1') // live comment excluded
+    })
+
+    it('should filter comments correctly when viewing untagged commit', () => {
+      store.selected.currentVersion = 'commit'
+      store.selected.currentCommitId = 'commit-2'
+      store.selected.isCommit = true
+      
+      const filteredComments = store.filteredCommentsByVersion
+      
+      // Should only show comments with documentVersion 'commit'
+      expect(filteredComments).toHaveLength(1)
+      expect(filteredComments[0].id).toBe('comment-3')
+    })
+
+    it('should filter comments correctly when viewing legacy version', () => {
+      store.selected.currentVersion = 'v1.0.0'
+      store.selected.isCommit = false // Not viewing a commit, legacy version
+      
+      const filteredComments = store.filteredCommentsByVersion
+      
+      // Should only show comments specifically for v1.0.0
+      expect(filteredComments).toHaveLength(1)
+      expect(filteredComments[0].id).toBe('comment-2')
     })
   })
 

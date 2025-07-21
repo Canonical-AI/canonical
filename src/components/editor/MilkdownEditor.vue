@@ -385,6 +385,8 @@ export default {
 
         // Method to sync comment marks to reflect current comment states
         syncCommentMarks() {
+
+  
             // Don't sync comment marks if user is not logged in
             if (!this.isUserLoggedIn) {
                 return;
@@ -410,8 +412,21 @@ export default {
                         // If viewing 'live' version, show ALL comments for this document (from all versions)
                         relevantComments = documentComments;
                     } else {
-                        // If viewing a specific version, show only comments for that version of this document
-                        relevantComments = documentComments.filter(comment => comment.documentVersion === currentVersion);
+                        // Enhanced filtering for commit-based version system
+                        const isViewingCommit = this.$store.selected.isCommit;
+                        const currentCommitId = this.$store.selected.currentCommitId;
+                        
+                        if (isViewingCommit && currentCommitId) {
+                            // When viewing a specific commit, show comments that match version number OR 'commit' (edge case)
+                            relevantComments = documentComments.filter(comment => {
+                                if (comment.documentVersion === currentVersion) return true;
+                                if (comment.documentVersion === 'commit' && currentVersion !== 'commit') return true;
+                                return false;
+                            });
+                        } else {
+                            // Standard version filtering (for legacy version system)
+                            relevantComments = documentComments.filter(comment => comment.documentVersion === currentVersion);
+                        }
                     }
                     
                     // Create a set of valid comment IDs for the current version
@@ -553,6 +568,7 @@ export default {
         },
 
         // Method to save marked up content when viewing a version
+        //TODO: this needs to update when viewing a commit
         saveMarkedUpContent() {
             if (this.$store.selected.currentVersion === 'live') {
                 return;

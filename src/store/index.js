@@ -241,12 +241,37 @@ export const useMainStore = defineStore('main', {
       if (!state.selected.comments) return [];
       
       const currentVersion = state.selected.currentVersion;
+      const currentCommitId = state.selected.currentCommitId;
+      const isViewingCommit = state.selected.isCommit;
       
       if (!currentVersion || currentVersion === 'live') {
         return state.selected.comments
           .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
       }
       
+      // Enhanced filtering for commit-based version system
+      if (isViewingCommit && currentCommitId) {
+        // When viewing a specific commit, show comments that:
+        // 1. Match the current version number (if commit is version-tagged)
+        // 2. OR have documentVersion 'commit' and were created on this commit
+        // 3. OR match the commit ID directly (future enhancement)
+        return state.selected.comments
+          .filter(comment => {
+            // Match version number (covers version-tagged commits)
+            if (comment.documentVersion === currentVersion) return true;
+            
+            // Match 'commit' when viewing untagged commits or commits that were tagged after comment creation
+            if (comment.documentVersion === 'commit' && currentVersion !== 'commit') {
+              // This handles the edge case where comment was created before version tagging
+              return true;
+            }
+            
+            return false;
+          })
+          .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
+      }
+      
+      // Standard version filtering (for legacy version system)
       return state.selected.comments
         .filter(comment => comment.documentVersion === currentVersion)
         .sort((a, b) => a.createDate?.seconds - b.createDate?.seconds);
@@ -1193,9 +1218,9 @@ export const useMainStore = defineStore('main', {
         const currentReleasedVersionsSorted = [...currentReleasedVersions].sort();
         const arraysAreEqual = JSON.stringify(releasedVersionsSorted) === JSON.stringify(currentReleasedVersionsSorted);
         
-        if (!arraysAreEqual || (this.selected.data.draft === true && this.selected.data.releasedVersion && this.selected.data.releasedVersion.length > 0)) {
+        if (!arraysAreEqual || (this.selected.data.draft === true && currentReleasedVersions.length > 0)) {
           await this.updateDocumentReleasedVersions(id, releasedVersions);
-        } else if (releasedVersions.length === 0 && (this.selected.data.releasedVersion.length > 0 || this.selected.data.draft === false)) {
+        } else if (releasedVersions.length === 0 && (currentReleasedVersions.length > 0 || this.selected.data.draft === false)) {
           // Set draft status when no released versions exist
           await this.updateDocumentReleasedVersions(id, []);
         }
@@ -1326,6 +1351,16 @@ export const useMainStore = defineStore('main', {
       if (!this.selected.comments) {
         this.selected.comments = [];
       }
+
+      // Ensure comment is always associated with current document for proper filtering/sync
+      if (!comment.documentId) {
+        comment.documentId = this.selected.id;
+      }
+      
+      // Note: documentVersion gets set based on currentVersion:
+      // - 'live' -> null (shows on all versions)
+      // - version number -> that specific version 
+      // - 'commit' -> shows on untagged commits (may need special handling if commit gets tagged later)
       
       const result = await Document.createComment(this.selected.id, comment);
       
@@ -1350,6 +1385,11 @@ export const useMainStore = defineStore('main', {
       }
       if (!this.selected.comments) {
         this.selected.comments = [];
+      }
+
+      // Ensure comment is always associated with current document for proper filtering/sync
+      if (!comment.documentId) {
+        comment.documentId = this.selected.id;
       }
       
       const replyData = {
