@@ -2075,12 +2075,8 @@ export class Commit {
   static async create(docId, documentData, commitMessage, parentCommitId = null, params = {}) {
     try {
       PermissionHelper.requireAuth();
-      console.log(docId, documentData, commitMessage, parentCommitId, params);
-      //await Commit.checkParentHasChildrenInBranch(docId,parentCommitId,params.branch? params.branch : "main");
 
       const documentRef = doc(db, "documents", docId);
-      
-      console.log(documentRef);
 
       const commit = addInDefaults({
         message: commitMessage,
@@ -2094,14 +2090,13 @@ export class Commit {
         archived: params.archived || false
       });
 
-      console.log(commit);
+
 
       // check if parent has children on the same branch
-
       // if versioning check if version number is unique
       
       const commitRef = await addDoc(collection(documentRef, "commits"), commit);
-      console.log(commitRef);
+
       
       // Replace serverTimestamp placeholders with client-side timestamps for return
       const now = Date.now();

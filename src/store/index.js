@@ -237,6 +237,49 @@ export const useMainStore = defineStore('main', {
              state.currentCommit.documentName !== state.selected.data.name;
     },
     
+    // Centralized version/commit state getters
+    currentCommitData: (state) => {
+      if (!state.selected.currentCommitId) return null;
+      return state.selected.commits?.find(commit => commit.id === state.selected.currentCommitId) || null;
+    },
+    
+    documentHasReleasedVersions: (state) => {
+      const releasedVersions = state.selected.data?.releasedVersion || [];
+      return releasedVersions.length > 0;
+    },
+    
+    isViewingSpecificVersion: (state) => {
+      return !!(state.selected.currentCommitId || (state.selected.currentVersion && state.selected.currentVersion !== 'live'));
+    },
+    
+    canShowVersionControls: (state) => {
+      // Always show some form of version controls
+      return true;
+    },
+    
+    versionControlsContext: (state) => {
+      // Determine what type of version controls to show
+      if (state.selected.currentCommitId) {
+        return 'viewing_commit';
+      } else if (state.selected.currentVersion && state.selected.currentVersion !== 'live') {
+        return 'viewing_version';
+      } else {
+        return 'live_document';
+      }
+    },
+    
+    versionStatus(state) {
+      // Consolidated version status logic - single source of truth
+      if (state.selected.currentCommitId && this.currentCommitData) {
+        const commitData = this.currentCommitData;
+        if (!commitData.versionNumber) {
+          return 'commit_no_version';
+        }
+        return commitData.released ? 'commit_released' : 'commit_staged';
+      }
+      return this.documentHasReleasedVersions ? 'live_has_released' : 'live_draft';
+    },
+    
     filteredCommentsByVersion: (state) => {
       if (!state.selected.comments) return [];
       

@@ -1,226 +1,270 @@
 <template>
-    <div class="d-inline-flex align-center version-pill rounded-full mx-2" @click="handlePillClick">
-        <!-- Collapsed state: Just S/R indicator -->
-        <transition name="app-fade" mode="out-in">
-            <div v-if="!isExpanded" key="collapsed" class="d-flex align-center animate-slide-in-left">
-                <v-tooltip 
-                    text="version controls" 
-                    location="bottom">
-                    <template v-slot:activator="{ props: tooltip }">               
-                             <!-- Status indicator -->
-                             <v-btn 
-                                 :disabled="disabled || versionReleasedStatus.status"
-                                 density="compact"
-                                 variant="tonal" 
-                                 @click.stop="handleStatusButtonClick"
-                                 :color="versionReleasedStatus.color" 
-                                 class="px-1 py-1 hover-scale rounded-l-full">
-                                 {{ versionReleasedStatus.shortLabel }}
-                             </v-btn>
-    
-                    </template>
-                </v-tooltip>
-            </div>
-
-            <!-- Expanded state: Full controls -->
-            <div v-else key="expanded" class="d-flex align-center animate-slide-in-right" style="gap: 8px; width: 100%;">
-                <!-- Status button (expanded) -->
-                <v-tooltip 
-                    :text="currentCommitId && currentCommitData ? 
-                        (currentCommitData.versionNumber ? 'Toggle this version release status' : 'This commit has no version number') :
-                        (documentHasReleasedVersions ? 'This document has released versions available to project readers' : 'This document has no released versions - all versions are drafts')" 
-                    location="bottom">
-                    <template v-slot:activator="{ props: tooltip }">
-                                            <v-btn 
-                        variant="tonal" 
-                        density="compact"
-                        v-bind="tooltip" 
-                        :color="versionReleasedStatus.color" 
-                        class="text-none hover-scale px-3 py-1 rounnded-l-full" 
-                        :class="disabled || versionReleasedStatus.status ? 'disabled' : ''"
-                        @click.stop="toggleExpanded()">
-                        {{ versionReleasedStatus.label }}
-                    </v-btn>
-                    </template>
-                </v-tooltip>
-
-                <!-- Commit UI when there are uncommitted changes -->
-                <div v-if="showCommitUI && uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
-                    <v-tooltip text="uncommitted changes" location="bottom">
-                        <template v-slot:activator="{ props: tooltip }">
-                            <v-icon 
-                                v-bind="tooltip"
-                                color="warning" 
-                                size="small"
-                                class="mx-1"
-                            >
-                                mdi-circle-medium
-                            </v-icon>
-                        </template>
-                    </v-tooltip>
-                    <input
-                        v-model="commitMessage"
-                        placeholder="Commit message..."
-                        class="commit-input"
-                        @keyup.enter="createCommit()"
-                        @click.stop
-                    />
-        
-                    <v-btn 
-                        :disabled="!commitMessage || commitMessage.trim() === '' || disableVersionManagement"
-                        color="success" 
-                        variant="flat"
-                        density="compact"
-
-                        class="text-none hover-scale rounded-none"
-                        @click.stop="createCommit()"
-                    >
-                        Commit
-                    </v-btn>
-                    <v-btn 
-                        :disabled="disableVersionManagement"
-                        color="success" 
-                        variant="tonal"
-                        density="compact"
-
-                        class="text-none hover-scale rounded-none"
-                        @click.stop="openCreateVersionDialog"
-                    >
-                        Version
-                    </v-btn>
-
-   
-                </div>
-
-                <div v-else="showCommitUI && !uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+    <div class="d-inline-flex align-center version-pill rounded-full mx-2">
+        <!-- Version Controls - different UI based on context -->
+        <div v-if="$store.versionControlsContext === 'live_document'" @click="handlePillClick">
+            <!-- Commit UI -->
+            <transition name="app-fade" mode="out-in">
+                <!-- Collapsed state: Just S/R indicator -->
+                <div v-if="!isExpanded" key="collapsed" class="d-flex align-center animate-slide-in-left">
                     <v-tooltip 
-                        v-if="canTagCurrentCommit" 
-                        text="Tag current commit as version" 
-                        location="bottom"
-                    >
-                        <template v-slot:activator="{ props }">
-                            <v-btn
-                                v-bind="props"
-                                color="success"
-                                density="compact"
-                                class="text-none hover-scale px-3 py-1"
-                                variant="tonal"
-                                @click="openCreateVersionDialog"
-                            >
-                                <v-icon size="small" class="mr-1">mdi-tag-plus</v-icon>
-                                Tag Version
-                            </v-btn>
+                        text="version controls" 
+                        location="bottom">
+                        <template v-slot:activator="{ props: tooltip }">               
+                                 <!-- Status indicator -->
+                                 <v-btn 
+                                     :disabled="disabled || versionReleasedStatus.status"
+                                     density="compact"
+                                     variant="tonal" 
+                                     @click.stop="handleStatusButtonClick"
+                                     :color="versionReleasedStatus.color" 
+                                     class="px-1 py-1 hover-scale rounded-l-full">
+                                     {{ versionReleasedStatus.shortLabel }}
+                                 </v-btn>
+        
                         </template>
                     </v-tooltip>
+                </div>
+    
+                <!-- Expanded state: Full controls -->
+                <div v-else key="expanded" class="d-flex align-center animate-slide-in-right" style="gap: 8px; width: 100%;">
+                    <!-- Status button (expanded) -->
+                    <v-tooltip 
+                        :text="currentCommitId && $store.currentCommitData ? 
+                            ($store.currentCommitData.versionNumber ? 'Toggle this version release status' : 'This commit has no version number') :
+                            ($store.documentHasReleasedVersions ? 'This document has released versions available to project readers' : 'This document has no released versions - all versions are drafts')" 
+                        location="bottom">
+                        <template v-slot:activator="{ props: tooltip }">
+                                                <v-btn 
+                            variant="tonal" 
+                            density="compact"
+                            v-bind="tooltip" 
+                            :color="versionReleasedStatus.color" 
+                            class="text-none hover-scale px-3 py-1 rounnded-l-full" 
+                            :class="disabled || versionReleasedStatus.status ? 'disabled' : ''"
+                            @click.stop="toggleExpanded()">
+                            {{ versionReleasedStatus.label }}
+                        </v-btn>
+                        </template>
+                    </v-tooltip>
+    
+                    <!-- Commit UI when there are uncommitted changes -->
+                    <div v-if="showCommitUI && uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                        <v-tooltip text="uncommitted changes" location="bottom">
+                            <template v-slot:activator="{ props: tooltip }">
+                                <v-icon 
+                                    v-bind="tooltip"
+                                    color="warning" 
+                                    size="small"
+                                    class="mx-1"
+                                >
+                                    mdi-circle-medium
+                                </v-icon>
+                            </template>
+                        </v-tooltip>
+                        <input
+                            v-model="commitMessage"
+                            placeholder="Commit message..."
+                            class="commit-input"
+                            @keyup.enter="createCommit()"
+                            @click.stop
+                        />
+            
+                        <v-btn 
+                            :disabled="!commitMessage || commitMessage.trim() === '' || disableVersionManagement"
+                            color="success" 
+                            variant="flat"
+                            density="compact"
+
+                            class="text-none hover-scale rounded-none"
+                            @click.stop="createCommit()"
+                        >
+                            Commit
+                        </v-btn>
+                        <v-btn 
+                            :disabled="disableVersionManagement"
+                            color="success" 
+                            variant="tonal"
+                            density="compact"
+
+                            class="text-none hover-scale rounded-none"
+                            @click.stop="openCreateVersionDialog"
+                        >
+                            Version
+                        </v-btn>
+
+               
+                    </div>
+
+                    <div v-else="showCommitUI && !uncommittedChanges" class="d-flex align-center bg-surface-variant rounded-lg animate-fade-in-up stagger-1 hover-shadow" @click.stop>
+                        <v-tooltip 
+                            v-if="canTagCurrentCommit" 
+                            text="Tag current commit as version" 
+                            location="bottom"
+                        >
+                            <template v-slot:activator="{ props }">
+                                <v-btn
+                                    v-bind="props"
+                                    color="success"
+                                    density="compact"
+                                    class="text-none hover-scale px-3 py-1"
+                                    variant="tonal"
+                                    @click="openCreateVersionDialog"
+                                >
+                                    <v-icon size="small" class="mr-1">mdi-tag-plus</v-icon>
+                                    Tag Version
+                                </v-btn>
+                            </template>
+                        </v-tooltip>
+                        <v-btn
+                            v-else
+                            color="success"
+                            density="compact"
+                            class="text-none hover-scale px-3 py-1"
+                            variant="tonal"
+                            @click="openCreateVersionDialog"
+                        >Create Version</v-btn>
+                    </div>
+
+                </div>
+            
+            </transition>
+        </div>
+
+        <!-- Controls when viewing a commit -->
+        <div v-else-if="$store.versionControlsContext === 'viewing_commit'" class="d-flex align-center">
+            <!-- Status indicator for commit -->
+            <v-btn 
+                density="compact"
+                variant="tonal" 
+                :color="versionReleasedStatus.color" 
+                class="px-2 py-1 hover-scale rounded-l-full">
+                {{ versionReleasedStatus.shortLabel }}
+            </v-btn>
+            
+            <!-- Create version from commit button -->
+            <v-tooltip text="Create version from this commit" location="bottom">
+                <template v-slot:activator="{ props }">
                     <v-btn
-                        v-else
+                        v-bind="props"
+                        :disabled="disableVersionManagement"
                         color="success"
                         density="compact"
                         class="text-none hover-scale px-3 py-1"
                         variant="tonal"
                         @click="openCreateVersionDialog"
-                    >Create Version</v-btn>
-                </div>
-
-            </div>
-        
-        </transition>
-
-        <!-- Return to Live button when viewing a commit -->
-        <div v-if="currentCommitId" class="d-flex align-center mx-2" @click.stop>
-            <v-btn
-                color="primary"
-                variant="outlined"
-                density="compact"
-                class="text-none return-to-live-btn"
-                @click="returnToLive"
-            >
-                <v-icon size="small" class="mr-1">mdi-home</v-icon>
-                Return to Live
-            </v-btn>
+                    >
+                        <v-icon size="small" class="mr-1">mdi-tag-plus</v-icon>
+                        Tag Version
+                    </v-btn>
+                </template>
+            </v-tooltip>
         </div>
 
-        <div class="animate-fade-in-up flex-grow-1 d-flex align-center" @click.stop>
-                <v-menu :close-on-content-click="false">
-                    <template v-slot:activator="{ props: menu }">
-                        <v-tooltip text="switch version" location="bottom">
-                            <template v-slot:activator="{ props: tooltip }">
-                                <v-btn 
-                                    variant="tonal" 
-                                    density="compact" 
-                                    class="text-none font-weight-bold rounded-r-full px-2 py-1" 
-                                    color="primary"
-                                    style="min-width: 80px;"
-                                    v-bind="mergeProps(menu, tooltip)">
-                                    <v-icon size="small" class="mr-1">mdi-source-branch</v-icon>
-                                    {{ currentVersion }}
-                                    <v-icon size="small" class="ml-1">mdi-chevron-down</v-icon>
-                                </v-btn>
-                            </template>
-                        </v-tooltip>
-                    </template>
+        <!-- Controls when viewing a version -->
+        <div v-else-if="$store.versionControlsContext === 'viewing_version'" class="d-flex align-center">
+            <!-- Status indicator for version -->
+            <v-btn 
+                density="compact"
+                variant="tonal" 
+                :color="versionReleasedStatus.color" 
+                class="px-2 py-1 hover-scale rounded-l-full">
+                {{ versionReleasedStatus.shortLabel }}
+            </v-btn>
+            
+            <!-- Version info -->
+            <v-chip 
+                color="primary" 
+                variant="outlined" 
+                size="small"
+                class="mx-2">
+                {{ currentVersion }}
+            </v-chip>
+        </div>
 
-                    <v-card class="pa-2" style="min-width: 200px;">
-                        <v-select v-if="computedVersions.length > 1 && !creatingVersion"
-                            v-model="selectedVersion"
-                            :items="computedVersions"
-                            :item-title="item => item.displayName || item.versionNumber || item"
-                            :item-value="item => item.value || item.versionNumber || item"
-                            :key="JSON.stringify(computedVersions)"
-                            label="Select Version/Commit"
-                            @update:modelValue="selectVersion"
-                            density="compact"
-                            hide-details="auto"
-                        >
-                          <template v-slot:item="{ props, item }">
-                            <v-list-item v-bind="props">
-                              <template v-slot:append>
-                                <div class="d-flex align-center">
-                                  <!-- Tag-based version indicator -->
-                                  <v-chip 
-                                    v-if="item.raw?.isTagBased"
-                                    size="x-small"
-                                    color="blue"
-                                    variant="outlined"
-                                    class="mr-1"
-                                  >
-                                    <v-icon size="10" class="mr-1">mdi-tag</v-icon>
-                                    tag
-                                  </v-chip>
-                                  <!-- Draft/Released status -->
-                                  <v-icon 
-                                    v-if="!(item.raw?.released)" 
-                                    color="warning" 
-                                    size="small"
-                                  >
-                                  mdi-pencil
-                                  </v-icon>
-                                </div>
-                              </template>
-                            </v-list-item>
-                          </template>
-                        </v-select>
-                        <v-text-field v-if="computedVersions.filter(v => v.type === 'version').length === 0 || creatingVersion === true"
-                            v-model="newVersion"
-                            label="New Version"
-                            placeholder="v0.0.1"
-                            density="compact"
-                            hide-details="auto"
-                        ></v-text-field>
+        <!-- Return to Live button when viewing a commit -->
+            <div v-if="currentCommitId" class="d-flex align-center mx-2" @click.stop>
+                
+                <v-btn
+                    color="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="text-none"
+                    @click="returnToLive"
+                >
+                                    <v-icon size="small" class="mr-1">mdi-home</v-icon>
+                To Live
+                <v-icon size="small" class="animate-ping">mdi-circle-medium</v-icon>
+                </v-btn>
+            </div>
 
-                        <v-card-actions v-if="!creatingVersion">
-                            <v-btn :disabled="disableVersionManagement" v-if="selectedVersion && selectedVersion != 'live'" color="error" @click="deleteVersion()">Delete</v-btn>      
-                            <v-spacer></v-spacer>        
-                            <v-btn :disabled="disableVersionManagement" class="text-none" color="primary" @click="creatingVersion = true">New</v-btn>
-                       </v-card-actions>
-                        <v-card-actions v-if="creatingVersion && !taggingCommit">
-                            <v-spacer></v-spacer>        
-                            <v-btn :disabled="disableVersionManagement" class="text-none" @click="creatingVersion = false; newVersion = ''">Back</v-btn>
-                            <v-btn :disabled="disableVersionManagement" v-if="newVersion" class="text-none" color="success" @click="createVersion()">Create</v-btn>
-                            <v-btn :disabled="disableVersionManagement" class="text-none" color="secondary" @click="showCommitTagging()">Tag Commit</v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </v-menu>
+            <!-- Version Switcher -->
+            <div class="animate-fade-in-up flex-grow-1 d-flex align-center" @click.stop>
+                    <v-menu :close-on-content-click="false">
+                        <template v-slot:activator="{ props: menu }">
+                            <v-tooltip text="switch version" location="bottom">
+                                <template v-slot:activator="{ props: tooltip }">
+                                    <v-btn 
+                                        variant="tonal" 
+                                        density="compact" 
+                                        class="text-none font-weight-bold rounded-r-full px-2 py- 1" 
+                                        color="primary"
+                                        style="min-width: 80px;"
+                                        v-bind="mergeProps(menu, tooltip)">
+                                        <v-icon size="small" class="mr-1">mdi-source-branch</v-icon>
+                                        {{ currentVersion }}
+                                        <v-icon size="small" class="ml-1">mdi-chevron-down</v-icon>
+                                    </v-btn>
+                                </template>
+                            </v-tooltip>
+                        </template>
+
+                        <v-card class="pa-2" style="min-width: 200px;">
+
+                            <v-card-title class="text-sm opacity-70">
+                                View Commit
+                            </v-card-title>
+
+
+                            <v-list density="compact">
+                                <v-list-item
+                                    density="compact"
+                                    @click="selectVersion({type: 'live', displayName: 'live', value: 'live'})"
+                                >
+                                    <v-icon size="small" class="mr-1">mdi-home</v-icon>
+                                    To Live
+                                </v-list-item>
+                                <v-list-item 
+                                    density="compact"
+                                    v-for="version in sortedCommits" :key="version.id"
+                                    @click="selectVersion(version)"
+                                    >
+
+                                    {{ version.versionNumber? version.versionNumber : `${version.message || 'Untitled'} (${version.id.substring(0, 8)})`  }}
+                                    <!-- Version icon if it has a version number -->
+                                    <template v-slot:append>
+                                        <v-icon 
+                                            v-if="version.versionNumber" 
+                                            color="primary" 
+                                            size="small"
+                                            class="mr-1"
+                                        >
+                                            mdi-tag
+                                        </v-icon>
+
+                                        <!-- Draft/Released status icon -->
+                                        <v-icon 
+                                            v-if="version.type !== 'live' && !version.released" 
+                                            color="warning" 
+                                            size="small"
+                                        >
+                                            mdi-pencil
+                                        </v-icon>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+
+                        </v-card>
+                    </v-menu>
         </div>
 
     </div>
@@ -284,6 +328,15 @@ import { Document } from "../../services/firebaseDataService";
 import { mergeProps } from 'vue'
 import { injectAnimations, ANIMATION_TIMING, ANIMATION_PRESETS } from '../../utils/transitions'
 import { useVersionCreation } from './composables/useVersionCreation'
+import { storeKey } from "vuex";
+// Consolidated status definitions for VersionModal (Option B refactor)
+const VERSION_STATUS_MAP = {
+    commit_no_version: { status: false, label: 'No Version', shortLabel: 'C', color: 'secondary' },
+    commit_staged:     { status: false, label: 'Staged',     shortLabel: 'S', color: 'warning'   },
+    commit_released:   { status: true,  label: 'Released',   shortLabel: 'R', color: 'success'   },
+    live_has_released: { status: true,  label: 'Has Released', shortLabel: 'P', color: 'success' },
+    live_draft:        { status: false, label: 'Draft',      shortLabel: 'D', color: 'warning'   },
+};
 
 export default {
     name: 'VersionModal',
@@ -317,93 +370,34 @@ export default {
         uncommittedChanges() {
             return this.$store.uncommittedChanges;
         },
-        computedVersions() {
+        sortedCommits() {
             const commits = this.$store.selected.commits || [];
             
-            // Create items for commits with version numbers (versions) and regular commits
-            const versionItems = commits
-              .filter(c => c.versionNumber)
-              .map(c => ({
-                ...c,
-                type: 'version',
-                displayName: `${c.versionNumber} - ${c.message || 'Untitled'}`,
-                value: c.versionNumber,
-                versionNumber: c.versionNumber
-              }));
-            
-            const commitItems = commits
-              .filter(c => !c.versionNumber)
-              .map(c => ({
-                ...c,
-                type: 'commit',
-                displayName: `${c.message || 'Untitled'} (${c.id.substring(0, 8)})`,
-                value: c.id
-              }));
-            
+            // Sort commits by date (newest first)
+            const sortedByDate = [...commits].sort((a, b) => {
+                const dateA = new Date(a.timestamp || a.createdAt || 0);
+                const dateB = new Date(b.timestamp || b.createdAt || 0);
+                return dateB - dateA; // Newest first
+            });
+           
             // Combine with live option and sort versions first
-            return [
-                { type: 'live', displayName: 'live', value: 'live' },
-                ...versionItems,
-                ...commitItems
-            ];
+            return sortedByDate 
         }, 
         disableVersionManagement() {
             return !this.$store.isUserLoggedIn
         },
         
-        // Simplified: Current commit data when viewing a specific commit
-        currentCommitData() {
-            if (!this.currentCommitId) return null;
-            return this.$store.selected?.commits?.find(commit => commit.id === this.currentCommitId) || null;
-        },
-        
-        // Simplified: Document released status
-        documentHasReleasedVersions() {
-            const releasedVersions = this.$store.selected?.data?.releasedVersion || [];
-            return releasedVersions.length > 0;
-        },
-        
-        // Simplified: Version status for display
+        // Use centralized store getters
         versionReleasedStatus() {
-            // Case 1: Viewing a specific commit - show that commit's release status
-            if (this.currentCommitId && this.currentCommitData) {
-                const isReleased = this.currentCommitData.released || false;
-                const hasVersion = this.currentCommitData.versionNumber || false;
-                
-                // If commit has no version number, show different status
-                if (!hasVersion) {
-                    return {
-                        status: false,
-                        label: 'No Version',
-                        shortLabel: 'C',
-                        color: 'secondary'
-                    };
-                }
-                
-                return {
-                    status: isReleased,
-                    label: isReleased ? 'Released' : 'Staged',
-                    shortLabel: isReleased ? 'R' : 'S',
-                    color: isReleased ? 'success' : 'warning'
-                };
-            }
-            
-            // Case 2: Viewing live document - show if document has any released versions
-            const hasReleased = this.documentHasReleasedVersions;
-            return {
-                status: hasReleased,
-                label: hasReleased ? 'Has Released' : 'Draft',
-                shortLabel: hasReleased ? 'P' : 'D', // P = Published, D = Draft
-                color: hasReleased ? 'success' : 'warning'
-            };
+            const statusKey = this.$store.versionStatus;
+            return VERSION_STATUS_MAP[statusKey];
         },
         
         showCommitUI() {
-            // Show commit UI if user is logged in, on live version (not viewing commit/version), and has uncommitted changes
+            // Show commit UI only when on live document and there are uncommitted changes
             return this.$store.isUserLoggedIn && 
-                   this.currentVersion === 'live' && 
-                   !this.currentCommitId &&
-                   this.uncommittedChanges;
+                                       this.$store.versionControlsContext === 'live_document' &&
+                    this.uncommittedChanges;
         }
     },
     data() {
@@ -444,37 +438,27 @@ export default {
 
         mergeProps,
         
-        selectVersion() {
-            if (this.selectedVersion === 'live') {
+        selectVersion(version) {
+            if (version.type === 'live') {
                 this.$router.replace({'query': null});
-            } else {
-                // Check if selected item is a commit ID or version number
-                const selectedItem = this.computedVersions.find(item => 
-                    item.value === this.selectedVersion || item.versionNumber === this.selectedVersion
+            } else if (version.versionNumber) {
+                // For versions, find the commit that has this version number and navigate to it
+                const commits = this.$store.selected.commits || [];
+                
+                const associatedCommit = commits.find(commit => 
+                    commit.versionNumber === version.versionNumber
                 );
                 
-                if (selectedItem && selectedItem.type === 'commit') {
-                    // Navigate to commit
-                    this.$router.push({ query: { c: this.selectedVersion }});
-                } else if (selectedItem && selectedItem.type === 'version') {
-                    // For versions, find the commit that has this version number and navigate to it
-                    const commits = this.$store.selected.commits || [];
-                    
-                    const associatedCommit = commits.find(commit => 
-                        commit.versionNumber === selectedItem.versionNumber
-                    );
-                    
-                    if (associatedCommit) {
-                        // Navigate to the commit that has this version number
-                        this.$router.push({ query: { c: associatedCommit.id }});
-                    } else {
-                        // Fallback to version navigation if no associated commit found
-                        this.$router.push({ query: { v: this.selectedVersion }});
-                    }
+                if (associatedCommit) {
+                    // Navigate to the commit that has this version number
+                    this.$router.push({ query: { c: associatedCommit.id }});
                 } else {
-                    // Fallback for unknown types
-                    this.$router.push({ query: { v: this.selectedVersion }});
+                    // Fallback to version navigation if no associated commit found
+                    this.$router.push({ query: { v: version.versionNumber }});
                 }
+            } else {
+                // Navigate to commit
+                this.$router.push({ query: { c: version.id }});
             }
         },
 
@@ -531,11 +515,11 @@ export default {
 
         async toggleDraft() {
             // Case 1: Viewing a specific commit with a version - toggle that commit's release status
-            if (this.currentCommitId && this.currentCommitData && this.currentCommitData.versionNumber) {
+            if (this.currentCommitId && this.$store.currentCommitData && this.$store.currentCommitData.versionNumber) {
                 try {
                     await this.$store.toggleCommitVersionRelease({
-                        commitId: this.currentCommitData.id,
-                        released: !this.currentCommitData.released
+                        commitId: this.$store.currentCommitData.id,
+                        released: !this.$store.currentCommitData.released
                     });
                 } catch (error) {
                     console.error('Error toggling commit version release:', error);
@@ -578,7 +562,7 @@ export default {
             this.isExpanded = true;
             
             // If viewing a commit with a version, also toggle the release status
-            if (this.currentCommitId && this.currentCommitData && this.currentCommitData.versionNumber) {
+            if (this.currentCommitId && this.$store.currentCommitData && this.$store.currentCommitData.versionNumber) {
                 this.toggleDraft();
             }
         },
@@ -603,23 +587,21 @@ export default {
             this.creatingVersion = true;
         },
 
-        async createVersionTag() {
-            if (this.newVersionTag === 'live') {
-                console.warn('cannot name version live');
-                this.$store.uiAlert({type: 'error', message: 'Cannot name version live', autoClear: true});
+        async commitVersionTag() {
+            if (!this.newVersionTag || !this.selectedCommitId) {
                 return;
             }
-
+            
             try {
-                await this.$store.createVersionTag(this.newVersionTag, this.selectedCommitId);
-                this.$router.push({ query: { v: this.newVersionTag }});
-                this.taggingCommit = false;
-                this.newVersionTag = '';
-                this.selectedCommitId = null;
-                this.availableCommits = [];
-                this.isExpanded = false;
+                await this.$store.createVersion(this.newVersionTag, {
+                    fromCommitId: this.selectedCommitId,
+                    released: this.newVersionRelease
+                });
+                
+                this.cancelCommitTagging();
+                this.closeCreateVersionDialog();
             } catch (error) {
-                console.error('Error creating version tag:', error);
+                console.error('Error creating version from commit:', error);
             }
         }
     }
@@ -652,21 +634,5 @@ export default {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Pulse animation for return to live button */
-.return-to-live-btn {
-    animation: pulse-glow 2s infinite;
-}
-
-@keyframes pulse-glow {
-    0% {
-        box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0.4);
-    }
-    70% {
-        box-shadow: 0 0 0 6px rgba(var(--v-theme-primary), 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0);
-    }
-}
 
 </style>

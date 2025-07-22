@@ -128,7 +128,6 @@ export class MigrationSystem {
   async checkSelectedDocumentMigration() {
     // Safety checks
     if (!this.store.selected || !this.store.selected.id) {
-      console.log('No selected document to check for migration');
       return false;
     }
 
@@ -136,7 +135,6 @@ export class MigrationSystem {
     const selectedDocVersions = this.store.selected.versions || [];
 
     if (selectedDocVersions.length === 0) {
-      console.log('No versions to migrate for selected document');
       return false;
     }   
 
@@ -159,7 +157,6 @@ export class MigrationSystem {
     }
 
     if (unmigratedVersions.length === 0) {
-      console.log('No unmigrated versions found');
       return false;
     }
 
