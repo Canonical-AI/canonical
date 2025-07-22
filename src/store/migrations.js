@@ -246,7 +246,7 @@ export class MigrationSystem {
         try {
           const result = await Commit.create(
             docId,
-            { name: fullDoc.data.name, content: version.content || '', type: fullDoc.data.type },
+            { name: fullDoc.data.name, content: version.content.content || '', type: fullDoc.data.type },
             `Migrated from version ${version.versionNumber}`,
             null, // Versions don't have parent tracking
             {
