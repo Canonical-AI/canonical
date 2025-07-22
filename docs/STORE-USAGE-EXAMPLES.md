@@ -31,7 +31,6 @@ export default {
   }
 }
 </script>
-```
 
 ### Composition API
 ```vue
@@ -108,27 +107,50 @@ await store.comments.updateData({
 store.comments.set(commentArray)
 ```
 
-### Version Management
+### Version Management (Commit-Based System)
 ```js
-// Document Versions
-await store.versions.create({
-  versionNumber: '1.1',
-  content: documentContent
+// Create a new commit
+await store.createCommit('Add new section to document', {
+  versionNumber: 'v1.0.0', // Optional: tag as version
+  released: true // Optional: mark as released
 })
 
-await store.versions.delete('1.0')
+// Create version from uncommitted changes
+await store.createVersion('v1.1.0', {
+  released: false // Creates as staged version
+})
 
-await store.versions.toggleReleased({
-  versionNumber: '1.1',
+// Create version from existing commit
+await store.createVersion('v1.2.0', {
+  fromCommitId: 'commit-id-123',
   released: true
 })
 
-await store.versions.updateMarkedUpContent({
-  versionContent: markedUpContent,
-  versionNumber: '1.1'
+// Toggle version release status
+await store.toggleCommitVersionRelease({
+  commitId: 'commit-id-123',
+  released: true
 })
 
-await store.versions.toggleDraft()
+// Remove version tag from commit
+await store.removeCommitVersionTag({
+  commitId: 'commit-id-123',
+  versionNumber: 'v1.0.0'
+})
+
+// Check document version status
+await store.documentsCheckVersionsStatus({ id: 'doc-123' })
+
+// Navigate to specific commit or version
+await store.documentsSelect({ 
+  id: 'doc-123', 
+  commitId: 'commit-id-123' 
+})
+
+await store.documentsSelect({ 
+  id: 'doc-123', 
+  version: 'v1.0.0' 
+})
 ```
 
 ### Project Management

@@ -269,7 +269,15 @@ npm run dev:test
 # → App runs at http://localhost:5173
 ```
 
-### Testing Workflow
+### Test Credentials (Emulator Only)
+
+name: admin@example.com
+password: testPassword123!
+
+
+
+
+### New User Testing Workflow
 
 1. **Start emulator testing environment**:
    ```bash

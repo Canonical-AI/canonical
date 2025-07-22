@@ -422,7 +422,7 @@ export class User{
         unsubscribe(); // Unsubscribe immediately to prevent multiple listeners
         
         if (!user) {
-          console.log('user not logged in');
+          console.warn('user not logged in');
           return resolve(null);
         }
 
@@ -1619,6 +1619,7 @@ export class Document {
     }
 
     if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
+      console.warn('User is not a member of this project');
       getStore().uiAlert({
         type: 'error',
         message: 'You are not a member of this project',
@@ -1643,7 +1644,6 @@ export class Document {
 
     return documents;
   }
-
   
   // Helper function to ensure project creator is in userProjects
   static async ensureProjectCreatorAccess(projectId, userId) {
@@ -1730,12 +1730,19 @@ export class Document {
     
     const commentsRef = collection(documentRef, "comments");
     const commentsSnapshot = await getDocs(commentsRef);
+
+    const commitsRef = collection(documentRef, "commits");
+    const commitsSnapshot = await getDocs(commitsRef);
     
     return {
       id: docSnapshot.id,
       data: docData,
       versions: versionsSnapshot.docs.map(doc => ({
         id: doc.id, 
+        ...doc.data()
+      })),
+      commits: commitsSnapshot.docs.map(doc => ({
+        id: doc.id,
         ...doc.data()
       })),
       comments: commentsSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}))
@@ -1757,8 +1764,7 @@ export class Document {
       return DataServiceResult.error(error, 'Failed to create document');
     }
   }
-
-  
+ 
   static async updateDoc(id, value) {
     try {
       PermissionHelper.requireAuth();
@@ -1777,7 +1783,6 @@ export class Document {
       return DataServiceResult.error(error, 'Failed to update document');
     }
   }
-
   
   static async updateDocField(id, fieldName, fieldValue) {
     try {
@@ -1947,139 +1952,225 @@ export class Document {
 
 
 
+
   ///-----------------------------------
-  /// DOC VERSIONS
-  ///-----------------------------------  
-  static async getDocVersion(docID, versionNumber){
-    const documentRef = doc(db, "documents", docID);
-    const versionsRef = collection(documentRef, "versions");
-    const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-    
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-        id: doc.id, 
-        ...doc.data()}))[0];
-  }
-  
-  static async createVersion(docId, versionContent, versionNumber) {
+  /// DOC COMMITS
+  ///-----------------------------------
+
+  static async createVersion(docId, versionContent, versionNumber, commitId = null, released = false) {
     try {
       PermissionHelper.requireAuth();
 
-      // Get the current document
-      const documentRef = doc(db, "documents", docId);
+      if (commitId) {
+        // New approach: Update existing commit with version information
+        const documentRef = doc(db, "documents", docId);
+        const commitsRef = collection(documentRef, "commits");
+        const commitRef = doc(commitsRef, commitId);
+        
+        // Update the commit with version information
+        const updateData = {
+          versionNumber: versionNumber,
+          released: released
+        };
+        
+        await updateDoc(commitRef, updateData);
+        
+        return DataServiceResult.success(
+          { id: commitId, versionNumber: versionNumber, released: released },
+          `Commit ${commitId} tagged as version ${versionNumber}`
+        );
+      } else {
+        // Legacy approach: Create version document for backwards compatibility
+        const documentRef = doc(db, "documents", docId);
 
-      // Check to make sure version number is unique
-      const versionsRef = collection(documentRef, "versions");
-      const versionsSnapshot = await getDocs(versionsRef);
-      const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
+        // Check to make sure version number is unique
+        const versionsRef = collection(documentRef, "versions");
+        const versionsSnapshot = await getDocs(versionsRef);
+        const existingVersionNumbers = versionsSnapshot.docs.map(doc => doc.data().versionNumber);
 
-      // Use ValidationHelper
-      ValidationHelper.validateVersionNumber(existingVersionNumbers, versionNumber);
+        // Use ValidationHelper
+        ValidationHelper.validateVersionNumber(existingVersionNumbers, versionNumber);
 
-      // Create a new version
-      const newVersion = {
-        content: versionContent,
-        createdBy: getStore().user.uid,
-        createDate: serverTimestamp(),
-        versionNumber: versionNumber,
-        released: false,
-      };
+        // Create a new version
+        const newVersion = {
+          content: versionContent,
+          createdBy: getStore().user.uid,
+          createDate: serverTimestamp(),
+          versionNumber: versionNumber,
+          released: released,
+        };
 
-      // Add the new version to the versions subcollection
-      const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
+        // Add the new version to the versions subcollection
+        const versionRef = await addDoc(collection(documentRef, "versions"), newVersion);
 
-      return DataServiceResult.success(
-        { id: versionRef.id, ...newVersion },
-        `Version ${versionNumber} created successfully`
-      );
+        return DataServiceResult.success(
+          { id: versionRef.id, ...newVersion },
+          `Version ${versionNumber} created successfully`
+        );
+      }
     } catch (error) {
       return DataServiceResult.error(error, `Failed to create version ${versionNumber}`);
     }
   }
 
-  
-  static async deleteVersion(docId, versionNumber) {
+}
+
+export class Commit {
+  constructor(value) {
+    this.message = value.message; // required
+    this.parentCommitId = value.parentCommitId ; // required
+    this.content = value.content ; // required
+    this.versionNumber = value.versionNumber || ""; // optional
+    this.branch = value.branch || "main"; // optional
+    this.released = value.released || false; // optional
+    this.tags = value.tags || []; // optional
+    this.archived = value.archived || false; // optional
+    
+    // Create a plain object with the current properties to pass to addInDefaults
+    const plainObject = {
+      message: this.message,
+      parentCommitId: this.parentCommitId,
+      content: this.content,
+      versionNumber: this.versionNumber,
+      branch: this.branch,
+      released: this.released,
+      tags: this.tags,
+      archived: this.archived
+    };
+    
+    // Call addInDefaults with the plain object and assign the result
+    Object.assign(this, addInDefaults(plainObject));
+  }
+
+  //TODO: going to need to convert all versions to commits
+
+  ///-----------------------------------
+  /// Rules
+  ///-----------------------------------
+
+  // todo: rule for checking if parent has children in current branch
+
+  static async checkParentHasChildrenInBranch(docId, parentCommitId, branch) {
+    const documentRef = doc(db, "documents", docId);
+    const commitsRef = collection(documentRef, "commits");
+    const q = query(commitsRef, where("parentCommitId", "==", parentCommitId), where("branch", "==", branch));
+    const snapshot = await getDocs(q);
+    // if true then throw error
+    if (snapshot.docs.length > 0) {
+      throw new Error(`Parent commit ${parentCommitId} has children in branch ${branch}`);
+    }
+  }
+
+
+  // todo: rule for checking if version number is unique
+
+  // todo: rule for checking if branch is unique
+
+
+
+  ///-----------------------------------
+  /// Transactions
+  ///-----------------------------------
+
+  static async create(docId, documentData, commitMessage, parentCommitId = null, params = {}) {
     try {
       PermissionHelper.requireAuth();
 
       const documentRef = doc(db, "documents", docId);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
+
+      const commit = addInDefaults({
+        message: commitMessage,
+        parentCommitId: parentCommitId,
+        documentName: documentData.name,
+        documentContent: documentData.content,
+        versionNumber: params.versionNumber || "",
+        branch: params.branch || "main",
+        released: params.released || false,
+        tags: params.tags || [],
+        archived: params.archived || false
+      });
+
+
+
+      // check if parent has children on the same branch
+      // if versioning check if version number is unique
       
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await deleteDoc(versionDocRef);
-        
-        return DataServiceResult.success(
-          { docId, versionNumber },
-          `Version ${versionNumber} deleted successfully`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
+      const commitRef = await addDoc(collection(documentRef, "commits"), commit);
+
+      
+      // Replace serverTimestamp placeholders with client-side timestamps for return
+      const now = Date.now();
+      const firestoreTimestamp = {
+        seconds: Math.floor(now / 1000),
+        nanoseconds: (now % 1000) * 1000000
+      };
+      
+      const returnData = {
+        ...commit,
+        createDate: firestoreTimestamp,
+        updatedDate: firestoreTimestamp
+      };
+      
+      return DataServiceResult.success(
+        {id: commitRef.id, ...returnData},
+        'Commit created successfully'
+      );
     } catch (error) {
-      return DataServiceResult.error(error, `Failed to delete version ${versionNumber}`);
+      return DataServiceResult.error(error, 'Failed to create commit');
     }
-  } 
+  }
 
+  static async setCommitParams(docID, commitId, params) {
+    try {
+      PermissionHelper.requireAuth();
 
-  static async updateMarkedUpContent(docID, versionContent, versionNumber) {
+      // editable params are versionNumber,tags, archived, released
+      // expect params to be an object with the editable params
+
+      const editableParams = ["versionNumber", "tags", "archived", "released", "branch"];
+      const invalidParams = Object.keys(params).filter(key => !editableParams.includes(key));
+      if (invalidParams.length > 0) {
+        throw new Error(`Invalid parameters: ${invalidParams.join(", ")}`);
+      }
+
+      
+      const documentRef = doc(db, "documents", docID);
+      const commitRef = doc(documentRef, "commits", commitId);
+      await updateDoc(commitRef, {
+        ...params,
+        updatedDate: serverTimestamp()
+      });
+      
+      return DataServiceResult.success(
+        {id: commitId, ...params}
+      );
+    } catch (error) {
+      return DataServiceResult.error(error, 'Failed to update commit parameters');
+    }
+  }
+
+  static async deleteCommit(docID, commitId) {
     try {
       PermissionHelper.requireAuth();
       
       const documentRef = doc(db, "documents", docID);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
+      const commitRef = doc(documentRef, "commits", commitId);
+      await deleteDoc(commitRef);
       
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await updateDoc(versionDocRef, {
-          markedUpContent: versionContent,
-          updatedDate: serverTimestamp()
-        });
-        
-        return DataServiceResult.success(
-          { docID, versionNumber, markedUpContent: versionContent },
-          `Marked up content updated for version ${versionNumber}`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
+      return DataServiceResult.success(
+        {id: commitId},
+        'Commit deleted successfully'
+      );
     } catch (error) {
-      return DataServiceResult.error(error, `Failed to update marked up content for version ${versionNumber}`);
+      return DataServiceResult.error(error, 'Failed to delete commit');
     }
   }
 
-  static async toggleVersionReleased(docID, versionNumber, released) {
-    try {
-      PermissionHelper.requireAuth();
-      
-      const documentRef = doc(db, "documents", docID);
-      const versionsRef = collection(documentRef, "versions");
-      const q = query(versionsRef, where("versionNumber", "==", versionNumber));
-      const versionSnapshot = await getDocs(q);
-      
-      if (!versionSnapshot.empty) {
-        const versionDocRef = versionSnapshot.docs[0].ref;
-        await updateDoc(versionDocRef, {
-          released: released,
-          updatedDate: serverTimestamp()
-        });
-        
-        const action = released ? 'released' : 'unreleased';
-        return DataServiceResult.success(
-          { docID, versionNumber, released },
-          `Version ${versionNumber} ${action} successfully`
-        );
-      } else {
-        throw new Error(`Version ${versionNumber} not found`);
-      }
-    } catch (error) {
-      return DataServiceResult.error(error, `Failed to toggle release status for version ${versionNumber}`);
-    }
-  }
+
+
+
+
+
 
 }
 

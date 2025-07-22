@@ -248,6 +248,280 @@ async function seedInvitationTestData() {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     });
 
+    // Test documents for migration scenarios
+    console.log('📄 Creating migration test documents...');
+    
+    // Document 1: Has versions that NEED migration (no corresponding commits)
+    await db.collection('documents').doc('doc-needs-migration').set({
+      name: 'Document Needs Migration',
+      type: 'markdown',
+      content: '# Current Content\n\nThis document has versions that need migration.',
+      project: 'test-project-1',
+      createdBy: 'existing-user-1',
+      archived: false,
+      createdDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000), // 20 days ago
+      lastModified: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      releasedVersion: ['1.0.0', '1.1.0'], // This indicates versions exist
+      folder: 'Getting Started',
+    });
+
+    // Create versions subcollection for doc-needs-migration
+    await db.collection('documents').doc('doc-needs-migration').collection('versions').add({
+      versionNumber: '1.0.0',
+      content: '# Version 1.0.0\n\nInitial release content.',
+      released: true,
+      createDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-needs-migration').collection('versions').add({
+      versionNumber: '1.1.0',
+      content: '# Version 1.1.0\n\nUpdated content with new features.',
+      released: true,
+      createDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // 10 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    // Document 2: Has versions that have ALREADY been migrated (has corresponding commits)
+    await db.collection('documents').doc('doc-already-migrated').set({
+      name: 'Document Already Migrated',
+      type: 'markdown', 
+      content: '# Current Content\n\nThis document has already been migrated.',
+      project: 'test-project-1',
+      createdBy: 'existing-user-1',
+      archived: false,
+      createdDate: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000), // 25 days ago
+      lastModified: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+      releasedVersion: ['2.0.0', '2.1.0'], // This indicates versions exist
+      folder: 'Product Docs',
+    });
+
+    // Create versions subcollection for doc-already-migrated
+    await db.collection('documents').doc('doc-already-migrated').collection('versions').add({
+      versionNumber: '2.0.0',
+      content: '# Version 2.0.0\n\nMajor release with breaking changes.',
+      released: true,
+      createDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000), // 20 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-already-migrated').collection('versions').add({
+      versionNumber: '2.1.0',
+      content: '# Version 2.1.0\n\nBug fixes and improvements.',
+      released: true,
+      createDate: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000), // 12 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    // Create commits subcollection for doc-already-migrated (matching versions)
+    await db.collection('documents').doc('doc-already-migrated').collection('commits').add({
+      message: 'Migrated from version 2.0.0',
+      parentCommitId: null,
+      content: '# Version 2.0.0\n\nMajor release with breaking changes.',
+      versionNumber: '2.0.0', // This matches the version - indicates migration complete
+      branch: 'main',
+      released: true,
+      tags: [],
+      archived: false,
+      createDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1'
+    });
+
+    await db.collection('documents').doc('doc-already-migrated').collection('commits').add({
+      message: 'Migrated from version 2.1.0',
+      parentCommitId: null,
+      content: '# Version 2.1.0\n\nBug fixes and improvements.',
+      versionNumber: '2.1.0', // This matches the version - indicates migration complete
+      branch: 'main',
+      released: true,
+      tags: [],
+      archived: false,
+      createDate: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1'
+    });
+
+    // Document 3: Mixed scenario - some versions migrated, some not
+    await db.collection('documents').doc('doc-partial-migration').set({
+      name: 'Document Partial Migration',
+      type: 'markdown',
+      content: '# Current Content\n\nThis document has partial migration.',
+      project: 'test-project-1', 
+      createdBy: 'existing-user-1',
+      archived: false,
+      createdDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+      lastModified: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      releasedVersion: ['3.0.0', '3.1.0', '3.2.0'],
+      folder: 'Product Docs',
+    });
+
+    // Create versions subcollection for doc-partial-migration
+    await db.collection('documents').doc('doc-partial-migration').collection('versions').add({
+      versionNumber: '3.0.0',
+      content: '# Version 3.0.0\n\nBaseline version.',
+      released: true,
+      createDate: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-partial-migration').collection('versions').add({
+      versionNumber: '3.1.0',
+      content: '# Version 3.1.0\n\nMinor updates.',
+      released: true,
+      createDate: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-partial-migration').collection('versions').add({
+      versionNumber: '3.2.0',
+      content: '# Version 3.2.0\n\nLatest improvements.',
+      released: true,
+      createDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    // Create commits subcollection for doc-partial-migration (only first two versions)
+    await db.collection('documents').doc('doc-partial-migration').collection('commits').add({
+      message: 'Migrated from version 3.0.0',
+      parentCommitId: null,
+      content: '# Version 3.0.0\n\nBaseline version.',
+      versionNumber: '3.0.0',
+      branch: 'main',
+      released: true,
+      tags: [],
+      archived: false,
+      createDate: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1'
+    });
+
+    await db.collection('documents').doc('doc-partial-migration').collection('commits').add({
+      message: 'Migrated from version 3.1.0',
+      parentCommitId: null,
+      content: '# Version 3.1.0\n\nMinor updates.',
+      versionNumber: '3.1.0',
+      branch: 'main',
+      released: true,
+      tags: [],
+      archived: false,
+      createDate: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1'
+    });
+    // Missing commit for 3.2.0 - this should trigger migration
+
+    // Document 4: No versions at all (should be ignored by migration)
+    await db.collection('documents').doc('doc-no-versions').set({
+      name: 'Document No Versions',
+      type: 'markdown',
+      content: '# New Document\n\nThis document has no versions.',
+      project: 'test-project-1',
+      createdBy: 'existing-user-1', 
+      archived: false,
+      createdDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      lastModified: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+      releasedVersion: [], // No versions
+      folder: 'Getting Started',
+    });
+
+    // Document 5: Document with unreleased versions
+    await db.collection('documents').doc('doc-unreleased-versions').set({
+      name: 'Document with Unreleased Versions',
+      type: 'markdown',
+      content: '# Current Content\n\nThis document has unreleased versions.',
+      project: 'test-project-1',
+      createdBy: 'existing-user-1',
+      archived: false,
+      createdDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
+      lastModified: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+      releasedVersion: ['4.0.0'], // Only one released version
+      folder: 'Product Docs',
+    });
+
+    // Create versions subcollection for doc-unreleased-versions
+    await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
+      versionNumber: '4.0.0',
+      content: '# Version 4.0.0\n\nFirst stable release.',
+      released: true,
+      createDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // 10 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
+      versionNumber: '4.1.0-beta',
+      content: '# Version 4.1.0-beta\n\nBeta version with experimental features.',
+      released: false, // This version is NOT released
+      createDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
+      versionNumber: '4.2.0-alpha',
+      content: '# Version 4.2.0-alpha\n\nAlpha version for testing new architecture.',
+      released: false, // This version is NOT released
+      createDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      createdBy: 'existing-user-1',
+      updatedBy: 'existing-user-1',
+      updatedDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      project: 'test-project-1',
+      archived: false
+    });
+
+    console.log('✅ Migration test documents created!');
+    console.log('');
+    console.log('📋 Migration Test Scenarios:');
+    console.log('   1. doc-needs-migration: Has 2 versions (1.0.0, 1.1.0) with NO commits - NEEDS MIGRATION');
+    console.log('   2. doc-already-migrated: Has 2 versions (2.0.0, 2.1.0) with matching commits - ALREADY MIGRATED');  
+    console.log('   3. doc-partial-migration: Has 3 versions but only 2 commits - PARTIAL MIGRATION NEEDED');
+    console.log('   4. doc-no-versions: No versions at all - SHOULD BE IGNORED');
+    console.log('   5. doc-unreleased-versions: Has 1 released + 2 unreleased versions - TEST UNRELEASED HANDLING');
+    console.log('');
+
     console.log('✅ Invitation test data seeded successfully!');
     console.log('');
     console.log('🔐 Test user credentials (Password: ' + defaultPassword + '):');
@@ -264,6 +538,15 @@ async function seedInvitationTestData() {
     console.log('   - test-token-456 (Beta project, admin role)');
     console.log('   - test-token-789 (Alpha project for existing user)');
     console.log('   - url-invite-token-abc123 (URL invitation for urluser@example.com)');
+    console.log('');
+    console.log('🔄 Migration Test Data:');
+    console.log('   Expected behavior when migration system runs:');
+    console.log('   ✅ doc-needs-migration: Should be migrated (2 versions → 2 commits)');
+    console.log('   ⏭️  doc-already-migrated: Should be skipped (already has matching commits)');
+    console.log('   🔄 doc-partial-migration: Should migrate 1 version (3.2.0 → 1 new commit)');
+    console.log('   ⏭️  doc-no-versions: Should be ignored (no versions to migrate)');
+    console.log('   🧪 doc-unreleased-versions: Should migrate only released version (4.0.0 → 1 commit)');
+    console.log('       Unreleased versions (4.1.0-beta, 4.2.0-alpha) should be skipped');
     console.log('');
     console.log('🌐 Invitation URL test:');
     console.log('   http://localhost:5173/invite/url-invite-token-abc123');

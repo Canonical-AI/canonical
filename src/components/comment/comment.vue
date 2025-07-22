@@ -45,12 +45,7 @@
           </div>
         </template>
         
-        <template v-if="event.type === 'version'">
-          <div class="w-100">
-            <div class="text-caption"> {{$dayjs(event?.value?.createDate?.seconds*1000).fromNow() || ''}}  </div>
-            <v-chip @click="$router.push({ query: { v: event.value.versionNumber }})">{{ event.value.versionNumber }}</v-chip>
-          </div>
-        </template>
+
       </v-list-item>
     </v-list>
 
@@ -121,14 +116,6 @@ export default {
       },
       
       timeline() {
-        const versions = Array.isArray(this.$store.selected.versions) ? 
-          this.$store.selected.versions.map(v => ({
-            type: 'version',
-            value: v,
-            sortDate: v.createDate?.seconds || 0,
-            position: null // versions don't have positions
-          })) : []; // Default to an empty array if not an array
-        
         // Use the threaded comments getter for organized display
         let threadedComments = this.$store.threadedCommentsByVersion;
         
@@ -157,14 +144,8 @@ export default {
           position: c.editorID?.from || null
         }));
         
-        const allItems = [...versions, ...comments];
-        
         if (this.sortBy === 'position') {
-          return allItems.sort((a, b) => {
-            if (a.type === 'version' && b.type === 'version') {
-              return a.sortDate - b.sortDate;
-            }
-            
+          return comments.sort((a, b) => {
             const aHasPosition = a.position !== null && a.position !== undefined;
             const bHasPosition = b.position !== null && b.position !== undefined;
             
@@ -178,7 +159,7 @@ export default {
             return a.position - b.position;
           });
         } else {
-          return allItems.sort((a, b) => a.sortDate - b.sortDate);
+          return comments.sort((a, b) => a.sortDate - b.sortDate);
         }
       }
     },

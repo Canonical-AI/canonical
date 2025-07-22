@@ -1,12 +1,14 @@
 <template>
+  <div>
   <v-navigation-drawer
     v-model="drawer"
     location="right"
     width="400"
     :temporary="!drawer"
     class="h-100 d-flex flex-column sidepanel-container"
+    :class="{ 'invisible': !drawer}"
   >
-    <!-- Fixed header section -->
+
     <div class="drawer-header flex-shrink-0">
       <v-card-actions class="py-0" density="compact" style="min-height: 32px;">
         <v-btn flat icon="mdi-close" @click="drawer = false" density="compact"></v-btn>
@@ -60,6 +62,14 @@
           <v-icon size="16" class="mr-1">mdi-robot</v-icon>
           Chat
         </v-tab>
+        <v-tab 
+          v-if="document.id && $store.isUserLoggedIn" 
+          value="history" 
+          class="text-none"
+        >
+          <v-icon size="16" class="mr-1">mdi-source-branch</v-icon>
+          History
+        </v-tab>
       </v-tabs>
     </div>
 
@@ -96,6 +106,14 @@
           @close="activeTab = 'review'"
         />
       </div>
+      
+      <!-- History Tab Content -->
+      <div v-else-if="activeTab === 'history'" class="history-tab-content h-100">
+        <CommitHistory
+          :disabled="isDisabled"
+          :document="document"
+        />
+      </div>
     </div>
   </v-navigation-drawer>
 
@@ -110,8 +128,6 @@
       class="-mr-5"
       :disabled="isDisabled"
       :key="document.id"
-      :versions="document.versions"
-      :current-version="$route.query.v || 'live'"
     />
     
     <!-- Show template button for new documents -->
@@ -310,6 +326,7 @@
       </div>
     </v-fade-transition>
   </div>
+</div>
 </template>
 
 <script>
@@ -320,6 +337,7 @@ import MilkdownEditor from "../editor/MilkdownEditor.vue";
 import { fadeTransition } from "../../utils/transitions";
 import VersionModal from "./VersionModal.vue";
 import ReviewPanel from "./ReviewPanel.vue";
+import CommitHistory from "./CommitHistory.vue";
 import { copyToClipboard, activateEditor, debounce } from "../../utils/uiHelpers";
 import { useEventWatcher } from "../../composables/useEventWatcher";
 import { useComments } from "../../composables/comments";
@@ -334,6 +352,7 @@ export default {
     MilkdownProvider,
     VersionModal,
     ReviewPanel,
+    CommitHistory,
     ChatSidepanel,
   },
   emits: ["scrollToBottom"],
@@ -390,12 +409,14 @@ export default {
     
     // Set initial editable state based on route
     const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
-    this.isEditable = !isViewingVersion;
+    const isViewingCommit = this.$route.query.c;
+    this.isEditable = !isViewingVersion && !isViewingCommit;
     
     if (this.$route.params.id) {
-      // Check if there's a version query parameter
+      // Check for commit ID (new primary method) or version (backwards compatibility)
+      const commitId = this.$route.query.c;
       const version = this.$route.query.v;
-      await this.fetchDocument(this.$route.params.id, version);
+      await this.fetchDocument(this.$route.params.id, version, commitId);
     }
     this.isLoading = false;
     this.debounceSave = debounce(() => this.saveDocument(), 5000);
@@ -405,9 +426,9 @@ export default {
     
     this.documentContentWatcher = useEventWatcher(this.$eventStore, 'replace-document-content', (payload) => {
       
-      // If we're switching from version to no version or vice versa, skip the replacement
-      if (this.$route.query.v && this.$route.query.v !== 'live') {
-        console.log('Skipping content replacement due to version change, TODO FIX THIS LATER');
+      // If we're switching from version/commit to no version/commit or vice versa, skip the replacement
+      if ((this.$route.query.v && this.$route.query.v !== 'live') || this.$route.query.c) {
+        console.log('Skipping content replacement due to content view change');
         return;
       }
       
@@ -464,7 +485,7 @@ export default {
       }));
     },
 
-    async fetchDocument(id, version = null) {
+    async fetchDocument(id, version = null, commitId = null) {
       // Completely unmount the editor first to prevent state issues
       this.showEditor = false;
       this.isLoading = true;
@@ -474,9 +495,27 @@ export default {
       }
       
       try {
-        const result = await this.$store.documentsSelect({ id, version });
+        const result = await this.$store.documentsSelect({ id, version, commitId });
         if (result === null) {
           this.isLoading = false;
+          return;
+        }
+
+        // Handle auto-redirect for demo users (commit-based)
+        if (result.redirectToCommit && result.documentId) {
+          this.$router.replace({ 
+            path: `/document/${result.documentId}`, 
+            query: { c: result.redirectToCommit } 
+          });
+          return;
+        }
+
+        // Handle auto-redirect for demo users (version-based - backwards compatibility)
+        if (result.redirectToVersion && result.documentId) {
+          this.$router.replace({ 
+            path: `/document/${result.documentId}`, 
+            query: { v: result.redirectToVersion } 
+          });
           return;
         }
         
@@ -506,8 +545,8 @@ export default {
         
         this.isFavorite = this.$store.isFavorite(this.document.id);
         
-        // Set editable state based on whether we're viewing a version or project is read-only
-        if (version || this.$store.isProjectReadOnly) {
+        // Set editable state based on whether we're viewing a version/commit or project is read-only
+        if (version || commitId || this.$store.isProjectReadOnly) {
           this.isEditable = false;
         } else {
           this.isEditable = true;
@@ -718,6 +757,12 @@ export default {
     isViewingVersion() {
       return this.$route.query.v && this.$route.query.v !== 'live';
     },
+    isViewingCommit() {
+      return !!this.$route.query.c;
+    },
+    isViewingNonLive() {
+      return this.isViewingVersion || this.isViewingCommit;
+    },
     
     editorDisabled() {
       return this.isDisabled || !this.isEditable || this.$store.isProjectReadOnly;
@@ -803,28 +848,30 @@ export default {
         if (this.isCreatingDocument) return;
         
         try {
-          // Check if we're switching between versions or from version to live
+          // Check if we're switching between versions/commits or from version/commit to live
           const isVersionChange = to?.query?.v !== from?.query?.v;
+          const isCommitChange = to?.query?.c !== from?.query?.c;
+          const isContentChange = isVersionChange || isCommitChange;
           const isSameDocument = to?.params?.id === from?.params?.id && to?.path === from?.path;
           
-          // If same document and no version change, skip reload
-          if (isSameDocument && !isVersionChange) {
-            console.log('Same document, no version change - skipping reload');
+          // If same document and no content change, skip reload
+          if (isSameDocument && !isContentChange) {
+            console.log('Same document, no content change - skipping reload');
             return;
           }
 
           // Set version switching flag to prevent false modification detection
-          // Only set flag if we're switching between versions, not on initial load
-          if (isVersionChange && from?.query?.v !== undefined) {
+          // Only set flag if we're switching between content views, not on initial load
+          if (isContentChange && (from?.query?.v !== undefined || from?.query?.c !== undefined)) {
             this.isSwitchingVersion = true;
           }
 
-          // If switching from version to live (or vice versa), don't save
-          if (isVersionChange && this.isEditorModified) {
-            console.log('Version change detected - not saving, will reload');
+          // If switching from version/commit to live (or vice versa), don't save
+          if (isContentChange && this.isEditorModified) {
+            console.log('Content change detected - not saving, will reload');
             this.isEditorModified = false; // Reset to prevent saving
-          } else if (this.isEditorModified && !isVersionChange) {
-            // Only save if we're not changing versions
+          } else if (this.isEditorModified && !isContentChange) {
+            // Only save if we're not changing content views
             console.log('saving document before navigation');
             await this.saveDocument();
           }
@@ -832,12 +879,12 @@ export default {
           // Track the previous version before making changes
           this.previousVersion = this.$route.query.v;
           
-          if (to.params.id && to.query.v) {
-            // Load Version
+          if (to.params.id && (to.query.v || to.query.c)) {
+            // Load Version or Commit
             this.showEditor = false;
             this.isEditorModified = false;
             await this.$nextTick();
-            await this.fetchDocument(this.$route.params.id, this.$route.query.v);
+            await this.fetchDocument(this.$route.params.id, to.query.v, to.query.c);
           } else if (to.params.id) {
             // Loading live version
             this.showEditor = false;
@@ -927,17 +974,19 @@ export default {
     },
   },
   beforeRouteLeave(to, from, next) {
-    // Check if we're switching versions - don't save in that case
+    // Check if we're switching versions/commits - don't save in that case
     const isVersionChange = to.query?.v !== from.query?.v;
+    const isCommitChange = to.query?.c !== from.query?.c;
+    const isContentChange = isVersionChange || isCommitChange;
     const isSameDocument = to.params.id === from.params.id && to.path === from.path;
     
-    // Set version switching flag if this is a version change (not initial load)
-    if (isVersionChange && from.query?.v !== undefined) {
+    // Set version switching flag if this is a content change (not initial load)
+    if (isContentChange && (from.query?.v !== undefined || from.query?.c !== undefined)) {
       this.isSwitchingVersion = true;
     }
     
-    // Only save if we're not switching versions and have modifications
-    if (this.isEditorModified && !isVersionChange) {
+    // Only save if we're not switching content views and have modifications
+    if (this.isEditorModified && !isContentChange) {
       this.saveDocument();
     }
     
@@ -957,11 +1006,13 @@ export default {
     });
   },
   beforeUnmount() {
-    // Check if we're in the middle of a version change - don't save in that case
+    // Check if we're in the middle of a content change - don't save in that case
     const isViewingVersion = this.$route.query.v && this.$route.query.v !== 'live';
+    const isViewingCommit = this.$route.query.c;
+    const isViewingNonLive = isViewingVersion || isViewingCommit;
     
-    // Only save if we're not viewing a version and have modifications
-    if (this.isEditorModified && !isViewingVersion && !this.isSwitchingVersion) {
+    // Only save if we're not viewing a version/commit and have modifications
+    if (this.isEditorModified && !isViewingNonLive && !this.isSwitchingVersion) {
       this.saveDocument();
     }
     
@@ -1246,6 +1297,12 @@ input.h1 {
 
 /* Chat tab content */
 .chat-tab-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* History tab content */
+.history-tab-content {
   display: flex;
   flex-direction: column;
 }
