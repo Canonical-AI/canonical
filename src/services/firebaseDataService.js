@@ -77,7 +77,7 @@ class PermissionHelper {
 
   static requireProject() {
     if (!getStore().isUserInProject && getStore().project.id !== import.meta.env.VITE_DEFAULT_PROJECT_ID) {
-      throw new Error('You are not a member of this project');
+      throw new Error('You are not a member of this project or no project is selected');
     }
     return true;
   }
