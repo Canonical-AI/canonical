@@ -10,6 +10,7 @@ import DocumentCreate from '../components/document/DocumentCreate.vue';
 import ProjectConfig from '../components/settings/ProjectConfig.vue';
 import UsersSettings from '../components/settings/UsersSettings.vue';
 import InvitationAccept from '../components/settings/InvitationAccept.vue';
+import GitHubIntegration from '../components/settings/GitHubIntegration.vue';
 import {User} from "../services/firebaseDataService";
 import { useMainStore } from '../store/index.js';
 import TaskOverview from '../components/tasks/TaskOverview.vue';
@@ -101,6 +102,12 @@ const routes = [
     path: '/settings/user',
     name: 'UsersSettings',
     component: UsersSettings,
+    beforeEnter: checkAuth
+  },
+  {
+    path: '/settings/github',
+    name: 'GitHubSettings',
+    component: GitHubIntegration,
     beforeEnter: checkAuth
   },
   {

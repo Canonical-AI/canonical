@@ -15,6 +15,7 @@
 import { defineStore } from 'pinia'
 import router from '../router'
 import {User, Document, ChatHistory, Favorites, Project, Comment, Task, Commit} from '../services/firebaseDataService'
+import { GitHubService } from '../services/githubService'
 import { eventStore } from './eventStore'
 import { MigrationSystem } from './migrations'
 import { 
@@ -159,6 +160,7 @@ export const useMainStore = defineStore('main', {
       tasks: false,
       templates: false,
       pendingInvitations: false,
+      github: false, // Add GitHub loading state
     },
     projects: [],
     documents: [],
@@ -183,6 +185,11 @@ export const useMainStore = defineStore('main', {
     templates: [],
     favorites: [],
     tasks: [],
+    github: { // Add GitHub state
+      connected: false,
+      username: null,
+      lastSync: null
+    },
   }),
 
   getters: {
@@ -2121,7 +2128,151 @@ export const useMainStore = defineStore('main', {
         });
         throw new Error(result.message || 'Failed to archive chat');
       }
-    }
+    },
+
+    // =============================================================================
+    // GITHUB INTEGRATION ACTIONS
+    // =============================================================================
+
+    async githubGetConnectionStatus() {
+      this.loading.github = true;
+      try {
+        const result = await GitHubService.getConnectionStatus();
+        if (result.success) {
+          this.github.connected = result.data.connected;
+          this.github.username = result.data.username;
+          this.github.lastSync = new Date();
+          return result;
+        } else {
+          this.github.connected = false;
+          this.github.username = null;
+          return result;
+        }
+      } catch (error) {
+        console.error('Error checking GitHub connection:', error);
+        return { success: false, error, message: 'Failed to check GitHub connection' };
+      } finally {
+        this.loading.github = false;
+      }
+    },
+
+    async githubDisconnectAccount() {
+      this.loading.github = true;
+      try {
+        const result = await GitHubService.disconnectAccount();
+        if (result.success) {
+          this.github.connected = false;
+          this.github.username = null;
+          this.github.lastSync = null;
+          this.uiAlert({ 
+            type: 'success', 
+            message: 'GitHub account disconnected successfully',
+            autoClear: true 
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error('Error disconnecting GitHub:', error);
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to disconnect GitHub account',
+          autoClear: true 
+        });
+        return { success: false, error, message: 'Failed to disconnect GitHub account' };
+      } finally {
+        this.loading.github = false;
+      }
+    },
+
+    async githubFetchPRData(owner, repo, prNumber) {
+      this.loading.github = true;
+      try {
+        const result = await GitHubService.fetchPullRequestData(owner, repo, prNumber);
+        if (result.success) {
+          this.uiAlert({ 
+            type: 'success', 
+            message: `Fetched PR #${prNumber} data successfully`,
+            autoClear: true 
+          });
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message,
+            autoClear: true 
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error('Error fetching PR data:', error);
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to fetch pull request data',
+          autoClear: true 
+        });
+        return { success: false, error, message: 'Failed to fetch pull request data' };
+      } finally {
+        this.loading.github = false;
+      }
+    },
+
+    async githubFetchMultiplePRs(owner, repo, options = {}) {
+      this.loading.github = true;
+      try {
+        const result = await GitHubService.fetchMultiplePRs(owner, repo, options);
+        if (result.success) {
+          this.uiAlert({ 
+            type: 'success', 
+            message: `Fetched ${result.data.length} PRs successfully`,
+            autoClear: true 
+          });
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message,
+            autoClear: true 
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error('Error fetching multiple PRs:', error);
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to fetch pull requests',
+          autoClear: true 
+        });
+        return { success: false, error, message: 'Failed to fetch pull requests' };
+      } finally {
+        this.loading.github = false;
+      }
+    },
+
+    async githubGenerateReleaseNotes(prData, options = {}) {
+      try {
+        const result = GitHubService.generateReleaseNotes(prData, options);
+        if (result.success) {
+          this.uiAlert({ 
+            type: 'success', 
+            message: 'Release notes generated successfully',
+            autoClear: true 
+          });
+        } else {
+          this.uiAlert({ 
+            type: 'error', 
+            message: result.message,
+            autoClear: true 
+          });
+        }
+        return result;
+      } catch (error) {
+        console.error('Error generating release notes:', error);
+        this.uiAlert({ 
+          type: 'error', 
+          message: 'Failed to generate release notes',
+          autoClear: true 
+        });
+        return { success: false, error, message: 'Failed to generate release notes' };
+      }
+    },
   }
 })
 
