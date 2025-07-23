@@ -478,7 +478,9 @@ async function seedInvitationTestData() {
     // Create versions subcollection for doc-unreleased-versions
     await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
       versionNumber: '4.0.0',
-      content: '# Version 4.0.0\n\nFirst stable release.',
+      content: {
+        content: '# Version 4.0.0\n\nFirst stable release.',
+      },
       released: true,
       createDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // 10 days ago
       createdBy: 'existing-user-1',
@@ -490,7 +492,9 @@ async function seedInvitationTestData() {
 
     await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
       versionNumber: '4.1.0-beta',
-      content: '# Version 4.1.0-beta\n\nBeta version with experimental features.',
+      content: {
+        content: '# Version 4.1.0-beta\n\nBeta version with experimental features.',
+      },
       released: false, // This version is NOT released
       createDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
       createdBy: 'existing-user-1',
@@ -502,7 +506,9 @@ async function seedInvitationTestData() {
 
     await db.collection('documents').doc('doc-unreleased-versions').collection('versions').add({
       versionNumber: '4.2.0-alpha',
-      content: '# Version 4.2.0-alpha\n\nAlpha version for testing new architecture.',
+      content: {
+        content: '# Version 4.2.0-alpha\n\nAlpha version for testing new architecture.',
+      },
       released: false, // This version is NOT released
       createDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
       createdBy: 'existing-user-1',
