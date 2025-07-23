@@ -275,8 +275,6 @@ name: admin@example.com
 password: testPassword123!
 
 
-
-
 ### New User Testing Workflow
 
 1. **Start emulator testing environment**:
